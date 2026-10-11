@@ -6,6 +6,7 @@ import {
   Sparkles,
   BookOpen,
   Users,
+  User,
   ChevronRight,
   ChevronLeft,
   Plus,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import { DEFAULT_STORY_RULES } from "@/lib/templates/defaultStoryRules";
 import { toast } from "sonner";
+import { ImportFromHubModal, HubCharacterItem } from "@/components/characters/ImportFromHubModal";
 
 interface CharacterForm {
   id: string;
@@ -29,6 +31,7 @@ interface CharacterForm {
   faction: string;
   roleWishOrForbidden: string;
   background: string;
+  avatarUrl?: string;
   // AI proposed roles state
   isProposingRoles: boolean;
   proposedRoles: Array<{
@@ -72,6 +75,7 @@ export default function NewProjectPage() {
     "dark fantasy cinematic painting, muted palette, dramatic lighting, film still, highly detailed"
   );
   const [showRulesEditor, setShowRulesEditor] = useState(false);
+  const [showHubImportModal, setShowHubImportModal] = useState(false);
 
   // Step 2: Characters (You & Your Squad)
   const [charactersList, setCharactersList] = useState<CharacterForm[]>([
@@ -151,6 +155,94 @@ export default function NewProjectPage() {
     setCharactersList((prev) =>
       prev.map((c) => (c.id === id ? { ...c, ...updates } : c))
     );
+  };
+
+  // Import Characters from Me & Squad Hub
+  const handleImportFromHub = (importedChars: HubCharacterItem[]) => {
+    setCharactersList((prevList) => {
+      let updatedList = [...prevList];
+
+      importedChars.forEach((imported) => {
+        const isSelf = imported.characterType === "self";
+
+        // If it's a self character, check if we have an existing self card to update
+        const existingSelfIndex = updatedList.findIndex((c) => c.characterType === "self");
+
+        if (isSelf && existingSelfIndex !== -1) {
+          // Update existing self card
+          updatedList[existingSelfIndex] = {
+            ...updatedList[existingSelfIndex],
+            realNickname: imported.realNickname || updatedList[existingSelfIndex].realNickname,
+            name: imported.name || updatedList[existingSelfIndex].name,
+            gender: imported.gender || updatedList[existingSelfIndex].gender || "ชาย",
+            startMbti:
+              imported.currentMbti || imported.startMbti || updatedList[existingSelfIndex].startMbti,
+            faction: imported.faction || updatedList[existingSelfIndex].faction,
+            roleWishOrForbidden:
+              imported.chosenRole || updatedList[existingSelfIndex].roleWishOrForbidden,
+            background: imported.background || updatedList[existingSelfIndex].background,
+            avatarUrl: imported.avatarUrl || updatedList[existingSelfIndex].avatarUrl,
+            chosenRoleCustom:
+              imported.chosenRole || updatedList[existingSelfIndex].chosenRoleCustom,
+          };
+        } else {
+          // Check if we can fill in a blank placeholder friend card
+          const blankFriendIndex = updatedList.findIndex(
+            (c) =>
+              c.characterType === "friend" &&
+              !c.name.trim() &&
+              c.realNickname.startsWith("เพื่อนคนที่")
+          );
+
+          if (blankFriendIndex !== -1 && !isSelf) {
+            updatedList[blankFriendIndex] = {
+              ...updatedList[blankFriendIndex],
+              realNickname: imported.realNickname || imported.name,
+              name: imported.name || "",
+              gender: imported.gender || "ชาย",
+              startMbti: imported.currentMbti || imported.startMbti || "INTJ",
+              faction: imported.faction || "ตามสถานการณ์",
+              roleWishOrForbidden: imported.chosenRole || "อยากให้มีบทบาทเด่นในแก๊ง",
+              background: imported.background || "เพื่อนในแก๊งที่หลุดเข้ามาในโลกนี้ด้วยกัน",
+              avatarUrl: imported.avatarUrl || "",
+              chosenRoleCustom: imported.chosenRole || "",
+            };
+          } else {
+            // Append as a new card
+            const newId = `char-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            updatedList.push({
+              id: newId,
+              characterType: isSelf ? "self" : "friend",
+              realNickname: imported.realNickname || imported.name,
+              name: imported.name || "",
+              gender: imported.gender || "ชาย",
+              startMbti: imported.currentMbti || imported.startMbti || "INTJ",
+              faction: imported.faction || "ตามสถานการณ์",
+              roleWishOrForbidden:
+                imported.chosenRole ||
+                (isSelf ? "ต้องการเป็นผู้วางแผนเอาชีวิตรอด" : "อยากให้มีบทบาทเด่นในแก๊ง"),
+              background:
+                imported.background ||
+                (isSelf
+                  ? "ตัวฉันเองที่หลุดเข้ามาในโลกนี้พร้อมความทรงจำเดิม"
+                  : "เพื่อนในแก๊งที่หลุดเข้ามาในโลกนี้ด้วยกัน"),
+              avatarUrl: imported.avatarUrl || "",
+              isProposingRoles: false,
+              proposedRoles: [],
+              aiRecommendedIndex: 0,
+              recommendationReason: "",
+              chosenRoleIndex: null,
+              chosenRoleCustom: imported.chosenRole || "",
+              chosenAbility: { name: "", origin: "", cost: "" },
+            });
+          }
+        }
+      });
+
+      return updatedList;
+    });
+
+    toast.success(`ดึงตัวละครจาก Me & Squad Hub เรียบร้อยแล้ว (${importedChars.length} คน)`);
   };
 
   // AI Propose Roles for a single character
@@ -262,6 +354,7 @@ export default function NewProjectPage() {
           roleReason: roleReason || c.recommendationReason || "",
           faction: c.faction,
           background: c.background,
+          avatarUrl: c.avatarUrl || "",
           visualSheet: {
             age: "วัยหนุ่มสาว",
             build: "สมส่วน",
@@ -507,13 +600,25 @@ export default function NewProjectPage() {
               </p>
             </div>
 
-            <button
-              onClick={addCharacter}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/40 transition-colors font-thai whitespace-nowrap"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ เพิ่มเพื่อนในแก๊งอีกคน</span>
-            </button>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setShowHubImportModal(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-sky-600 to-sky-700 hover:from-sky-500 hover:to-sky-600 text-white text-xs font-bold shadow-[0_0_15px_rgba(14,165,233,0.3)] transition-all font-thai whitespace-nowrap"
+              >
+                <Users className="w-4 h-4" />
+                <span>+ ดึงตัวละครจาก Me & Squad Hub</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={addCharacter}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/40 transition-colors font-thai whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ เพิ่มเพื่อนในแก๊งอีกคน</span>
+              </button>
+            </div>
           </div>
 
           {/* Canon Characters Explanatory Banner */}
@@ -545,6 +650,18 @@ export default function NewProjectPage() {
                       {index + 1}
                     </span>
 
+                    {/* Show Avatar Thumbnail if available from Hub */}
+                    {char.avatarUrl ? (
+                      <div className="w-7 h-7 rounded-full overflow-hidden border border-amber-400/60 shadow-sm flex-shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={char.avatarUrl}
+                          alt={char.realNickname || char.name}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    ) : null}
+
                     {/* Self vs Friend Toggle */}
                     <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
                       <button
@@ -570,6 +687,16 @@ export default function NewProjectPage() {
                         🧑‍🤝‍🧑 เพื่อนในแก๊ง (Friend)
                       </button>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowHubImportModal(true)}
+                      className="px-2 py-0.5 rounded text-[11px] font-thai font-semibold text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition-colors border border-dashed border-slate-700 flex items-center gap-1"
+                      title="เลือกโปรไฟล์จาก Me & Squad Hub เพื่อนำข้อมูลมากรอกในช่องนี้"
+                    >
+                      <Users className="w-3 h-3 text-sky-400" />
+                      <span>ดึงจาก Hub</span>
+                    </button>
 
                     <h3 className="font-bold text-white text-base font-heading">
                       {char.realNickname ? `${char.realNickname}` : `สมาชิกคนที่ ${index + 1}`}
@@ -852,6 +979,14 @@ export default function NewProjectPage() {
           </div>
         </div>
       )}
+
+      {/* Modal Import Characters from Me & Squad Hub */}
+      <ImportFromHubModal
+        isOpen={showHubImportModal}
+        onClose={() => setShowHubImportModal(false)}
+        onImportCharacters={handleImportFromHub}
+        currentCharactersList={charactersList}
+      />
     </div>
   );
 }

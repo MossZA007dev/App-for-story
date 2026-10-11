@@ -18,6 +18,7 @@ const CharacterInputSchema = z.object({
   background: z.string().optional().default(""),
   characterType: z.enum(["self", "friend", "canon"]).optional().default("friend"),
   realNickname: z.string().optional().default(""),
+  avatarUrl: z.string().optional().default(""),
   visualSheet: z.record(z.unknown()).optional().default({}),
   ability: z
     .object({
@@ -184,6 +185,7 @@ export async function POST(req: NextRequest) {
           background: charInput.background || "",
           characterType: charInput.characterType || "friend",
           realNickname: charInput.realNickname || "",
+          avatarUrl: charInput.avatarUrl || "",
           status: "alive",
           locationNow: "",
           visualSheet: visualSheetStr,

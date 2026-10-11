@@ -12,9 +12,17 @@ export class LocalStorageAdapter implements StorageAdapter {
   private baseDir: string;
 
   constructor(customDir?: string) {
-    this.baseDir = customDir || path.join(process.cwd(), "data", "images");
-    if (!fs.existsSync(this.baseDir)) {
-      fs.mkdirSync(this.baseDir, { recursive: true });
+    const isVercel = Boolean(process.env.VERCEL);
+    const defaultDir = isVercel
+      ? path.join("/tmp", "saga_data", "images")
+      : path.join(process.cwd(), "data", "images");
+    this.baseDir = customDir || defaultDir;
+    try {
+      if (!fs.existsSync(this.baseDir)) {
+        fs.mkdirSync(this.baseDir, { recursive: true });
+      }
+    } catch (e) {
+      console.warn("Could not create images storage dir:", e);
     }
   }
 
@@ -58,9 +66,17 @@ export class LocalAudioStorage {
   private baseDir: string;
 
   constructor(customDir?: string) {
-    this.baseDir = customDir || path.join(process.cwd(), "data", "audio");
-    if (!fs.existsSync(this.baseDir)) {
-      fs.mkdirSync(this.baseDir, { recursive: true });
+    const isVercel = Boolean(process.env.VERCEL);
+    const defaultDir = isVercel
+      ? path.join("/tmp", "saga_data", "audio")
+      : path.join(process.cwd(), "data", "audio");
+    this.baseDir = customDir || defaultDir;
+    try {
+      if (!fs.existsSync(this.baseDir)) {
+        fs.mkdirSync(this.baseDir, { recursive: true });
+      }
+    } catch (e) {
+      console.warn("Could not create audio storage dir:", e);
     }
   }
 

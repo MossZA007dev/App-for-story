@@ -5,21 +5,39 @@ import path from "path";
 import fs from "fs";
 
 // Ensure data folder and images folder exist
-const dataDir = path.join(process.cwd(), "data");
-const imagesDir = path.join(dataDir, "images");
-const audioDir = path.join(dataDir, "audio");
+const isVercel = Boolean(process.env.VERCEL);
+const baseDir = isVercel ? path.join("/tmp", "saga_data") : path.join(process.cwd(), "data");
+export const dataDir = baseDir;
+export const imagesDir = path.join(dataDir, "images");
+export const audioDir = path.join(dataDir, "audio");
 
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-if (!fs.existsSync(imagesDir)) {
-  fs.mkdirSync(imagesDir, { recursive: true });
-}
-if (!fs.existsSync(audioDir)) {
-  fs.mkdirSync(audioDir, { recursive: true });
+try {
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  if (!fs.existsSync(imagesDir)) {
+    fs.mkdirSync(imagesDir, { recursive: true });
+  }
+  if (!fs.existsSync(audioDir)) {
+    fs.mkdirSync(audioDir, { recursive: true });
+  }
+} catch (err) {
+  console.warn("Could not create directories:", err);
 }
 
 const dbPath = path.join(dataDir, "saga_forge.db");
+
+// If running on Vercel, copy pre-existing database from repository to /tmp on first boot
+if (isVercel && !fs.existsSync(dbPath)) {
+  const sourceDb = path.join(process.cwd(), "data", "saga_forge.db");
+  if (fs.existsSync(sourceDb)) {
+    try {
+      fs.copyFileSync(sourceDb, dbPath);
+    } catch (e) {
+      console.warn("Could not copy initial db on Vercel:", e);
+    }
+  }
+}
 
 // Singleton connection for Next.js hot reload
 declare global {
@@ -32,8 +50,10 @@ if (process.env.NODE_ENV !== "production") {
   global.__sqlite_db = sqlite;
 }
 
-// Enable WAL mode for better concurrency in SQLite
-sqlite.pragma("journal_mode = WAL");
+// Enable WAL mode for better concurrency in SQLite (standard delete journal on Vercel)
+if (!isVercel) {
+  sqlite.pragma("journal_mode = WAL");
+}
 sqlite.pragma("foreign_keys = ON");
 
 export const db = drizzle(sqlite, { schema });

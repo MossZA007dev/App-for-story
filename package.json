@@ -13,6 +13,9 @@
     "db:seed": "tsx src/scripts/seed.ts",
     "share": "npx localtunnel --port 3000"
   },
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "better-sqlite3": "^11.8.1",

@@ -313,6 +313,17 @@ export default function StoryWorkspacePage({
     }
   }, [activeSceneId]);
 
+  // Auto-sync on window focus if there are no unsaved changes
+  useEffect(() => {
+    const handleFocus = () => {
+      if (activeSceneId && !hasUnsavedChanges) {
+        loadSceneDetails(activeSceneId);
+      }
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [activeSceneId, hasUnsavedChanges]);
+
   // Switch Active Part
   const handleSelectPart = (partId: string) => {
     setActivePartId(partId);
@@ -1227,6 +1238,22 @@ export default function StoryWorkspacePage({
                   </option>
                 ))}
               </select>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (activeSceneId) {
+                    toast.promise(loadSceneDetails(activeSceneId), {
+                      loading: "กำลังซิงค์ข้อมูลล่าสุด...",
+                      success: "ซิงค์ข้อมูล บทพูด และรูปภาพล่าสุดเรียบร้อย!",
+                      error: "เกิดข้อผิดพลาดในการซิงค์",
+                    });
+                  }
+                }}
+                title="กดเพื่อดึงการแก้ไขล่าสุดจากเพื่อนร่วมแต่ง"
+                className="p-1 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-all ml-0.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
 

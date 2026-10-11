@@ -204,6 +204,22 @@ export function initDatabase() {
       global_visual_style TEXT DEFAULT 'dark fantasy cinematic painting, muted palette, dramatic lighting, film still, highly detailed',
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS collaborators (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      nickname TEXT DEFAULT '',
+      avatar_url TEXT DEFAULT '',
+      character_id TEXT,
+      role TEXT DEFAULT 'co_author',
+      can_edit_scenes INTEGER DEFAULT 1,
+      can_upload_media INTEGER DEFAULT 1,
+      can_generate_ai INTEGER DEFAULT 1,
+      last_active_at TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
   `);
 
   // Safe migrations for newly added columns
@@ -230,6 +246,12 @@ export function initDatabase() {
   } catch {}
   try {
     sqlite.exec("ALTER TABLE projects ADD COLUMN cover_image TEXT DEFAULT ''");
+  } catch {}
+  try {
+    sqlite.exec("ALTER TABLE scenes ADD COLUMN last_edited_by TEXT DEFAULT ''");
+  } catch {}
+  try {
+    sqlite.exec("ALTER TABLE projects ADD COLUMN share_code TEXT DEFAULT ''");
   } catch {}
 }
 

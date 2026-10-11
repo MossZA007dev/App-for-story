@@ -35,6 +35,7 @@ import {
   SlidersHorizontal,
   FileText,
   User,
+  Users,
   Crop,
   Crown,
   Scissors,
@@ -45,6 +46,7 @@ import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
 import { ImageCropModal, AspectRatioType } from "@/components/images/ImageCropModal";
 import { VideoTrimModal } from "@/components/media/VideoTrimModal";
+import { CollaboratorModal } from "@/components/collaboration/CollaboratorModal";
 import {
   parseSceneToDialogueBlocks,
   blocksToMarkdown,
@@ -94,6 +96,7 @@ interface SceneItem {
   images?: SceneImage[];
   bgmUrl?: string | null;
   bgmTitle?: string | null;
+  lastEditedBy?: string | null;
 }
 
 interface PartItem {
@@ -187,6 +190,11 @@ export default function StoryWorkspacePage({
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [isApplyingLedger, setIsApplyingLedger] = useState(false);
 
+  // Collaborators & Author Persona State
+  const [collaborators, setCollaborators] = useState<any[]>([]);
+  const [showCollabModal, setShowCollabModal] = useState(false);
+  const [currentAuthorName, setCurrentAuthorName] = useState("");
+
   // File Inputs
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const blockImageUploadRef = useRef<HTMLInputElement | null>(null);
@@ -197,13 +205,33 @@ export default function StoryWorkspacePage({
   const loadProjectData = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/projects/${projectId}`);
-      if (!res.ok) throw new Error("โหลดข้อมูลโปรเจกต์ไม่สำเร็จ");
-      const data = await res.json();
+      const [projRes, collabRes] = await Promise.all([
+        fetch(`/api/projects/${projectId}`),
+        fetch(`/api/projects/${projectId}/collaborators`),
+      ]);
+
+      if (!projRes.ok) throw new Error("โหลดข้อมูลโปรเจกต์ไม่สำเร็จ");
+      const data = await projRes.json();
 
       setProject(data.project);
       setParts(data.parts || []);
       setCharacters(data.characters || []);
+
+      if (collabRes.ok) {
+        const cData = await collabRes.json();
+        setCollaborators(cData.collaborators || []);
+      }
+
+      // Initialize author persona
+      const savedAuthor = typeof window !== "undefined" ? localStorage.getItem(`author_persona_${projectId}`) : null;
+      const selfChar = (data.characters || []).find((c: any) => c.characterType === "self");
+      if (savedAuthor) {
+        setCurrentAuthorName(savedAuthor);
+      } else if (selfChar) {
+        setCurrentAuthorName(selfChar.realNickname || selfChar.name);
+      } else {
+        setCurrentAuthorName("ฉัน (ผู้แต่ง)");
+      }
 
       if (data.parts && data.parts.length > 0) {
         const firstPart = data.parts[0];
@@ -891,6 +919,7 @@ export default function StoryWorkspacePage({
           contentMarkdown: markdownToSave,
           dialogueBindings: JSON.stringify(localDialogueBindings),
           directorNote: directorsNote,
+          lastEditedBy: currentAuthorName || undefined,
         }),
       });
 
@@ -1089,6 +1118,77 @@ export default function StoryWorkspacePage({
           timelineScope={project.timelineScope}
         />
       )}
+
+      {/* ========================================================================= */}
+      {/* 0. CO-AUTHOR PERSONA & SQUAD COLLABORATION STATUS RIBBON                  */}
+      {/* ========================================================================= */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 shadow-md">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-xs font-bold text-slate-300 font-thai flex items-center gap-1.5">
+              <span>✍️ คุณกำลังแต่งในนาม:</span>
+            </span>
+
+            <select
+              value={currentAuthorName}
+              onChange={(e) => {
+                const val = e.target.value;
+                setCurrentAuthorName(val);
+                if (typeof window !== "undefined") {
+                  localStorage.setItem(`author_persona_${projectId}`, val);
+                }
+                toast.info(`สลับชื่อผู้แต่งเป็น: "${val}"`);
+              }}
+              className="bg-slate-950 border border-slate-700 hover:border-amber-400 rounded-lg px-3 py-1 text-xs text-amber-300 font-bold focus:outline-none focus:border-amber-400 cursor-pointer font-thai"
+            >
+              {characters
+                .filter((c) => c.characterType === "self")
+                .map((c) => (
+                  <option key={c.id} value={c.realNickname || c.name}>
+                    👑 {c.realNickname || c.name} (เจ้าของเรื่อง)
+                  </option>
+                ))}
+              {collaborators.map((collab) => (
+                <option key={collab.id} value={collab.nickname || collab.name}>
+                  🧑‍🤝‍🧑 {collab.name} {collab.nickname ? `(${collab.nickname})` : ""}
+                </option>
+              ))}
+              {characters
+                .filter((c) => c.characterType === "friend")
+                .map((c) => (
+                  <option key={c.id} value={c.realNickname || c.name}>
+                    🧑‍🤝‍🧑 {c.realNickname || c.name} (เพื่อนในแก๊ง)
+                  </option>
+                ))}
+              <option value="ผู้แต่งร่วม (Guest Author)">
+                ✏️ ผู้แต่งร่วม (Guest Author)
+              </option>
+            </select>
+          </div>
+
+          {activeScene?.lastEditedBy && (
+            <span className="text-[11px] font-thai text-slate-400 bg-slate-950/80 px-2.5 py-1 rounded-lg border border-slate-800">
+              ฉากนี้แก้ไขล่าสุดโดย: <strong className="text-amber-300">{activeScene.lastEditedBy}</strong>
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCollabModal(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500/20 to-sky-500/20 hover:from-amber-500/30 hover:to-sky-500/30 text-amber-300 hover:text-white border border-amber-500/30 text-xs font-bold font-thai transition-all shadow-sm active:scale-95"
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>👥 เชิญเพื่อนมาร่วมแต่ง / แชร์ลิงก์</span>
+            {collaborators.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500 text-slate-950 font-bold font-mono">
+                {collaborators.length}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
 
       {/* ========================================================================= */}
       {/* 1. SCENE & AUDIO CONTROL RIBBON (Sleek, unified, easy-to-use)             */}
@@ -2470,6 +2570,23 @@ export default function StoryWorkspacePage({
           onTrimSuccess={handleTrimSuccess}
         />
       )}
+
+      {/* Collaborator & Squad Co-Authors Modal */}
+      <CollaboratorModal
+        isOpen={showCollabModal}
+        onClose={() => setShowCollabModal(false)}
+        projectId={projectId}
+        projectTitle={project?.title || "Story Studio"}
+        universe={project?.universe || ""}
+        onCollaboratorChange={() => {
+          fetch(`/api/projects/${projectId}/collaborators`)
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.collaborators) setCollaborators(data.collaborators);
+            })
+            .catch(() => {});
+        }}
+      />
     </div>
   );
 }

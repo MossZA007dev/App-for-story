@@ -12,6 +12,7 @@ export const projects = sqliteTable("projects", {
   styleGuide: text("style_guide").default("dark fantasy cinematic painting, muted palette, dramatic lighting, film still, highly detailed"),
   targetSceneWords: integer("target_scene_words").default(1200),
   coverImage: text("cover_image").default(""),
+  shareCode: text("share_code").default(""),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -91,6 +92,7 @@ export const scenes = sqliteTable("scenes", {
   bgmUrl: text("bgm_url").default(""),
   bgmTitle: text("bgm_title").default(""),
   dialogueBindings: text("dialogue_bindings").default("{}"),
+  lastEditedBy: text("last_edited_by").default(""),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -147,6 +149,21 @@ export const images = sqliteTable("images", {
   createdAt: text("created_at").notNull(),
 });
 
+export const collaborators = sqliteTable("collaborators", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  nickname: text("nickname").default(""),
+  avatarUrl: text("avatar_url").default(""),
+  characterId: text("character_id"),
+  role: text("role", { enum: ["owner", "co_author", "editor", "viewer"] }).default("co_author"),
+  canEditScenes: integer("can_edit_scenes").default(1),
+  canUploadMedia: integer("can_upload_media").default(1),
+  canGenerateAi: integer("can_generate_ai").default(1),
+  lastActiveAt: text("last_active_at"),
+  createdAt: text("created_at").notNull(),
+});
+
 export const appSettings = sqliteTable("app_settings", {
   id: text("id").primaryKey(), // "global"
   anthropicApiKey: text("anthropic_api_key").default(""),
@@ -166,6 +183,14 @@ export const projectsRelations = relations(projects, ({ many }) => ({
   relationships: many(relationships),
   continuityLedgers: many(continuityLedgers),
   images: many(images),
+  collaborators: many(collaborators),
+}));
+
+export const collaboratorsRelations = relations(collaborators, ({ one }) => ({
+  project: one(projects, {
+    fields: [collaborators.projectId],
+    references: [projects.id],
+  }),
 }));
 
 export const charactersRelations = relations(characters, ({ one, many }) => ({

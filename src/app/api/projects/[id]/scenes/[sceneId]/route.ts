@@ -15,6 +15,7 @@ const UpdateSceneSchema = z.object({
   bgmUrl: z.string().optional(),
   bgmTitle: z.string().optional(),
   dialogueBindings: z.string().optional(),
+  lastEditedBy: z.string().optional(),
 });
 
 export async function GET(
@@ -113,6 +114,7 @@ export async function PUT(
         bgmUrl: validated.bgmUrl ?? currentScene.bgmUrl,
         bgmTitle: validated.bgmTitle ?? currentScene.bgmTitle,
         dialogueBindings: validated.dialogueBindings ?? currentScene.dialogueBindings,
+        lastEditedBy: validated.lastEditedBy ?? currentScene.lastEditedBy,
         wordCount,
         version: newVersion,
         updatedAt: now,

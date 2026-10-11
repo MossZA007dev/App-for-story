@@ -18,7 +18,17 @@ class AmbientSoundEngine {
     }
   }
 
-  public play(track: "wildfire" | "winter" | "war" | "shadows" = "wildfire") {
+  public play(
+    track:
+      | "wildfire"
+      | "winter"
+      | "war"
+      | "shadows"
+      | "heartbeat"
+      | "rain"
+      | "thunder"
+      | "blade" = "wildfire"
+  ) {
     try {
       this.stop();
       this.initContext();
@@ -27,7 +37,7 @@ class AmbientSoundEngine {
       const now = this.ctx.currentTime;
       this.masterGain = this.ctx.createGain();
       this.masterGain.gain.setValueAtTime(0, now);
-      this.masterGain.gain.linearRampToValueAtTime(this.currentVolume, now + 2);
+      this.masterGain.gain.linearRampToValueAtTime(this.currentVolume, now + 1.2);
       this.masterGain.connect(this.ctx.destination);
 
       if (track === "wildfire") {
@@ -36,8 +46,16 @@ class AmbientSoundEngine {
         this.createWinterTheme(now);
       } else if (track === "war") {
         this.createWarTheme(now);
-      } else {
+      } else if (track === "shadows") {
         this.createShadowsTheme(now);
+      } else if (track === "heartbeat") {
+        this.createHeartbeatTheme(now);
+      } else if (track === "rain") {
+        this.createRainTheme(now);
+      } else if (track === "thunder") {
+        this.createThunderTheme(now);
+      } else if (track === "blade") {
+        this.createBladeTheme(now);
       }
 
       this.isRunning = true;
@@ -224,6 +242,127 @@ class AmbientSoundEngine {
     osc2.start(now);
 
     this.nodes.push(osc, osc2);
+  }
+
+  private createHeartbeatTheme(now: number) {
+    if (!this.ctx || !this.masterGain) return;
+
+    // Heartbeat pulse: Low frequency double thump (lub-dub)
+    const osc = this.ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(55, now);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.001, now);
+
+    // Create periodic pulses
+    const bpmInterval = 1.2;
+    for (let t = 0; t < 120; t += bpmInterval) {
+      const beatTime = now + t;
+      // First thump (lub)
+      gain.gain.setValueAtTime(0.001, beatTime);
+      gain.gain.linearRampToValueAtTime(0.5, beatTime + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, beatTime + 0.22);
+      // Second thump (dub)
+      gain.gain.setValueAtTime(0.001, beatTime + 0.28);
+      gain.gain.linearRampToValueAtTime(0.38, beatTime + 0.33);
+      gain.gain.exponentialRampToValueAtTime(0.001, beatTime + 0.5);
+    }
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(now);
+    this.nodes.push(osc);
+  }
+
+  private createRainTheme(now: number) {
+    if (!this.ctx || !this.masterGain) return;
+
+    // Filtered pink noise for continuous rain
+    const bufferSize = this.ctx.sampleRate * 2;
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    let b0 = 0, b1 = 0, b2 = 0;
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + white * 0.0555179;
+      b1 = 0.99332 * b1 + white * 0.0750759;
+      b2 = 0.96900 * b2 + white * 0.1538520;
+      output[i] = (b0 + b1 + b2) * 0.12;
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    noise.loop = true;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(850, now);
+    filter.Q.setValueAtTime(1.2, now);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.3, now);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+    noise.start(now);
+    this.nodes.push(noise);
+  }
+
+  private createThunderTheme(now: number) {
+    if (!this.ctx || !this.masterGain) return;
+
+    // Low dramatic thunder rumble
+    const bufferSize = this.ctx.sampleRate * 3;
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = (Math.random() * 2 - 1) * 0.4;
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(160, now);
+    filter.frequency.exponentialRampToValueAtTime(45, now + 3);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.6, now + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 3.5);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+    noise.start(now);
+    this.nodes.push(noise);
+  }
+
+  private createBladeTheme(now: number) {
+    if (!this.ctx || !this.masterGain) return;
+
+    // Metallic unsheathe scrape sound
+    const osc = this.ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(1400, now);
+    osc.frequency.exponentialRampToValueAtTime(3200, now + 0.35);
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(2600, now);
+    filter.Q.setValueAtTime(8, now);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.35, now + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(now);
+    this.nodes.push(osc);
   }
 
   public setVolume(vol: number) {

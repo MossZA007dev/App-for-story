@@ -33,6 +33,8 @@ import { ambientSound } from "@/lib/audio/ambientSynth";
 import {
   parseSceneToDialogueBlocks,
   resolveImageForDialogueIndex,
+  resolveAudioForDialogueIndex,
+  getAudioMoodLabel,
   DialogueBlock,
 } from "@/lib/story/dialogueParser";
 
@@ -114,7 +116,15 @@ interface CharacterItem {
   chosenRole?: string;
 }
 
-type AudioTrack = "wildfire" | "winter" | "war" | "shadows";
+type AudioTrack =
+  | "wildfire"
+  | "winter"
+  | "war"
+  | "shadows"
+  | "heartbeat"
+  | "rain"
+  | "thunder"
+  | "blade";
 
 export default function NovelReaderPage({
   params,
@@ -289,6 +299,10 @@ export default function NovelReaderPage({
           winter: "ลมเหมันต์ (Winter Winds)",
           war: "มหากาพย์ศึก (War Drums)",
           shadows: "เงาทมิฬ (Shadows Ethereal)",
+          heartbeat: "หัวใจเต้น (Heartbeat Tension)",
+          rain: "สายฝน (Rain & Melancholy)",
+          thunder: "ฟ้าผ่า (Thunder Impact)",
+          blade: "ชักดาบ (Blade Unsheathe)",
         };
         toast.success(`กำลังเล่นเพลง: ${trackLabels[currentTrack]}`);
       }
@@ -311,6 +325,10 @@ export default function NovelReaderPage({
       winter: "ลมเหมันต์ (Winter Winds)",
       war: "มหากาพย์ศึก (War Drums)",
       shadows: "เงาทมิฬ (Shadows Ethereal)",
+      heartbeat: "หัวใจเต้น (Heartbeat Tension)",
+      rain: "สายฝน (Rain & Melancholy)",
+      thunder: "ฟ้าผ่า (Thunder Impact)",
+      blade: "ชักดาบ (Blade Unsheathe)",
     };
     toast.success(`เล่นเสียงสังเคราะห์: ${trackLabels[track]}`);
   };
@@ -516,6 +534,56 @@ export default function NovelReaderPage({
     }
   }, [activeDialogueIndex, activeSceneImages, dialogueBindings, parsedBlocks.length]);
 
+  // Synchronize audio / mood automatically when activeDialogueIndex changes
+  useEffect(() => {
+    if (!activeScene || parsedBlocks.length === 0) return;
+
+    const audioResolved = resolveAudioForDialogueIndex(
+      activeDialogueIndex,
+      dialogueBindings,
+      activeScene.bgmUrl
+    );
+
+    // If this dialogue beat has an explicit audio binding, transition audio/mood smoothly
+    if (audioResolved.isDirectBinding) {
+      if (audioResolved.action === "stop") {
+        ambientSound.stop();
+        if (audioPlayerRef.current) audioPlayerRef.current.pause();
+        setIsCustomAudioPlaying(false);
+        setIsPlayingBgm(false);
+      } else if (audioResolved.action === "play_scene_bgm") {
+        if (activeScene.bgmUrl && audioPlayerRef.current) {
+          ambientSound.stop();
+          setIsPlayingBgm(false);
+          audioPlayerRef.current.src = activeScene.bgmUrl;
+          audioPlayerRef.current.volume = volume;
+          audioPlayerRef.current.play().catch(() => {});
+          setIsCustomAudioPlaying(true);
+          setAudioMode("custom");
+        }
+      } else if (audioResolved.action === "play_url") {
+        const directUrl = audioResolved.value.replace(/^url:/, "");
+        if (audioPlayerRef.current) {
+          ambientSound.stop();
+          setIsPlayingBgm(false);
+          audioPlayerRef.current.src = directUrl;
+          audioPlayerRef.current.volume = volume;
+          audioPlayerRef.current.play().catch(() => {});
+          setIsCustomAudioPlaying(true);
+          setAudioMode("custom");
+        }
+      } else if (audioResolved.action === "play_ambient") {
+        if (audioPlayerRef.current) audioPlayerRef.current.pause();
+        setIsCustomAudioPlaying(false);
+        ambientSound.setVolume(volume);
+        ambientSound.play(audioResolved.value as any);
+        setIsPlayingBgm(true);
+        setCurrentTrack(audioResolved.value as any);
+        setAudioMode("ambient");
+      }
+    }
+  }, [activeDialogueIndex, dialogueBindings, activeScene?.id, activeScene?.bgmUrl, volume, parsedBlocks.length]);
+
   // Smoothly scroll active dialogue block into view
   useEffect(() => {
     if (activeDialogueIndex >= 0 && dialogueBlockRefs.current[activeDialogueIndex]) {
@@ -681,7 +749,17 @@ export default function NovelReaderPage({
                           ? "❄️ ลมเหมันต์"
                           : currentTrack === "war"
                           ? "⚔️ กลองศึก"
-                          : "🌑 เงาทมิฬ"
+                          : currentTrack === "shadows"
+                          ? "🌑 เงาทมิฬ"
+                          : currentTrack === "heartbeat"
+                          ? "💓 หัวใจเต้น"
+                          : currentTrack === "rain"
+                          ? "🌧️ สายฝน"
+                          : currentTrack === "thunder"
+                          ? "⚡ ฟ้าผ่า"
+                          : currentTrack === "blade"
+                          ? "🗡️ ชักดาบ"
+                          : "🎵 บรรยากาศ"
                         : activeScene?.bgmUrl
                         ? `🎵 ${activeScene.bgmTitle || "เพลงประจำฉาก"}`
                         : "เปิดเพลง BGM"}
@@ -833,6 +911,46 @@ export default function NovelReaderPage({
                         }`}
                       >
                         🌑 เงาทมิฬ
+                      </button>
+                      <button
+                        onClick={() => handleSelectAmbientTrack("heartbeat")}
+                        className={`px-2 py-1.5 rounded-lg border text-left transition-colors ${
+                          audioMode === "ambient" && currentTrack === "heartbeat" && isPlayingBgm
+                            ? "bg-rose-500/20 text-rose-300 border-rose-500/50 font-bold"
+                            : "bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800"
+                        }`}
+                      >
+                        💓 หัวใจเต้น
+                      </button>
+                      <button
+                        onClick={() => handleSelectAmbientTrack("rain")}
+                        className={`px-2 py-1.5 rounded-lg border text-left transition-colors ${
+                          audioMode === "ambient" && currentTrack === "rain" && isPlayingBgm
+                            ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold"
+                            : "bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800"
+                        }`}
+                      >
+                        🌧️ สายฝน
+                      </button>
+                      <button
+                        onClick={() => handleSelectAmbientTrack("thunder")}
+                        className={`px-2 py-1.5 rounded-lg border text-left transition-colors ${
+                          audioMode === "ambient" && currentTrack === "thunder" && isPlayingBgm
+                            ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/50 font-bold"
+                            : "bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800"
+                        }`}
+                      >
+                        ⚡ ฟ้าผ่า
+                      </button>
+                      <button
+                        onClick={() => handleSelectAmbientTrack("blade")}
+                        className={`px-2 py-1.5 rounded-lg border text-left transition-colors ${
+                          audioMode === "ambient" && currentTrack === "blade" && isPlayingBgm
+                            ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 font-bold"
+                            : "bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800"
+                        }`}
+                      >
+                        🗡️ ชักดาบ
                       </button>
                     </div>
                   </div>
@@ -1188,6 +1306,7 @@ export default function NovelReaderPage({
               parsedBlocks.map((block, idx) => {
                 const isActive = idx === activeDialogueIndex;
                 const hasBinding = Boolean(dialogueBindings[String(idx)]);
+                const assignedAudioVal = dialogueBindings[`audio_${idx}`];
 
                 // 1. SOUND EFFECT ROW (Centered atmospheric text)
                 if (block.type === "sound") {
@@ -1204,7 +1323,15 @@ export default function NovelReaderPage({
                           : "text-slate-300 opacity-80 hover:opacity-100 hover:bg-black/20"
                       }`}
                     >
-                      {block.text}
+                      <div>{block.text}</div>
+                      {assignedAudioVal && (
+                        <div className="flex justify-center mt-1.5">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/40 inline-flex items-center gap-1 shadow-sm">
+                            <Music className="w-2.5 h-2.5" />
+                            <span>{getAudioMoodLabel(assignedAudioVal)}</span>
+                          </span>
+                        </div>
+                      )}
                     </div>
                   );
                 }
@@ -1291,6 +1418,18 @@ export default function NovelReaderPage({
                             <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
                               <Sparkles className="w-2.5 h-2.5" />
                               <span>สลับภาพ</span>
+                            </span>
+                          )}
+                          {assignedAudioVal && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1" title="เปลี่ยนอารมณ์เพลง/เสียง">
+                              <Music className="w-2.5 h-2.5" />
+                              <span>{getAudioMoodLabel(assignedAudioVal)}</span>
+                            </span>
+                          )}
+                          {assignedAudioVal && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1" title="เปลี่ยนอารมณ์เพลง/เสียง">
+                              <Music className="w-2.5 h-2.5" />
+                              <span>{getAudioMoodLabel(assignedAudioVal)}</span>
                             </span>
                           )}
                         </div>

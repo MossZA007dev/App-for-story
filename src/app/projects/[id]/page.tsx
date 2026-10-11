@@ -55,6 +55,9 @@ import {
   splitMultiSceneScript,
   blocksToMarkdown,
   resolveImageForDialogueIndex,
+  resolveAudioForDialogueIndex,
+  getAudioMoodLabel,
+  AUDIO_MOOD_OPTIONS,
   autoDistributeDialogueImages,
   DialogueBlock,
   CharacterMeta,
@@ -884,6 +887,64 @@ export default function StoryWorkspacePage({
     toast.success(imageId ? `ผูกภาพกับประโยค #${index + 1} เรียบร้อย` : `ยกเลิกการผูกภาพประโยค #${index + 1}`);
   };
 
+  // Assign audio / mood change to a specific dialogue beat
+  const handleAssignBlockAudio = (index: number, audioValue: string) => {
+    const updated = { ...localDialogueBindings };
+    const audioKey = `audio_${index}`;
+
+    if (!audioValue) {
+      delete updated[audioKey];
+      toast.info(`ยกเลิกอารมณ์เพลงประโยค #${index + 1}`);
+    } else {
+      updated[audioKey] = audioValue;
+      handlePreviewAudioBinding(audioValue);
+      const label = getAudioMoodLabel(audioValue);
+      toast.success(`ผูกอารมณ์ "${label}" กับประโยค #${index + 1} เรียบร้อย!`);
+    }
+
+    setLocalDialogueBindings(updated);
+    setHasUnsavedChanges(true);
+  };
+
+  // Preview an audio binding immediately in Studio
+  const handlePreviewAudioBinding = (audioValue: string) => {
+    if (!audioValue || audioValue === "stop") {
+      ambientSound.stop();
+      if (studioAudioPlayerRef.current) studioAudioPlayerRef.current.pause();
+      setIsAudioPlaying(false);
+      return;
+    }
+
+    if (audioValue === "scene_bgm") {
+      if (activeScene?.bgmUrl && studioAudioPlayerRef.current) {
+        ambientSound.stop();
+        studioAudioPlayerRef.current.src = activeScene.bgmUrl;
+        studioAudioPlayerRef.current.volume = audioVolume;
+        studioAudioPlayerRef.current.play().catch(() => {});
+        setIsAudioPlaying(true);
+      }
+      return;
+    }
+
+    if (audioValue.startsWith("url:")) {
+      const urlStr = audioValue.replace(/^url:/, "");
+      if (studioAudioPlayerRef.current) {
+        ambientSound.stop();
+        studioAudioPlayerRef.current.src = urlStr;
+        studioAudioPlayerRef.current.volume = audioVolume;
+        studioAudioPlayerRef.current.play().catch(() => {});
+        setIsAudioPlaying(true);
+      }
+      return;
+    }
+
+    // Ambient Synth Theme
+    if (studioAudioPlayerRef.current) studioAudioPlayerRef.current.pause();
+    ambientSound.setVolume(audioVolume);
+    ambientSound.play(audioValue as any);
+    setIsAudioPlaying(true);
+  };
+
   const handleAddBlock = (
     type: "self" | "friend" | "narration" | "sound",
     insertAtIdx?: number
@@ -962,14 +1023,23 @@ export default function StoryWorkspacePage({
       return next;
     });
 
-    // Re-index bindings
+    // Re-index bindings (handles both image bindings "0", "1" and audio bindings "audio_0", "audio_1")
     const updatedBindings: Record<string, string> = {};
     Object.keys(localDialogueBindings).forEach((key) => {
-      const numKey = parseInt(key, 10);
-      if (numKey < index) {
-        updatedBindings[key] = localDialogueBindings[key];
-      } else if (numKey > index) {
-        updatedBindings[String(numKey - 1)] = localDialogueBindings[key];
+      if (key.startsWith("audio_")) {
+        const numKey = parseInt(key.replace("audio_", ""), 10);
+        if (numKey < index) {
+          updatedBindings[key] = localDialogueBindings[key];
+        } else if (numKey > index) {
+          updatedBindings[`audio_${numKey - 1}`] = localDialogueBindings[key];
+        }
+      } else {
+        const numKey = parseInt(key, 10);
+        if (numKey < index) {
+          updatedBindings[key] = localDialogueBindings[key];
+        } else if (numKey > index) {
+          updatedBindings[String(numKey - 1)] = localDialogueBindings[key];
+        }
       }
     });
     setLocalDialogueBindings(updatedBindings);
@@ -989,7 +1059,7 @@ export default function StoryWorkspacePage({
       return next;
     });
 
-    // Swap bindings
+    // Swap bindings for both image and audio
     const updatedBindings = { ...localDialogueBindings };
     const curVal = updatedBindings[String(index)];
     const targetVal = updatedBindings[String(targetIdx)];
@@ -997,6 +1067,14 @@ export default function StoryWorkspacePage({
     else delete updatedBindings[String(targetIdx)];
     if (targetVal) updatedBindings[String(index)] = targetVal;
     else delete updatedBindings[String(index)];
+
+    const curAudio = updatedBindings[`audio_${index}`];
+    const targetAudio = updatedBindings[`audio_${targetIdx}`];
+    if (curAudio) updatedBindings[`audio_${targetIdx}`] = curAudio;
+    else delete updatedBindings[`audio_${targetIdx}`];
+    if (targetAudio) updatedBindings[`audio_${index}`] = targetAudio;
+    else delete updatedBindings[`audio_${index}`];
+
     setLocalDialogueBindings(updatedBindings);
 
     setHasUnsavedChanges(true);
@@ -1375,12 +1453,16 @@ export default function StoryWorkspacePage({
     }
   };
 
-  // Click dialogue row to preview its bound image
+  // Click dialogue row to preview its bound image and audio mood
   const handleSelectDialogueRow = (index: number) => {
     setActiveBlockIndex(index);
     const resolved = resolveImageForDialogueIndex(index, localDialogueBindings, sceneImages);
     if (resolved.imageIndex >= 0) {
       setSelectedImageIndex(resolved.imageIndex);
+    }
+    const audioResolved = resolveAudioForDialogueIndex(index, localDialogueBindings, activeScene?.bgmUrl);
+    if (audioResolved.isDirectBinding) {
+      handlePreviewAudioBinding(audioResolved.value);
     }
   };
 
@@ -2212,6 +2294,7 @@ export default function StoryWorkspacePage({
                 const isActive = idx === activeBlockIndex;
                 const assignedImageId = localDialogueBindings[String(idx)];
                 const assignedImage = sceneImages.find((img) => img.id === assignedImageId);
+                const assignedAudioValue = localDialogueBindings[`audio_${idx}`];
 
                 // 1. SOUND EFFECT ROW (Centered atmospheric text)
                 if (block.type === "sound") {
@@ -2234,7 +2317,8 @@ export default function StoryWorkspacePage({
                       />
 
                       {/* Line Tools Bar on Hover / Active */}
-                      <div className="flex items-center justify-center gap-1.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-center gap-1.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap">
+                        {/* Image Select */}
                         <select
                           value={assignedImageId || ""}
                           onChange={(e) => handleAssignBlockImage(idx, e.target.value)}
@@ -2247,6 +2331,52 @@ export default function StoryWorkspacePage({
                             </option>
                           ))}
                         </select>
+
+                        {/* Audio / Mood Select */}
+                        <select
+                          value={assignedAudioValue || ""}
+                          onChange={(e) => {
+                            if (e.target.value === "__custom_url__") {
+                              const customUrl = window.prompt("กรุณาระบุลิงก์ไฟล์เสียง/เพลงภายนอก (MP3/WAV):");
+                              if (customUrl && customUrl.trim()) {
+                                handleAssignBlockAudio(idx, `url:${customUrl.trim()}`);
+                              }
+                            } else {
+                              handleAssignBlockAudio(idx, e.target.value);
+                            }
+                          }}
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-thai border focus:outline-none cursor-pointer ${
+                            assignedAudioValue
+                              ? "bg-purple-500/20 text-purple-300 border-purple-500/50 font-bold"
+                              : "bg-slate-900 text-slate-400 border-slate-700"
+                          }`}
+                          title="เปลี่ยนอารมณ์เพลง / เสียงประกอบ"
+                        >
+                          <option value="">🎶 คงเพลงเดิม</option>
+                          <optgroup label="บรรยากาศเสียงสังเคราะห์">
+                            {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "บรรยากาศ").map((o) => (
+                              <option key={o.id} value={o.id}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="เอฟเฟกต์เสียง">
+                            {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เอฟเฟกต์").map((o) => (
+                              <option key={o.id} value={o.id}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="ควบคุมเพลง">
+                            {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เพลง").map((o) => (
+                              <option key={o.id} value={o.id}>
+                                {o.label}
+                              </option>
+                            ))}
+                            <option value="__custom_url__">+ 🎵 ลิงก์เพลงภายนอก...</option>
+                          </optgroup>
+                        </select>
+
                         <button
                           onClick={() => handleMoveBlock(idx, "up")}
                           disabled={idx === 0}
@@ -2271,6 +2401,38 @@ export default function StoryWorkspacePage({
                           <Trash2 className="w-2.5 h-2.5" />
                         </button>
                       </div>
+
+                      {/* Assigned Mood Audio Preview Pill */}
+                      {assignedAudioValue && (
+                        <div className="flex items-center justify-center gap-1.5 mt-1.5">
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-purple-500/15 border border-purple-500/35 text-[10px] text-purple-300 font-thai">
+                            <Music className="w-3 h-3 text-purple-400" />
+                            <span>{getAudioMoodLabel(assignedAudioValue)}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handlePreviewAudioBinding(assignedAudioValue);
+                              }}
+                              className="p-0.5 hover:text-white"
+                              title="ทดลองฟังเสียงนี้"
+                            >
+                              <Volume2 className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAssignBlockAudio(idx, "");
+                              }}
+                              className="p-0.5 hover:text-red-400"
+                              title="ยกเลิกเพลง"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        </div>
+                      )}
                     </div>
                   );
                 }
@@ -2409,6 +2571,64 @@ export default function StoryWorkspacePage({
                               </button>
                             )}
                           </div>
+
+                          {/* Audio Mood Binding Dropdown */}
+                          <div className="flex items-center gap-1">
+                            <select
+                              value={assignedAudioValue || ""}
+                              onChange={(e) => {
+                                if (e.target.value === "__custom_url__") {
+                                  const customUrl = window.prompt("กรุณาระบุลิงก์ไฟล์เสียง/เพลงภายนอก (MP3/WAV/Direct URL):");
+                                  if (customUrl && customUrl.trim()) {
+                                    handleAssignBlockAudio(idx, `url:${customUrl.trim()}`);
+                                  }
+                                } else {
+                                  handleAssignBlockAudio(idx, e.target.value);
+                                }
+                              }}
+                              className={`rounded-lg px-2 py-0.5 text-[10px] font-thai border focus:outline-none cursor-pointer ${
+                                assignedAudioValue
+                                  ? "bg-purple-500/20 text-purple-300 border-purple-500/50 font-bold"
+                                  : "bg-slate-900 text-slate-400 border-slate-700"
+                              }`}
+                              title="เปลี่ยนอารมณ์เพลง / เสียงประกอบในบทนี้"
+                            >
+                              <option value="">🎶 คงเพลงเดิม</option>
+                              <optgroup label="บรรยากาศเสียงสังเคราะห์">
+                                {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "บรรยากาศ").map((o) => (
+                                  <option key={o.id} value={o.id}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </optgroup>
+                              <optgroup label="เอฟเฟกต์เสียง">
+                                {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เอฟเฟกต์").map((o) => (
+                                  <option key={o.id} value={o.id}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </optgroup>
+                              <optgroup label="ควบคุมเพลง">
+                                {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เพลง").map((o) => (
+                                  <option key={o.id} value={o.id}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                                <option value="__custom_url__">+ 🎵 ใส่ลิงก์เพลงภายนอก...</option>
+                              </optgroup>
+                            </select>
+
+                            {assignedAudioValue && (
+                              <button
+                                type="button"
+                                onClick={() => handleAssignBlockAudio(idx, "")}
+                                className="p-0.5 rounded text-slate-400 hover:text-red-400"
+                                title="ยกเลิกการผูกเพลง"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         {/* Editable Speech Text */}
@@ -2421,24 +2641,57 @@ export default function StoryWorkspacePage({
                           }`}
                         />
 
-                        {/* Assigned Image Miniature Preview Tag */}
-                        {assignedImage && (
+                        {/* Assigned Miniature Preview Tags (Image & Audio Mood) */}
+                        {(assignedImage || assignedAudioValue) && (
                           <div
-                            className={`flex items-center gap-1.5 pt-0.5 ${
+                            className={`flex items-center gap-2 pt-0.5 flex-wrap ${
                               block.side === "right" ? "justify-end" : "justify-start"
                             }`}
                           >
-                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300 font-thai">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={assignedImage.filePath}
-                                alt=""
-                                className="w-4 h-4 rounded object-cover"
-                              />
-                              <span className="truncate max-w-[140px]">
-                                {assignedImage.caption || "ภาพประกอบบทนี้"}
+                            {assignedImage && (
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300 font-thai">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={assignedImage.filePath}
+                                  alt=""
+                                  className="w-4 h-4 rounded object-cover"
+                                />
+                                <span className="truncate max-w-[140px]">
+                                  {assignedImage.caption || "ภาพประกอบบทนี้"}
+                                </span>
                               </span>
-                            </span>
+                            )}
+
+                            {assignedAudioValue && (
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-purple-500/15 border border-purple-500/35 text-[10px] text-purple-300 font-thai">
+                                <Music className="w-3 h-3 text-purple-400" />
+                                <span className="truncate max-w-[180px]">
+                                  {getAudioMoodLabel(assignedAudioValue)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePreviewAudioBinding(assignedAudioValue);
+                                  }}
+                                  className="p-0.5 hover:text-white rounded hover:bg-purple-600/30"
+                                  title="ทดลองฟังเสียงนี้ทันที"
+                                >
+                                  <Volume2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAssignBlockAudio(idx, "");
+                                  }}
+                                  className="p-0.5 hover:text-red-400 rounded hover:bg-purple-600/30"
+                                  title="ยกเลิกเพลงในบทนี้"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>

@@ -451,3 +451,102 @@ export function blocksToMarkdown(blocks: DialogueBlock[]): string {
     .filter(Boolean)
     .join("\n\n");
 }
+
+export interface AudioBindingResult {
+  action: "play_ambient" | "play_scene_bgm" | "play_url" | "stop" | "none";
+  value: string;
+  label: string;
+  isDirectBinding: boolean;
+  boundBlockIndex?: number;
+}
+
+export const AUDIO_MOOD_OPTIONS: { id: string; label: string; group: string }[] = [
+  { id: "wildfire", label: "🔥 เพลิงป่า / ระทึกขวัญ (Wildfire Drone)", group: "บรรยากาศ" },
+  { id: "winter", label: "❄️ ลมเหมันต์ / เงียบเหงา (Winter Winds)", group: "บรรยากาศ" },
+  { id: "war", label: "⚔️ มหากาพย์ศึก / ตื่นเต้น (War Drums)", group: "บรรยากาศ" },
+  { id: "shadows", label: "🌑 เงาทมิฬ / ลึกลับ (Shadows Ethereal)", group: "บรรยากาศ" },
+  { id: "heartbeat", label: "💓 หัวใจเต้น / ตึงเครียด (Heartbeat Tension)", group: "บรรยากาศ" },
+  { id: "rain", label: "🌧️ สายฝน / หม่นหมอง (Rain & Melancholy)", group: "บรรยากาศ" },
+  { id: "thunder", label: "⚡ ฟ้าผ่า / สะเทือนขวัญ (Thunder Impact)", group: "เอฟเฟกต์" },
+  { id: "blade", label: "🗡️ ชักดาบ / คมดาบ (Blade Unsheathe)", group: "เอฟเฟกต์" },
+  { id: "scene_bgm", label: "🎶 กลับไปเล่นเพลงประจำฉาก", group: "เพลง" },
+  { id: "stop", label: "🔇 ดับเพลง / เงียบกริบ (Cut to Silence)", group: "เพลง" },
+];
+
+export function getAudioMoodLabel(value: string): string {
+  if (!value) return "";
+  if (value.startsWith("url:")) {
+    const urlStr = value.replace(/^url:/, "");
+    return `🎵 ลิงก์เพลง: ${urlStr.slice(0, 24)}...`;
+  }
+  const found = AUDIO_MOOD_OPTIONS.find((opt) => opt.id === value);
+  return found ? found.label : value;
+}
+
+/**
+ * Resolves which audio/mood should be playing at a given active dialogue index.
+ * If the current index has an audio binding, activates it.
+ * Otherwise, scans backwards to find the most recent audio binding.
+ * Falls back to scene BGM if available.
+ */
+export function resolveAudioForDialogueIndex(
+  activeIndex: number,
+  bindings: Record<string, string>,
+  sceneBgmUrl?: string | null
+): AudioBindingResult {
+  if (activeIndex < 0) {
+    return { action: "none", value: "", label: "", isDirectBinding: false };
+  }
+
+  // 1. Direct binding on activeIndex
+  const directVal = bindings[`audio_${activeIndex}`];
+  if (directVal) {
+    return {
+      action:
+        directVal === "stop"
+          ? "stop"
+          : directVal === "scene_bgm"
+          ? "play_scene_bgm"
+          : directVal.startsWith("url:")
+          ? "play_url"
+          : "play_ambient",
+      value: directVal,
+      label: getAudioMoodLabel(directVal),
+      isDirectBinding: true,
+      boundBlockIndex: activeIndex,
+    };
+  }
+
+  // 2. Look backwards for the most recent audio binding
+  for (let i = activeIndex - 1; i >= 0; i--) {
+    const val = bindings[`audio_${i}`];
+    if (val) {
+      return {
+        action:
+          val === "stop"
+            ? "stop"
+            : val === "scene_bgm"
+            ? "play_scene_bgm"
+            : val.startsWith("url:")
+            ? "play_url"
+            : "play_ambient",
+        value: val,
+        label: getAudioMoodLabel(val),
+        isDirectBinding: false,
+        boundBlockIndex: i,
+      };
+    }
+  }
+
+  // 3. Fallback: scene BGM if available
+  if (sceneBgmUrl) {
+    return {
+      action: "play_scene_bgm",
+      value: "scene_bgm",
+      label: "เพลงประจำฉาก",
+      isDirectBinding: false,
+    };
+  }
+
+  return { action: "none", value: "", label: "", isDirectBinding: false };
+}

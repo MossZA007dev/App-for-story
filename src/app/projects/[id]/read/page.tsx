@@ -172,6 +172,17 @@ export default function NovelReaderPage({
     (audioMode === "custom" && isCustomAudioPlaying) ||
     (audioMode === "ambient" && isPlayingBgm);
 
+  const [projectSfxList, setProjectSfxList] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch(`/api/projects/${projectId}/sfx`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.soundEffects) setProjectSfxList(d.soundEffects);
+      })
+      .catch(() => {});
+  }, [projectId]);
+
   // Load scene images & details
   const loadSceneImages = async (sceneId: string) => {
     try {
@@ -738,6 +749,21 @@ export default function NovelReaderPage({
         setIsPlayingBgm(true);
         setCurrentTrack(audioResolved.value as any);
         setAudioMode("ambient");
+      } else if (audioResolved.action === "play_sfx") {
+        const sfxId = audioResolved.value.replace(/^sfx:/, "");
+        const sfx = projectSfxList.find((s) => s.id === sfxId);
+        if (sfx) {
+          if (sfx.audioUrl.startsWith("synth:")) {
+            ambientSound.setVolume(isMuted ? 0 : (sfx.volume ?? 0.8) * volume);
+            ambientSound.play(sfx.audioUrl.replace(/^synth:/, "") as any);
+          } else {
+            try {
+              const snd = new Audio(sfx.audioUrl);
+              snd.volume = isMuted ? 0 : (sfx.volume ?? 0.8) * volume;
+              snd.play().catch(() => {});
+            } catch {}
+          }
+        }
       }
     }
   }, [activeDialogueIndex, dialogueBindings, activeScene?.id, activeScene?.bgmUrl, volume, isMuted, parsedBlocks.length]);

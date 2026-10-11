@@ -13,6 +13,7 @@ import {
   Flame,
   BookOpen,
   Share2,
+  Volume2,
 } from "lucide-react";
 import { CollaboratorModal } from "@/components/collaboration/CollaboratorModal";
 
@@ -48,6 +49,7 @@ export function ProjectHeader({
     { href: `/projects/${projectId}`, label: "Studio แก้ไข & สตรีมฉาก", icon: PenTool },
     { href: `/projects/${projectId}/characters`, label: "Character Bible", icon: Users },
     { href: `/projects/${projectId}/images`, label: "Image Studio", icon: ImageIcon },
+    { href: `/projects/${projectId}/sfx`, label: "🔊 คลังเสียง SFX (Sound Vault)", icon: Volume2 },
     { href: `/projects/${projectId}/timeline`, label: "Timeline & Relations", icon: GitBranch },
   ];
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, use } from "react";
+import { useEffect, useState, useRef, use, useMemo } from "react";
 import Link from "next/link";
 import { ProjectHeader } from "@/components/projects/ProjectHeader";
 import ReactMarkdown from "react-markdown";
@@ -202,6 +202,14 @@ export default function StoryWorkspacePage({
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [showAudioModal, setShowAudioModal] = useState(false);
   const [showMiniVideoPlayer, setShowMiniVideoPlayer] = useState(false);
+  const [projectSfxList, setProjectSfxList] = useState<any[]>([]);
+  const customSfxMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const sfx of projectSfxList) {
+      map[sfx.id] = sfx.name;
+    }
+    return map;
+  }, [projectSfxList]);
 
   // Streaming State (Anthropic Claude)
   const [isStreaming, setIsStreaming] = useState(false);
@@ -251,6 +259,14 @@ export default function StoryWorkspacePage({
         const cData = await collabRes.json();
         setCollaborators(cData.collaborators || []);
       }
+
+      // Fetch SFX list
+      fetch(`/api/projects/${projectId}/sfx`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.soundEffects) setProjectSfxList(d.soundEffects);
+        })
+        .catch(() => {});
 
       // Initialize author persona
       const savedAuthor = typeof window !== "undefined" ? localStorage.getItem(`author_persona_${projectId}`) : null;
@@ -1193,6 +1209,25 @@ export default function StoryWorkspacePage({
       return;
     }
 
+    if (audioValue.startsWith("sfx:")) {
+      const sfxId = audioValue.replace(/^sfx:/, "");
+      const sfx = projectSfxList.find((s) => s.id === sfxId);
+      if (sfx) {
+        if (sfx.audioUrl.startsWith("synth:")) {
+          ambientSound.setVolume(isAudioMuted ? 0 : (sfx.volume ?? 0.8) * audioVolume);
+          ambientSound.play(sfx.audioUrl.replace(/^synth:/, "") as any);
+        } else {
+          try {
+            const snd = new Audio(sfx.audioUrl);
+            snd.volume = isAudioMuted ? 0 : (sfx.volume ?? 0.8) * audioVolume;
+            snd.play().catch(() => {});
+          } catch {}
+        }
+        toast.info(`ทดสอบเสียง SFX: "${sfx.name}"`);
+      }
+      return;
+    }
+
     // Ambient Synth Theme
     if (studioAudioPlayerRef.current) studioAudioPlayerRef.current.pause();
     if (youtubeIframeRef.current) {
@@ -1729,7 +1764,7 @@ export default function StoryWorkspacePage({
     if (resolved.imageIndex >= 0) {
       setSelectedImageIndex(resolved.imageIndex);
     }
-    const audioResolved = resolveAudioForDialogueIndex(index, localDialogueBindings, activeScene?.bgmUrl);
+    const audioResolved = resolveAudioForDialogueIndex(index, localDialogueBindings, activeScene?.bgmUrl, customSfxMap);
     if (audioResolved.isDirectBinding) {
       handlePreviewAudioBinding(audioResolved.value);
     }
@@ -2788,6 +2823,8 @@ export default function StoryWorkspacePage({
                               if (customUrl && customUrl.trim()) {
                                 handleAssignBlockAudio(idx, `url:${customUrl.trim()}`);
                               }
+                            } else if (e.target.value === "__open_sfx_tab__") {
+                              window.open(`/projects/${projectId}/sfx`, "_blank");
                             } else {
                               handleAssignBlockAudio(idx, e.target.value);
                             }
@@ -2807,20 +2844,26 @@ export default function StoryWorkspacePage({
                               </option>
                             ))}
                           </optgroup>
-                          <optgroup label="เอฟเฟกต์เสียง">
+                          <optgroup label="เอฟเฟกต์เสียง (SFX)">
                             {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เอฟเฟกต์").map((o) => (
                               <option key={o.id} value={o.id}>
                                 {o.label}
                               </option>
                             ))}
+                            {projectSfxList.map((sfx) => (
+                              <option key={sfx.id} value={`sfx:${sfx.id}`}>
+                                🔊 {sfx.name}
+                              </option>
+                            ))}
                           </optgroup>
-                          <optgroup label="ควบคุมเพลง">
+                          <optgroup label="ควบคุมเพลง & คลังเสียง">
                             {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เพลง").map((o) => (
                               <option key={o.id} value={o.id}>
                                 {o.label}
                               </option>
                             ))}
                             <option value="__custom_url__">+ 🎵 ลิงก์เพลงภายนอก...</option>
+                            <option value="__open_sfx_tab__">➕ 🔊 ไปที่คลังเสียง SFX (อัปโหลดเพิ่ม)...</option>
                           </optgroup>
                         </select>
 
@@ -3056,6 +3099,8 @@ export default function StoryWorkspacePage({
                                   if (customUrl && customUrl.trim()) {
                                     handleAssignBlockAudio(idx, `url:${customUrl.trim()}`);
                                   }
+                                } else if (e.target.value === "__open_sfx_tab__") {
+                                  window.open(`/projects/${projectId}/sfx`, "_blank");
                                 } else {
                                   handleAssignBlockAudio(idx, e.target.value);
                                 }
@@ -3072,20 +3117,26 @@ export default function StoryWorkspacePage({
                                   </option>
                                 ))}
                               </optgroup>
-                              <optgroup label="เอฟเฟกต์เสียง">
+                              <optgroup label="เอฟเฟกต์เสียง (SFX)">
                                 {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เอฟเฟกต์").map((o) => (
                                   <option key={o.id} value={o.id}>
                                     {o.label}
                                   </option>
                                 ))}
+                                {projectSfxList.map((sfx) => (
+                                  <option key={sfx.id} value={`sfx:${sfx.id}`}>
+                                    🔊 {sfx.name}
+                                  </option>
+                                ))}
                               </optgroup>
-                              <optgroup label="ควบคุมเพลง">
+                              <optgroup label="ควบคุมเพลง & คลังเสียง">
                                 {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เพลง").map((o) => (
                                   <option key={o.id} value={o.id}>
                                     {o.label}
                                   </option>
                                 ))}
                                 <option value="__custom_url__">+ 🎵 ใส่ลิงก์เพลงภายนอก...</option>
+                                <option value="__open_sfx_tab__">➕ 🔊 ไปที่คลังเสียง SFX (อัปโหลดเพิ่ม)...</option>
                               </optgroup>
                             </select>
                             <button
@@ -3104,7 +3155,7 @@ export default function StoryWorkspacePage({
                               className="cursor-pointer hover:underline truncate max-w-[120px] sm:max-w-[160px]"
                               title="คลิกเพื่อเปลี่ยนอารมณ์เพลง/เสียง"
                             >
-                              🎶 {getAudioMoodLabel(assignedAudioValue)}
+                              🎶 {getAudioMoodLabel(assignedAudioValue, customSfxMap)}
                             </span>
                             <button
                               type="button"

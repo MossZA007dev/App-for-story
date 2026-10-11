@@ -489,7 +489,7 @@ export function blocksToMarkdown(blocks: DialogueBlock[]): string {
 }
 
 export interface AudioBindingResult {
-  action: "play_ambient" | "play_scene_bgm" | "play_url" | "stop" | "none";
+  action: "play_ambient" | "play_scene_bgm" | "play_url" | "play_sfx" | "stop" | "none";
   value: string;
   label: string;
   isDirectBinding: boolean;
@@ -509,11 +509,18 @@ export const AUDIO_MOOD_OPTIONS: { id: string; label: string; group: string }[] 
   { id: "stop", label: "🔇 ดับเพลง / เงียบกริบ (Cut to Silence)", group: "เพลง" },
 ];
 
-export function getAudioMoodLabel(value: string): string {
+export function getAudioMoodLabel(value: string, customSfxMap?: Record<string, string>): string {
   if (!value) return "";
   if (value.startsWith("url:")) {
     const urlStr = value.replace(/^url:/, "");
     return `🎵 ลิงก์เพลง: ${urlStr.slice(0, 24)}...`;
+  }
+  if (value.startsWith("sfx:")) {
+    const sfxId = value.replace(/^sfx:/, "");
+    if (customSfxMap && customSfxMap[sfxId]) {
+      return `🔊 ${customSfxMap[sfxId]}`;
+    }
+    return `🔊 เอฟเฟกต์เสียง SFX`;
   }
   const found = AUDIO_MOOD_OPTIONS.find((opt) => opt.id === value);
   return found ? found.label : value;
@@ -528,7 +535,8 @@ export function getAudioMoodLabel(value: string): string {
 export function resolveAudioForDialogueIndex(
   activeIndex: number,
   bindings: Record<string, string>,
-  sceneBgmUrl?: string | null
+  sceneBgmUrl?: string | null,
+  customSfxMap?: Record<string, string>
 ): AudioBindingResult {
   if (activeIndex < 0) {
     return { action: "none", value: "", label: "", isDirectBinding: false };
@@ -545,9 +553,11 @@ export function resolveAudioForDialogueIndex(
           ? "play_scene_bgm"
           : directVal.startsWith("url:")
           ? "play_url"
+          : directVal.startsWith("sfx:")
+          ? "play_sfx"
           : "play_ambient",
       value: directVal,
-      label: getAudioMoodLabel(directVal),
+      label: getAudioMoodLabel(directVal, customSfxMap),
       isDirectBinding: true,
       boundBlockIndex: activeIndex,
     };
@@ -565,9 +575,11 @@ export function resolveAudioForDialogueIndex(
             ? "play_scene_bgm"
             : val.startsWith("url:")
             ? "play_url"
+            : val.startsWith("sfx:")
+            ? "play_sfx"
             : "play_ambient",
         value: val,
-        label: getAudioMoodLabel(val),
+        label: getAudioMoodLabel(val, customSfxMap),
         isDirectBinding: false,
         boundBlockIndex: i,
       };

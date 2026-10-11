@@ -176,6 +176,21 @@ export const appSettings = sqliteTable("app_settings", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const soundEffects = sqliteTable("sound_effects", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  category: text("category").default("general"), // action, atmosphere, magic, horror, emotion, weapon, general
+  audioUrl: text("audio_url").notNull(),
+  sourceType: text("source_type", { enum: ["upload", "url", "synth"] }).default("upload"),
+  durationSeconds: real("duration_seconds").default(0),
+  volume: real("volume").default(0.8),
+  tags: text("tags").default("[]"),
+  description: text("description").default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
 // Relations
 export const projectsRelations = relations(projects, ({ many }) => ({
   characters: many(characters),
@@ -184,6 +199,14 @@ export const projectsRelations = relations(projects, ({ many }) => ({
   continuityLedgers: many(continuityLedgers),
   images: many(images),
   collaborators: many(collaborators),
+  soundEffects: many(soundEffects),
+}));
+
+export const soundEffectsRelations = relations(soundEffects, ({ one }) => ({
+  project: one(projects, {
+    fields: [soundEffects.projectId],
+    references: [projects.id],
+  }),
 }));
 
 export const collaboratorsRelations = relations(collaborators, ({ one }) => ({

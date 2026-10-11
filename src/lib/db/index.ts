@@ -259,6 +259,22 @@ export function initDatabase() {
       created_at TEXT NOT NULL,
       FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS sound_effects (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      category TEXT DEFAULT 'general',
+      audio_url TEXT NOT NULL,
+      source_type TEXT DEFAULT 'upload',
+      duration_seconds REAL DEFAULT 0,
+      volume REAL DEFAULT 0.8,
+      tags TEXT DEFAULT '[]',
+      description TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
   `);
 
   // Safe migrations for newly added columns

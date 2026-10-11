@@ -1,5 +1,5 @@
 import { db } from "./index";
-import { projects, characters, parts, continuityLedgers, abilities } from "./schema";
+import { projects, characters, parts, continuityLedgers, abilities, scenes, collaborators } from "./schema";
 import { DEFAULT_STORY_RULES } from "../templates/defaultStoryRules";
 import crypto from "crypto";
 
@@ -11,7 +11,7 @@ export function seedDemoProject() {
   }
 
   console.log("Seeding initial demo project: Game of Thrones Dark AU...");
-  const projectId = crypto.randomUUID();
+  const projectId = "678bba56-298f-4f65-9abc-8c6e9ef79156";
   const now = new Date().toISOString();
 
   db.insert(projects)
@@ -83,6 +83,8 @@ export function seedDemoProject() {
   const demoCharacters = [
     {
       name: "Jon Snow",
+      realNickname: "มอส",
+      characterType: "self" as const,
       gender: "ชาย",
       startMbti: "ISFP",
       currentMbti: "ISFP",
@@ -107,6 +109,8 @@ export function seedDemoProject() {
     },
     {
       name: "Daenerys Targaryen",
+      realNickname: "นนท์",
+      characterType: "friend" as const,
       gender: "หญิง",
       startMbti: "ENFJ",
       currentMbti: "ENFJ",
@@ -131,6 +135,8 @@ export function seedDemoProject() {
     },
     {
       name: "Tyrion Lannister",
+      realNickname: "ก้อย",
+      characterType: "friend" as const,
       gender: "ชาย",
       startMbti: "ENTP",
       currentMbti: "ENTP",
@@ -155,6 +161,8 @@ export function seedDemoProject() {
     },
     {
       name: "Arya Stark",
+      realNickname: "",
+      characterType: "canon" as const,
       gender: "หญิง",
       startMbti: "ISFP",
       currentMbti: "ISTP",
@@ -179,6 +187,8 @@ export function seedDemoProject() {
     },
     {
       name: "Jaime Lannister",
+      realNickname: "",
+      characterType: "canon" as const,
       gender: "ชาย",
       startMbti: "ESTP",
       currentMbti: "ESTP",
@@ -203,6 +213,8 @@ export function seedDemoProject() {
     },
     {
       name: "Melisandre",
+      realNickname: "",
+      characterType: "canon" as const,
       gender: "หญิง",
       startMbti: "INFJ",
       currentMbti: "INFJ",
@@ -234,6 +246,8 @@ export function seedDemoProject() {
         id: charId,
         projectId,
         name: char.name,
+        realNickname: char.realNickname,
+        characterType: char.characterType,
         gender: char.gender,
         startMbti: char.startMbti,
         currentMbti: char.currentMbti,
@@ -261,6 +275,81 @@ export function seedDemoProject() {
         .run();
     }
   }
+
+  // Insert default scenes
+  db.insert(scenes)
+    .values([
+      {
+        id: "abc5888f-116a-4da5-9229-46153700c48c",
+        partId: part1Id,
+        order: 1,
+        title: "ฉากที่ 1: เถ้าถ่านสีมรกตเหนืออ่าวแบล็กวอเตอร์",
+        location: "อ่าวแบล็กวอเตอร์ (Blackwater Bay)",
+        charactersPresent: JSON.stringify(["Jon Snow", "Daenerys Targaryen", "Tyrion Lannister", "Arya Stark"]),
+        contentMarkdown: `Arya Stark: "ไๆเดไๆเๆเ"\n\nควันสีเขียวหม่นลอยอ้อยอิ่งอยู่เหนือผิวน้ำที่นิ่งสนิทราวกับกระจกสีดำ ซากเรือรบของตระกูลบาราเธียนลอยเคว้งคว้าง บางลำยังคงมีเปลวไฟสีเขียวริบหรี่เลียอยู่ตามเสากระโดงเรือที่หักสะบั้น\n\nมอส: "พวกเราไม่ควรมาอยู่ที่นี่..." เสียงกระซิบสั่นเครือดังขึ้นจากด้านหลัง"\n\nหยดเลือดอุ่นๆ ไหลลงมาจากรอยแผลที่หน้าผาก หยดลงบนหินชื้นแฉะของชายฝั่งเบย์แห่งแบล็กวอเตอร์ การตื่นขึ้นมาในร่างที่ไม่คุ้นเคยและโลกที่เต็มไปด้วยความตายนี้ไม่ใช่ความฝัน ทุกสัมผัส ทั้งความหนาวเหน็บที่บาดลึกถึงกระดูก และเสียงกรีดร้องอันแผ่วเบาของทหารที่กำลังจะขาดใจ ล้วนเป็นของจริง\n\nณ ริมกำแพงโคลน ไม่ไกลจากซากเรือที่เกยตื้น ร่างของชายร่างแคระในชุดเกราะที่เปรอะเปื้อนโคลนและคราบเลือดนอนแน่นิ่งอยู่ ใบหน้าของเขาถูกฟันเป็นแนวยาวจากหน้าผากจรดแก้ม เลือดสีคล้ำยังคงไหลซึมออกมาอย่างต่อเนื่อง\n\nนนท์: "นั่น Tyrion Lannister..."\n\nสายตาจ้องมองไปยังร่างนั้นด้วยความตระหนักรู้ชวนขนลุก ในประวัติศาสตร์เดิม เขาควรจะรอดและถูกนำตัวไปรักษา แต่ในค่ำคืนนี้ ทหารของราชินีเซอร์ซีสองนายกำลังเดินถือหอกเลียบชายฝั่งเข้ามาใกล้ หากไม่มีใครทำอะไร ชะตากรรมของเวสเทอรอสจะเปลี่ยนไปตลอดกาลตั้งแต่นาทีนี้`,
+        summary: "มอสและเพื่อนตื่นขึ้นมาริมอ่าวแบล็กวอเตอร์หลังศึก และพบ Tyrion บาดเจ็บสาหัส",
+        wordCount: 220,
+        version: 1,
+        lastEditedBy: "มอส (Owner)",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "29274fd0-f400-4db2-bba2-545ba18ba6d3",
+        partId: part1Id,
+        order: 2,
+        title: "ฉากที่ 2: การเผชิญหน้าบทใหม่",
+        location: "ซากปรักหักพังใกล้กำแพงโคลน",
+        charactersPresent: JSON.stringify(["Jon Snow", "Daenerys Targaryen"]),
+        contentMarkdown: `เสียงฝีเท้าหนักแน่นดังก้องขึ้นในความมืด...\n\n"พวกเราต้องเตรียมพร้อมสำหรับสิ่งที่จะเกิดขึ้นต่อไป"`,
+        summary: "การรวมตัวและวางแผนเผชิญหน้ากับอันตรายรอบทิศ",
+        wordCount: 25,
+        version: 1,
+        lastEditedBy: "นนท์ (Writer)",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ])
+    .run();
+
+  // Insert default collaborators
+  db.insert(collaborators)
+    .values([
+      {
+        id: crypto.randomUUID(),
+        projectId,
+        name: "มอส",
+        nickname: "มอส",
+        role: "owner",
+        canEditScenes: 1,
+        canUploadMedia: 1,
+        canGenerateAi: 1,
+        createdAt: now,
+      },
+      {
+        id: crypto.randomUUID(),
+        projectId,
+        name: "นนท์",
+        nickname: "นนท์",
+        role: "co_author",
+        canEditScenes: 1,
+        canUploadMedia: 1,
+        canGenerateAi: 1,
+        createdAt: now,
+      },
+      {
+        id: crypto.randomUUID(),
+        projectId,
+        name: "ก้อย",
+        nickname: "ก้อย",
+        role: "editor",
+        canEditScenes: 1,
+        canUploadMedia: 1,
+        canGenerateAi: 1,
+        createdAt: now,
+      },
+    ])
+    .run();
 
   console.log("Seed completed successfully!");
   return projectId;

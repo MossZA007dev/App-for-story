@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
+import { seedDemoProject } from "./seed";
 import path from "path";
 import fs from "fs";
 
@@ -290,6 +291,16 @@ export function initDatabase() {
   try {
     sqlite.exec("ALTER TABLE projects ADD COLUMN share_code TEXT DEFAULT ''");
   } catch {}
+
+  // Auto-seed if database has 0 projects
+  try {
+    const row = sqlite.prepare("SELECT count(*) as cnt FROM projects").get() as { cnt: number };
+    if (!row || row.cnt === 0) {
+      seedDemoProject();
+    }
+  } catch (err) {
+    console.warn("Auto-seed error:", err);
+  }
 }
 
 // Auto-run initDatabase upon import

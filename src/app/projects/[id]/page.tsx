@@ -233,6 +233,14 @@ export default function StoryWorkspacePage({
   const [showClaudeImportModal, setShowClaudeImportModal] = useState(false);
   const [currentAuthorName, setCurrentAuthorName] = useState("");
 
+  // Quick Add Character Modal State
+  const [showQuickAddCharModal, setShowQuickAddCharModal] = useState(false);
+  const [targetBlockIdxForNewChar, setTargetBlockIdxForNewChar] = useState<number | null>(null);
+  const [quickCharName, setQuickCharName] = useState("");
+  const [quickCharNickname, setQuickCharNickname] = useState("");
+  const [quickCharType, setQuickCharType] = useState<"canon" | "friend" | "self">("canon");
+  const [isCreatingChar, setIsCreatingChar] = useState(false);
+
   // File Inputs
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const blockImageUploadRef = useRef<HTMLInputElement | null>(null);
@@ -1044,7 +1052,65 @@ export default function StoryWorkspacePage({
     setHasUnsavedChanges(true);
   };
 
+  const handleSaveQuickCharacter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickCharName.trim()) return;
+
+    try {
+      setIsCreatingChar(true);
+      const res = await fetch(`/api/projects/${projectId}/characters`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: quickCharName.trim(),
+          realNickname: quickCharNickname.trim() || undefined,
+          characterType: quickCharType,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "สร้างตัวละครไม่สำเร็จ");
+
+      const createdChar = data.character;
+      setCharacters((prev) => [...prev, createdChar]);
+      toast.success(`เพิ่มตัวละคร "${createdChar.name}" เรียบร้อยแล้ว!`);
+
+      if (targetBlockIdxForNewChar !== null) {
+        handleUpdateBlockSpeaker(targetBlockIdxForNewChar, createdChar.id);
+      }
+
+      setShowQuickAddCharModal(false);
+      setQuickCharName("");
+      setQuickCharNickname("");
+      setTargetBlockIdxForNewChar(null);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "เกิดข้อผิดพลาดในการสร้างตัวละคร");
+    } finally {
+      setIsCreatingChar(false);
+    }
+  };
+
   const handleUpdateBlockSpeaker = (index: number, targetKey: string) => {
+    if (targetKey === "__quick_add_char__") {
+      setTargetBlockIdxForNewChar(index);
+      setQuickCharName("");
+      setQuickCharNickname("");
+      setShowQuickAddCharModal(true);
+      return;
+    }
+    if (targetKey === "__custom_speaker__") {
+      const customName = window.prompt("กรุณาระบุชื่อผู้พูด (เช่น ทหารยาม, หญิงชรา, เสียงลึกลับ):");
+      if (customName && customName.trim()) {
+        handleUpdateBlockSpeaker(index, customName.trim());
+      }
+      return;
+    }
+    if (targetKey === "__manage_characters__") {
+      window.open(`/projects/${projectId}/characters`, "_blank");
+      return;
+    }
+
     setDialogueBlocks((prev) => {
       const next = [...prev];
       const cur = next[index];
@@ -1242,8 +1308,9 @@ export default function StoryWorkspacePage({
   };
 
   const handleAddBlock = (
-    type: "self" | "friend" | "narration" | "sound",
-    insertAtIdx?: number
+    type: "self" | "friend" | "narration" | "sound" | "character",
+    insertAtIdx?: number,
+    targetChar?: any
   ) => {
     const selfChar = characters.find((c) => c.characterType === "self") || null;
     const friendChar = characters.find((c) => c.characterType === "friend") || null;
@@ -1251,7 +1318,19 @@ export default function StoryWorkspacePage({
     let newBlock: DialogueBlock;
     const newId = `block-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-    if (type === "self") {
+    if (type === "character" && targetChar) {
+      const isSelf = targetChar.characterType === "self";
+      newBlock = {
+        id: newId,
+        type: "dialogue",
+        isNarrator: false,
+        side: isSelf ? "left" : "right",
+        speaker: targetChar,
+        speakerName: targetChar.realNickname || targetChar.name || "ตัวละคร",
+        text: `บทพูดใหม่ของ ${targetChar.realNickname || targetChar.name}...`,
+        originalIndex: 0,
+      };
+    } else if (type === "self") {
       newBlock = {
         id: newId,
         type: "dialogue",
@@ -2990,12 +3069,14 @@ export default function StoryWorkspacePage({
                         >
                           <option value="narrator">📜 ผู้บรรยาย (Narrator)</option>
                           <option value="sound">⚡ เสียงประกอบ (Sound FX)</option>
-                          {characters.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.characterType === "self" ? "👑 " : c.characterType === "friend" ? "🧑‍🤝‍🧑 " : ""}
-                              {c.name} {c.realNickname ? `(${c.realNickname})` : ""}
-                            </option>
-                          ))}
+                          <optgroup label="ตัวละครในเรื่อง">
+                            {characters.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.characterType === "self" ? "👑 " : c.characterType === "friend" ? "🧑‍🤝‍🧑 " : ""}
+                                {c.name} {c.realNickname ? `(${c.realNickname})` : ""}
+                              </option>
+                            ))}
+                          </optgroup>
                           {block.speaker &&
                             !block.isNarrator &&
                             !characters.some(
@@ -3007,6 +3088,17 @@ export default function StoryWorkspacePage({
                                 🎭 {block.speaker.realNickname || block.speaker.name}
                               </option>
                             )}
+                          <optgroup label="จัดการตัวละคร">
+                            <option value="__quick_add_char__" className="text-amber-300 font-bold">
+                              ➕ เพิ่มตัวละครใหม่ (สร้างด่วน)...
+                            </option>
+                            <option value="__custom_speaker__" className="text-sky-300">
+                              ✏️ กำหนดชื่อผู้พูดอิสระ (Custom)...
+                            </option>
+                            <option value="__manage_characters__">
+                              👥 ไปที่ Character Bible...
+                            </option>
+                          </optgroup>
                         </select>
 
                         {mbti && (
@@ -3201,9 +3293,15 @@ export default function StoryWorkspacePage({
                           {block.side === "left" ? "ชิดขวา" : "ชิดซ้าย"}
                         </button>
                         <button
-                          onClick={() => handleAddBlock("self", idx)}
+                          onClick={() =>
+                            handleAddBlock(
+                              block.type === "sound" ? "sound" : block.isNarrator ? "narration" : "character",
+                              idx,
+                              block.speaker
+                            )
+                          }
                           className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-amber-400 transition-colors"
-                          title="แทรกประโยคใหม่ด้านล่าง"
+                          title={`แทรกประโยคใหม่ด้านล่าง (ต่อจาก ${block.speakerName || "คนนี้"})`}
                         >
                           <Plus className="w-3.5 h-3.5" />
                         </button>
@@ -3361,6 +3459,40 @@ export default function StoryWorkspacePage({
                 <Plus className="w-3 h-3" />
                 <span>+ บทพูดเพื่อน</span>
               </button>
+              {/* Quick Add by Character Dropdown */}
+              <div className="flex-1 min-w-[125px]">
+                <select
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (!val) return;
+                    if (val === "__quick_add_char__") {
+                      setTargetBlockIdxForNewChar(dialogueBlocks.length - 1);
+                      setQuickCharName("");
+                      setQuickCharNickname("");
+                      setShowQuickAddCharModal(true);
+                    } else {
+                      const selectedChar = characters.find((c) => c.id === val);
+                      if (selectedChar) {
+                        handleAddBlock("character", undefined, selectedChar);
+                      }
+                    }
+                    e.target.value = "";
+                  }}
+                  defaultValue=""
+                  className="w-full h-full min-h-[30px] inline-flex items-center justify-center px-2 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-[11px] font-thai font-bold transition-all shadow-sm cursor-pointer outline-none"
+                  title="เพิ่มบทพูดสำหรับตัวละครใดก็ได้"
+                >
+                  <option value="" className="bg-slate-900">+ บทตัวละครอื่น ▾</option>
+                  {characters.map((c) => (
+                    <option key={c.id} value={c.id} className="bg-slate-900">
+                      + บท: {c.name} {c.realNickname ? `(${c.realNickname})` : ""}
+                    </option>
+                  ))}
+                  <option value="__quick_add_char__" className="bg-slate-900 font-bold text-amber-300">
+                    ➕ เพิ่มตัวละครใหม่เข้าระบบ...
+                  </option>
+                </select>
+              </div>
               <button
                 onClick={() => handleAddBlock("narration")}
                 className="flex-1 min-w-[90px] inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-thai font-bold transition-all shadow-sm active:scale-95"
@@ -3487,6 +3619,118 @@ export default function StoryWorkspacePage({
         }}
         onDelete={activeScene?.bgmUrl ? handleDeleteAudio : undefined}
       />
+
+      {/* Quick Add Character Modal */}
+      {showQuickAddCharModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in font-thai">
+          <div className="relative w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6 space-y-4 text-white">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                  <Users className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">เพิ่มตัวละครใหม่ในเรื่อง</h3>
+                  <p className="text-[11px] text-slate-400">สร้างตัวละครด่วนเพื่อนำมาใช้ในบทพูดได้ทันที</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowQuickAddCharModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveQuickCharacter} className="space-y-3.5">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-300">
+                  ชื่อตัวละคร: <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={quickCharName}
+                  onChange={(e) => setQuickCharName(e.target.value)}
+                  placeholder="เช่น Cersei Lannister, ทหารองครักษ์, แม่มดเฒ่า"
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 outline-none"
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-300">
+                  ชื่อเล่น / ฉายาในแก๊ง (ตัวเลือก):
+                </label>
+                <input
+                  type="text"
+                  value={quickCharNickname}
+                  onChange={(e) => setQuickCharNickname(e.target.value)}
+                  placeholder="เช่น แม่มังกร, ก้อย, ป้าข้างบ้าน"
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-300">ประเภทตัวละคร:</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setQuickCharType("canon")}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition-all ${
+                      quickCharType === "canon"
+                        ? "bg-amber-500/20 text-amber-300 border-amber-500/50"
+                        : "bg-slate-950 text-slate-400 border-slate-800 hover:text-white"
+                    }`}
+                  >
+                    🎭 ตัวละครในเรื่อง
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickCharType("friend")}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition-all ${
+                      quickCharType === "friend"
+                        ? "bg-sky-500/20 text-sky-300 border-sky-500/50"
+                        : "bg-slate-950 text-slate-400 border-slate-800 hover:text-white"
+                    }`}
+                  >
+                    🧑‍🤝‍🧑 เพื่อนในแก๊ง
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickCharType("self")}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition-all ${
+                      quickCharType === "self"
+                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50"
+                        : "bg-slate-950 text-slate-400 border-slate-800 hover:text-white"
+                    }`}
+                  >
+                    👑 ตัวเอก / ฉัน
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickAddCharModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingChar || !quickCharName.trim()}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{isCreatingChar ? "กำลังสร้าง..." : "บันทึกตัวละคร"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Hidden File Inputs */}
       <input

@@ -449,6 +449,14 @@ export function SceneAudioModal({
             </div>
           )}
 
+          {/* Reassurance note */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-[11px] text-slate-400">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+            <span>
+              เพลงนี้จะถูก<strong>บันทึกติดกับฉากนี้ถาวร</strong> และเล่นวนซ้ำต่อเนื่องอัตโนมัติทั้งตอนเขียนและตอนเปิดอ่าน
+            </span>
+          </div>
+
           {/* Actions */}
           <div className="flex items-center justify-between pt-2 border-t border-slate-800">
             {onDelete && currentUrl ? (

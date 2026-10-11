@@ -284,17 +284,35 @@ export default function StoryWorkspacePage({
   }, [projectId]);
 
   // 2. Load Active Scene Details
-  const loadSceneDetails = async (sceneId: string) => {
+  const loadSceneDetails = async (sceneId: string, preserveAudioPlayback: boolean = false) => {
     if (!sceneId) return;
     try {
       const res = await fetch(`/api/projects/${projectId}/scenes/${sceneId}`);
       if (!res.ok) throw new Error("โหลดรายละเอียดฉากไม่สำเร็จ");
       const data = await res.json();
 
-      setActiveScene(data.scene);
-      if (data.scene?.bgmUrl) {
+      let sceneData = data.scene;
+      if (!sceneData?.bgmUrl) {
+        try {
+          const cached = localStorage.getItem(`saga_bgm_${sceneId}`);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed.bgmUrl) {
+              sceneData = { ...sceneData, bgmUrl: parsed.bgmUrl, bgmTitle: parsed.bgmTitle };
+              fetch(`/api/projects/${projectId}/scenes/${sceneId}/audio`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(parsed),
+              }).catch(() => {});
+            }
+          }
+        } catch {}
+      }
+
+      setActiveScene(sceneData);
+      if (sceneData?.bgmUrl) {
         setCurrentAudioTrack("custom");
-      } else {
+      } else if (currentAudioTrack === "custom") {
         setCurrentAudioTrack("none");
       }
       setSceneImages(data.images || []);
@@ -326,22 +344,19 @@ export default function StoryWorkspacePage({
         setLocalDialogueBindings({});
       }
 
-      // Configure BGM
-      if (data.scene.bgmUrl) {
-        setCurrentAudioTrack("custom");
-      } else {
-        setCurrentAudioTrack("none");
-      }
-      setIsAudioPlaying(false);
-      ambientSound.stop();
-      if (studioAudioPlayerRef.current) {
-        studioAudioPlayerRef.current.pause();
-      }
-      if (youtubeIframeRef.current) {
-        youtubeIframeRef.current.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-          "*"
-        );
+      // Configure BGM playback state only when switching scenes or when not explicitly preserved
+      if (!preserveAudioPlayback) {
+        setIsAudioPlaying(false);
+        ambientSound.stop();
+        if (studioAudioPlayerRef.current) {
+          studioAudioPlayerRef.current.pause();
+        }
+        if (youtubeIframeRef.current) {
+          youtubeIframeRef.current.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+            "*"
+          );
+        }
       }
     } catch (err) {
       console.error(err);
@@ -354,11 +369,11 @@ export default function StoryWorkspacePage({
     }
   }, [activeSceneId]);
 
-  // Auto-sync on window focus if there are no unsaved changes
+  // Auto-sync on window focus if there are no unsaved changes (preserve ongoing music playback)
   useEffect(() => {
     const handleFocus = () => {
       if (activeSceneId && !hasUnsavedChanges) {
-        loadSceneDetails(activeSceneId);
+        loadSceneDetails(activeSceneId, true);
       }
     };
     window.addEventListener("focus", handleFocus);
@@ -610,6 +625,12 @@ export default function StoryWorkspacePage({
       if (!res.ok) throw new Error(data?.error || `บันทึกเพลงไม่สำเร็จ (HTTP ${res.status})`);
 
       const updated = { ...activeScene!, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle };
+      try {
+        localStorage.setItem(
+          `saga_bgm_${activeSceneId}`,
+          JSON.stringify({ bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle })
+        );
+      } catch {}
       setActiveScene(updated);
       setParts((prevParts) =>
         prevParts.map((part) => ({
@@ -709,6 +730,12 @@ export default function StoryWorkspacePage({
       }
 
       const updated = { ...activeScene!, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle };
+      try {
+        localStorage.setItem(
+          `saga_bgm_${activeSceneId}`,
+          JSON.stringify({ bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle })
+        );
+      } catch {}
       setActiveScene(updated);
       setParts((prevParts) =>
         prevParts.map((part) => ({
@@ -746,6 +773,10 @@ export default function StoryWorkspacePage({
         method: "DELETE",
       });
       if (!res.ok) throw new Error("ลบเพลงไม่สำเร็จ");
+
+      try {
+        localStorage.removeItem(`saga_bgm_${activeSceneId}`);
+      } catch {}
 
       if (studioAudioPlayerRef.current) studioAudioPlayerRef.current.pause();
       if (youtubeIframeRef.current) {
@@ -1504,13 +1535,21 @@ export default function StoryWorkspacePage({
           dialogueBindings: JSON.stringify(localDialogueBindings),
           directorNote: directorsNote,
           lastEditedBy: currentAuthorName || undefined,
+          bgmUrl: activeScene?.bgmUrl || undefined,
+          bgmTitle: activeScene?.bgmTitle || undefined,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "บันทึกไม่สำเร็จ");
 
-      setActiveScene(data.scene);
+      const sceneWithBgm = {
+        ...data.scene,
+        bgmUrl: data.scene?.bgmUrl || activeScene?.bgmUrl || null,
+        bgmTitle: data.scene?.bgmTitle || activeScene?.bgmTitle || null,
+      };
+
+      setActiveScene(sceneWithBgm);
       setEditableMarkdown(markdownToSave);
       setHasUnsavedChanges(false);
       setIsEditingTitle(false);
@@ -1519,7 +1558,7 @@ export default function StoryWorkspacePage({
       setParts((prevParts) =>
         prevParts.map((part) => ({
           ...part,
-          scenes: part.scenes.map((s) => (s.id === activeSceneId ? data.scene : s)),
+          scenes: part.scenes.map((s) => (s.id === activeSceneId ? sceneWithBgm : s)),
         }))
       );
 
@@ -3341,7 +3380,7 @@ export default function StoryWorkspacePage({
           className={
             showMiniVideoPlayer
               ? "fixed bottom-5 right-5 z-50 w-72 sm:w-80 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 bg-slate-950 transition-all duration-300 animate-in fade-in zoom-in-95"
-              : "fixed -bottom-96 -right-96 w-1 h-1 opacity-0 pointer-events-none"
+              : "fixed bottom-1 right-1 w-[2px] h-[2px] opacity-[0.01] pointer-events-none overflow-hidden z-0"
           }
         >
           {showMiniVideoPlayer && (
@@ -3365,7 +3404,7 @@ export default function StoryWorkspacePage({
             src={`https://www.youtube-nocookie.com/embed/${extractYouTubeVideoId(activeScene.bgmUrl)}?enablejsapi=1&autoplay=${isAudioPlaying ? "1" : "0"}&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${extractYouTubeVideoId(activeScene.bgmUrl)}`}
             title="Scene YouTube Audio Player"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            className={showMiniVideoPlayer ? "w-full aspect-video" : "w-[1px] h-[1px] opacity-1 pointer-events-none"}
+            className={showMiniVideoPlayer ? "w-full aspect-video" : "w-[2px] h-[2px] pointer-events-none"}
             onLoad={() => {
               if (isAudioPlaying) {
                 youtubeIframeRef.current?.contentWindow?.postMessage(

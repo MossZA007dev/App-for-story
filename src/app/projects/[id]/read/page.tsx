@@ -1819,7 +1819,7 @@ export default function NovelReaderPage({
           className={
             showMiniVideoPlayer
               ? "fixed bottom-5 right-5 z-50 w-72 sm:w-80 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 bg-slate-950 transition-all duration-300 animate-in fade-in zoom-in-95"
-              : "fixed -bottom-96 -right-96 w-1 h-1 opacity-0 pointer-events-none"
+              : "fixed bottom-1 right-1 w-[2px] h-[2px] opacity-[0.01] pointer-events-none overflow-hidden z-0"
           }
         >
           {showMiniVideoPlayer && (
@@ -1843,7 +1843,7 @@ export default function NovelReaderPage({
             src={`https://www.youtube-nocookie.com/embed/${extractYouTubeVideoId(activeScene.bgmUrl)}?enablejsapi=1&autoplay=${isCustomAudioPlaying ? "1" : "0"}&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${extractYouTubeVideoId(activeScene.bgmUrl)}`}
             title="Reader YouTube Audio Player"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            className={showMiniVideoPlayer ? "w-full aspect-video" : "w-[1px] h-[1px] opacity-1 pointer-events-none"}
+            className={showMiniVideoPlayer ? "w-full aspect-video" : "w-[2px] h-[2px] pointer-events-none"}
             onLoad={() => {
               if (isCustomAudioPlaying) {
                 youtubeIframeRef.current?.contentWindow?.postMessage(

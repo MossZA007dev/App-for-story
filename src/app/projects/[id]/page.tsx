@@ -912,7 +912,7 @@ export default function StoryWorkspacePage({
   };
 
   // 6. Save Scene (Saves Dialogue Markdown, Bindings, Title, Location)
-  const handleSaveAll = async () => {
+  const handleSaveAll = async (silent: boolean = false) => {
     if (!activeSceneId) return;
 
     try {
@@ -950,14 +950,29 @@ export default function StoryWorkspacePage({
         }))
       );
 
-      toast.success("บันทึกการแก้ไขฉากและบทพูดเรียบร้อยแล้ว!");
+      if (!silent) {
+        toast.success("บันทึกการแก้ไขฉากและบทพูดเรียบร้อยแล้ว!");
+      }
     } catch (err: any) {
       console.error(err);
-      toast.error(err.message || "เกิดข้อผิดพลาดในการบันทึก");
+      if (!silent) {
+        toast.error(err.message || "เกิดข้อผิดพลาดในการบันทึก");
+      }
     } finally {
       setIsSavingScene(false);
     }
   };
+
+  // Debounced Auto-Save: automatically saves 3 seconds after you stop editing
+  useEffect(() => {
+    if (!hasUnsavedChanges || !activeSceneId || isSavingScene) return;
+
+    const timer = setTimeout(() => {
+      handleSaveAll(true);
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [hasUnsavedChanges, activeSceneId, dialogueBlocks, editableMarkdown, sceneTitleInput, sceneLocationInput, localDialogueBindings, directorsNote]);
 
   // 7. AI Story Streaming (Claude 3.5 Sonnet)
   const handleStartStream = async (actionType: "write_next" | "regenerate" = "write_next") => {
@@ -1326,7 +1341,7 @@ export default function StoryWorkspacePage({
 
           {/* Save All Changes Button */}
           <button
-            onClick={handleSaveAll}
+            onClick={() => handleSaveAll(false)}
             disabled={isSavingScene}
             className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl font-bold text-xs font-thai transition-all shadow-md active:scale-95 ${
               hasUnsavedChanges
@@ -1339,7 +1354,7 @@ export default function StoryWorkspacePage({
             ) : (
               <Check className="w-3.5 h-3.5 stroke-[3]" />
             )}
-            <span>{isSavingScene ? "กำลังบันทึก..." : hasUnsavedChanges ? "บันทึกการแก้ไข *" : "บันทึกแล้ว"}</span>
+            <span>{isSavingScene ? "กำลังเซฟอัตโนมัติ..." : hasUnsavedChanges ? "บันทึกการแก้ไข (Auto-Save 3วิ)" : "✓ บันทึกแล้ว"}</span>
           </button>
 
           {/* Reader View Link */}
@@ -2184,7 +2199,7 @@ export default function StoryWorkspacePage({
             {/* Bottom Actions Row */}
             <div className="flex items-center justify-between gap-3 pt-1">
               <button
-                onClick={handleSaveAll}
+                onClick={() => handleSaveAll(false)}
                 disabled={isSavingScene}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all active:scale-95"
               >

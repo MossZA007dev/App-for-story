@@ -27,14 +27,31 @@ try {
 
 const dbPath = path.join(dataDir, "saga_forge.db");
 
-// If running on Vercel, copy pre-existing database from repository to /tmp on first boot
-if (isVercel && !fs.existsSync(dbPath)) {
-  const sourceDb = path.join(process.cwd(), "data", "saga_forge.db");
-  if (fs.existsSync(sourceDb)) {
+// If running on Vercel, copy pre-existing database and images from repository to /tmp on first boot
+if (isVercel) {
+  if (!fs.existsSync(dbPath)) {
+    const sourceDb = path.join(process.cwd(), "data", "saga_forge.db");
+    if (fs.existsSync(sourceDb)) {
+      try {
+        fs.copyFileSync(sourceDb, dbPath);
+      } catch (e) {
+        console.warn("Could not copy initial db on Vercel:", e);
+      }
+    }
+  }
+
+  const sourceImages = path.join(process.cwd(), "data", "images");
+  if (fs.existsSync(sourceImages)) {
     try {
-      fs.copyFileSync(sourceDb, dbPath);
+      const files = fs.readdirSync(sourceImages);
+      for (const file of files) {
+        const dest = path.join(imagesDir, file);
+        if (!fs.existsSync(dest)) {
+          fs.copyFileSync(path.join(sourceImages, file), dest);
+        }
+      }
     } catch (e) {
-      console.warn("Could not copy initial db on Vercel:", e);
+      console.warn("Could not copy initial images on Vercel:", e);
     }
   }
 }

@@ -30,9 +30,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# SQLite local data & generated images
-/data/*.db
+# SQLite temp journals
 /data/*.db-shm
 /data/*.db-wal
-/data/images/*
-!/data/images/.gitkeep

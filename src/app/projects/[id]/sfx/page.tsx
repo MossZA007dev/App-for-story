@@ -173,16 +173,36 @@ export default function SoundEffectsVaultPage({
   const handleDeleteSfx = async (id: string, name: string) => {
     if (!confirm(`คุณต้องการลบเสียง "${name}" ออกจากคลังเสียงใช่หรือไม่?`)) return;
 
+    const previousList = sfxList;
     try {
       if (activePlayingId === id) stopAnyPlaying();
-      const res = await fetch(`/api/projects/${projectId}/sfx/${id}`, {
+      
+      // Optimistically remove from state so the UI responds immediately
+      setSfxList((prev) => prev.filter((s) => s.id !== id));
+
+      // Attempt deletion via nested route first
+      let res = await fetch(`/api/projects/${projectId}/sfx/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error("ลบไม่สำเร็จ");
+
+      // Fallback to query parameter on collection route if nested route failed (404/405/500)
+      if (!res.ok) {
+        res = await fetch(`/api/projects/${projectId}/sfx?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+      }
+
+      if (!res.ok) {
+        // Revert optimistic state if deletion failed
+        setSfxList(previousList);
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "ลบไม่สำเร็จ");
+      }
+
       toast.success(`ลบเสียง "${name}" เรียบร้อยแล้ว`);
-      setSfxList((prev) => prev.filter((s) => s.id !== id));
     } catch (err: any) {
       console.error(err);
+      setSfxList(previousList);
       toast.error(err.message || "เกิดข้อผิดพลาดในการลบเสียง SFX");
     }
   };
@@ -505,8 +525,11 @@ export default function SoundEffectsVaultPage({
                       </h3>
                       {/* Delete button */}
                       <button
-                        onClick={() => handleDeleteSfx(item.id, item.name)}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-slate-500 hover:text-red-400 hover:bg-red-950/40 transition-all"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteSfx(item.id, item.name);
+                        }}
+                        className="opacity-70 group-hover:opacity-100 hover:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-950/50 active:scale-95 transition-all"
                         title="ลบเสียงนี้"
                       >
                         <Trash2 className="w-3.5 h-3.5" />

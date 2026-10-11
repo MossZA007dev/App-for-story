@@ -308,6 +308,9 @@ export function initDatabase() {
   try {
     sqlite.exec("ALTER TABLE projects ADD COLUMN share_code TEXT DEFAULT ''");
   } catch {}
+  try {
+    sqlite.exec("ALTER TABLE projects ADD COLUMN sfx_initialized INTEGER DEFAULT 0");
+  } catch {}
 
   // Auto-seed if database has 0 projects
   try {

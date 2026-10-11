@@ -82,8 +82,8 @@ export async function GET(
       .orderBy(desc(soundEffects.createdAt))
       .all();
 
-    // If completely empty, auto-seed starter cinematic presets for convenience
-    if (items.length === 0) {
+    // If never initialized before and empty, auto-seed starter cinematic presets once
+    if (!project.sfxInitialized && items.length === 0) {
       const now = new Date().toISOString();
       for (const preset of INITIAL_PRESET_SFX) {
         db.insert(soundEffects)
@@ -102,6 +102,11 @@ export async function GET(
           })
           .run();
       }
+
+      db.update(projects)
+        .set({ sfxInitialized: 1 })
+        .where(eq(projects.id, projectId))
+        .run();
 
       items = db
         .select()
@@ -215,3 +220,61 @@ export async function POST(
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: projectId } = await params;
+    const url = new URL(req.url);
+    let sfxId = url.searchParams.get("id") || url.searchParams.get("sfxId");
+
+    if (!sfxId) {
+      try {
+        const body = await req.json();
+        sfxId = body?.id || body?.sfxId;
+      } catch {}
+    }
+
+    if (!sfxId) {
+      return NextResponse.json({ error: "ไม่พบรหัสเสียง SFX ที่ต้องการลบ" }, { status: 400 });
+    }
+
+    const item = db
+      .select()
+      .from(soundEffects)
+      .where(eq(soundEffects.id, sfxId))
+      .get();
+
+    if (!item) {
+      // Idempotent: already deleted
+      return NextResponse.json({
+        success: true,
+        message: "ลบเสียง SFX เรียบร้อยแล้ว",
+        alreadyDeleted: true,
+      });
+    }
+
+    if (item.sourceType === "upload" && item.audioUrl.startsWith("/api/audio/")) {
+      const filename = decodeURIComponent(item.audioUrl.replace(/^\/api\/audio\//, ""));
+      if (filename) {
+        await audioStorage.deleteAudio(filename).catch((err) => {
+          console.warn("Could not delete audio file from disk:", err);
+        });
+      }
+    }
+
+    db.delete(soundEffects).where(eq(soundEffects.id, sfxId)).run();
+
+    return NextResponse.json({
+      success: true,
+      message: "ลบเสียง SFX เรียบร้อยแล้ว",
+    });
+  } catch (error: unknown) {
+    console.error("Failed to delete sound effect via collection route:", error);
+    const msg = error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการลบเสียง SFX";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+

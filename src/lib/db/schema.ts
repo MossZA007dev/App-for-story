@@ -13,6 +13,7 @@ export const projects = sqliteTable("projects", {
   targetSceneWords: integer("target_scene_words").default(1200),
   coverImage: text("cover_image").default(""),
   shareCode: text("share_code").default(""),
+  sfxInitialized: integer("sfx_initialized").default(0),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

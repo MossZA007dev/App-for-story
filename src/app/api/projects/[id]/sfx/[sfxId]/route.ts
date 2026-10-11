@@ -82,11 +82,16 @@ export async function DELETE(
     const item = db
       .select()
       .from(soundEffects)
-      .where(and(eq(soundEffects.id, sfxId), eq(soundEffects.projectId, projectId)))
+      .where(eq(soundEffects.id, sfxId))
       .get();
 
     if (!item) {
-      return NextResponse.json({ error: "ไม่พบเสียง SFX นี้" }, { status: 404 });
+      // Idempotent: already deleted or not in database, return success
+      return NextResponse.json({
+        success: true,
+        message: "ลบเสียง SFX เรียบร้อยแล้ว",
+        alreadyDeleted: true,
+      });
     }
 
     // If it was an uploaded file served from /api/audio/, remove file from disk

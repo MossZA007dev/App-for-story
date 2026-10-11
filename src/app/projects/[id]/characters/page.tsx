@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, useRef, use } from "react";
 import { ProjectHeader } from "@/components/projects/ProjectHeader";
 import {
   Users,
@@ -19,6 +19,7 @@ import {
   Camera,
   Upload,
   Image as ImageIcon,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { CharacterAvatarModal, AvatarCharacterInfo } from "@/components/characters/CharacterAvatarModal";
@@ -89,6 +90,8 @@ export default function CharacterBiblePage({
   const [editingChar, setEditingChar] = useState<Partial<CharacterData> | null>(null);
   const [newAbilityName, setNewAbilityName] = useState("");
   const [newAbilityCost, setNewAbilityCost] = useState("");
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Quick Avatar Modal State
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
@@ -539,8 +542,13 @@ export default function CharacterBiblePage({
 
             <div className="space-y-4">
               {/* Avatar Section */}
-              <div className="flex items-center gap-4 p-3.5 bg-slate-900/80 rounded-xl border border-slate-800">
-                <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-amber-400 bg-slate-800 flex items-center justify-center flex-shrink-0 text-white shadow-md">
+              <div className="p-4 bg-slate-900/90 rounded-2xl border border-slate-800 shadow-inner flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                {/* Circular Avatar Preview */}
+                <div
+                  onClick={() => avatarFileInputRef.current?.click()}
+                  className="relative group/circle w-20 h-20 rounded-full overflow-hidden border-2 border-amber-400 bg-slate-800 flex items-center justify-center flex-shrink-0 text-white shadow-xl cursor-pointer hover:ring-4 hover:ring-amber-400/30 transition-all"
+                  title="คลิกเพื่อเลือกไฟล์รูปภาพจากเครื่อง"
+                >
                   {editingChar.avatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -549,17 +557,37 @@ export default function CharacterBiblePage({
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <span className="font-heading font-bold text-base">
+                    <span className="font-heading font-bold text-2xl uppercase tracking-wider text-amber-300">
                       {(editingChar.realNickname || editingChar.name || "??").slice(0, 2).toUpperCase()}
                     </span>
                   )}
+
+                  {/* Camera overlay */}
+                  <span className="absolute inset-0 bg-black/60 opacity-0 group-hover/circle:opacity-100 flex flex-col items-center justify-center text-white transition-opacity text-[10px] font-bold gap-1">
+                    <Camera className="w-5 h-5 text-amber-400" />
+                    <span>เปลี่ยนรูป</span>
+                  </span>
                 </div>
-                <div className="space-y-1.5 flex-1 min-w-0">
-                  <label className="text-xs font-semibold text-slate-300 font-thai flex items-center gap-1.5">
-                    <Camera className="w-3.5 h-3.5 text-amber-400" />
-                    <span>รูปโปรไฟล์ตัวละคร (Avatar)</span>
-                  </label>
-                  <div className="flex gap-2">
+
+                {/* Upload & URL Controls */}
+                <div className="space-y-2 flex-1 min-w-0 w-full">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-200 font-thai flex items-center gap-1.5">
+                      <Camera className="w-3.5 h-3.5 text-amber-400" />
+                      <span>รูปโปรไฟล์ตัวละคร (Character Profile Avatar)</span>
+                    </label>
+                    {editingChar.avatarUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingChar((prev) => ({ ...prev, avatarUrl: "" }))}
+                        className="text-[11px] text-red-400 hover:text-red-300 underline font-medium"
+                      >
+                        ลบรูปออก (ใช้ตัวย่อ)
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <input
                       type="text"
                       placeholder="วางลิงก์ URL หรือกดปุ่มอัปโหลด..."
@@ -567,39 +595,68 @@ export default function CharacterBiblePage({
                       onChange={(e) =>
                         setEditingChar((prev) => ({ ...prev, avatarUrl: e.target.value }))
                       }
-                      className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
+                      className="flex-1 bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition-colors"
                     />
-                    <label className="cursor-pointer px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 whitespace-nowrap">
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>อัปโหลด</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          try {
-                            const formData = new FormData();
-                            formData.append("file", file);
-                            const res = await fetch("/api/characters/avatar", {
-                              method: "POST",
-                              body: formData,
-                            });
-                            const d = await res.json();
-                            if (res.ok && d.url) {
-                              setEditingChar((prev) => ({ ...prev, avatarUrl: d.url }));
-                              toast.success("อัปโหลดรูปโปรไฟล์สำเร็จ!");
-                            } else {
-                              toast.error(d.error || "อัปโหลดไม่สำเร็จ");
-                            }
-                          } catch {
-                            toast.error("เกิดข้อผิดพลาดในการอัปโหลด");
+
+                    <input
+                      ref={avatarFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        if (!file.type.startsWith("image/")) {
+                          toast.error("กรุณาเลือกไฟล์รูปภาพที่ถูกต้อง (PNG, JPG, GIF, WebP)");
+                          return;
+                        }
+                        try {
+                          setIsUploadingAvatar(true);
+                          const formData = new FormData();
+                          formData.append("file", file);
+                          const res = await fetch("/api/characters/avatar", {
+                            method: "POST",
+                            body: formData,
+                          });
+                          const d = await res.json();
+                          if (res.ok && d.url) {
+                            setEditingChar((prev) => ({ ...prev, avatarUrl: d.url }));
+                            toast.success("อัปโหลดรูปโปรไฟล์สำเร็จ!");
+                          } else {
+                            toast.error(d.error || "อัปโหลดไม่สำเร็จ");
                           }
-                        }}
-                      />
-                    </label>
+                        } catch {
+                          toast.error("เกิดข้อผิดพลาดในการอัปโหลดรูปภาพ");
+                        } finally {
+                          setIsUploadingAvatar(false);
+                          if (avatarFileInputRef.current) avatarFileInputRef.current.value = "";
+                        }
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      disabled={isUploadingAvatar}
+                      onClick={() => avatarFileInputRef.current?.click()}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs shadow-md shadow-amber-500/20 transition-all active:scale-95 flex items-center justify-center gap-1.5 whitespace-nowrap disabled:opacity-50"
+                    >
+                      {isUploadingAvatar ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>กำลังอัปโหลด...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>อัปโหลดรูปภาพ</span>
+                        </>
+                      )}
+                    </button>
                   </div>
+
+                  <p className="text-[11px] text-slate-400">
+                    รองรับไฟล์ PNG, JPG, GIF, WebP หรือวาง URL ลิงก์ตรง (จะแสดงบนการ์ดบทพูดใน Studio และโหมดอ่านนิยาย)
+                  </p>
                 </div>
               </div>
 

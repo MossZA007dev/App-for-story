@@ -19,6 +19,10 @@ import {
   Play,
   Pause,
   Volume2,
+  VolumeX,
+  Volume1,
+  Youtube,
+  X,
   Music,
   SlidersHorizontal,
   PenTool,
@@ -30,6 +34,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
+import { extractYouTubeVideoId } from "@/lib/audio/audioHelpers";
 import {
   parseSceneToDialogueBlocks,
   resolveImageForDialogueIndex,
@@ -151,11 +156,14 @@ export default function NovelReaderPage({
 
   // Audio Engine State
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const youtubeIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [audioMode, setAudioMode] = useState<"ambient" | "custom">("custom");
   const [isPlayingBgm, setIsPlayingBgm] = useState(false);
   const [isCustomAudioPlaying, setIsCustomAudioPlaying] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<AudioTrack>("wildfire");
-  const [volume, setVolume] = useState(0.45);
+  const [volume, setVolume] = useState(0.5);
+  const [isMuted, setIsMuted] = useState(false);
+  const [showMiniVideoPlayer, setShowMiniVideoPlayer] = useState(false);
   const [showAudioControls, setShowAudioControls] = useState(false);
   const [isUploadingBgm, setIsUploadingBgm] = useState(false);
   const [isCreatingNextEp, setIsCreatingNextEp] = useState(false);
@@ -246,9 +254,28 @@ export default function NovelReaderPage({
   // Sync custom audio when activeScene changes
   useEffect(() => {
     if (activeScene?.bgmUrl) {
-      if (audioPlayerRef.current) {
+      const ytId = extractYouTubeVideoId(activeScene.bgmUrl);
+      if (ytId) {
+        if (audioPlayerRef.current) audioPlayerRef.current.pause();
+        if (isCustomAudioPlaying) {
+          setTimeout(() => {
+            youtubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+              "*"
+            );
+            youtubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({
+                event: "command",
+                func: "setVolume",
+                args: [Math.round((isMuted ? 0 : volume) * 100)],
+              }),
+              "*"
+            );
+          }, 350);
+        }
+      } else if (audioPlayerRef.current) {
         audioPlayerRef.current.src = activeScene.bgmUrl;
-        audioPlayerRef.current.volume = volume;
+        audioPlayerRef.current.volume = isMuted ? 0 : volume;
         if (isCustomAudioPlaying) {
           audioPlayerRef.current.play().catch((e) => console.warn(e));
         }
@@ -256,6 +283,12 @@ export default function NovelReaderPage({
     } else {
       if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
+      }
+      if (youtubeIframeRef.current) {
+        youtubeIframeRef.current.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+          "*"
+        );
       }
       setIsCustomAudioPlaying(false);
     }
@@ -267,16 +300,40 @@ export default function NovelReaderPage({
     if (activeScene?.bgmUrl && audioMode === "custom") {
       if (isCustomAudioPlaying) {
         if (audioPlayerRef.current) audioPlayerRef.current.pause();
+        if (youtubeIframeRef.current) {
+          youtubeIframeRef.current.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+            "*"
+          );
+        }
         setIsCustomAudioPlaying(false);
         toast.info("หยุดเล่นเพลงประจำฉาก");
       } else {
         ambientSound.stop();
         setIsPlayingBgm(false);
-        if (audioPlayerRef.current) {
-          audioPlayerRef.current.volume = volume;
+        const ytId = extractYouTubeVideoId(activeScene.bgmUrl);
+        if (ytId) {
+          if (audioPlayerRef.current) audioPlayerRef.current.pause();
+          setIsCustomAudioPlaying(true);
+          setTimeout(() => {
+            youtubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+              "*"
+            );
+            youtubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({
+                event: "command",
+                func: "setVolume",
+                args: [Math.round((isMuted ? 0 : volume) * 100)],
+              }),
+              "*"
+            );
+          }, 300);
+        } else if (audioPlayerRef.current) {
+          audioPlayerRef.current.volume = isMuted ? 0 : volume;
           audioPlayerRef.current.play().catch((e) => console.warn(e));
+          setIsCustomAudioPlaying(true);
         }
-        setIsCustomAudioPlaying(true);
         toast.success(`กำลังเล่นเพลง: ${activeScene.bgmTitle || "เพลงประจำฉาก"}`);
       }
     } else {
@@ -288,9 +345,15 @@ export default function NovelReaderPage({
       } else {
         if (audioPlayerRef.current) {
           audioPlayerRef.current.pause();
-          setIsCustomAudioPlaying(false);
         }
-        ambientSound.setVolume(volume);
+        if (youtubeIframeRef.current) {
+          youtubeIframeRef.current.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+            "*"
+          );
+        }
+        setIsCustomAudioPlaying(false);
+        ambientSound.setVolume(isMuted ? 0 : volume);
         ambientSound.play(currentTrack);
         setIsPlayingBgm(true);
         setAudioMode("ambient");
@@ -313,9 +376,15 @@ export default function NovelReaderPage({
   const handleSelectAmbientTrack = (track: AudioTrack) => {
     if (audioPlayerRef.current) {
       audioPlayerRef.current.pause();
-      setIsCustomAudioPlaying(false);
     }
-    ambientSound.setVolume(volume);
+    if (youtubeIframeRef.current) {
+      youtubeIframeRef.current.contentWindow?.postMessage(
+        JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+        "*"
+      );
+    }
+    setIsCustomAudioPlaying(false);
+    ambientSound.setVolume(isMuted ? 0 : volume);
     ambientSound.play(track);
     setIsPlayingBgm(true);
     setCurrentTrack(track);
@@ -338,12 +407,29 @@ export default function NovelReaderPage({
     if (!activeScene?.bgmUrl) return;
     ambientSound.stop();
     setIsPlayingBgm(false);
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.volume = volume;
+    const ytId = extractYouTubeVideoId(activeScene.bgmUrl);
+    if (ytId) {
+      if (audioPlayerRef.current) audioPlayerRef.current.pause();
+      setIsCustomAudioPlaying(true);
+      setAudioMode("custom");
+      youtubeIframeRef.current?.contentWindow?.postMessage(
+        JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+        "*"
+      );
+      youtubeIframeRef.current?.contentWindow?.postMessage(
+        JSON.stringify({
+          event: "command",
+          func: "setVolume",
+          args: [Math.round((isMuted ? 0 : volume) * 100)],
+        }),
+        "*"
+      );
+    } else if (audioPlayerRef.current) {
+      audioPlayerRef.current.volume = isMuted ? 0 : volume;
       audioPlayerRef.current.play().catch((e) => console.warn(e));
+      setIsCustomAudioPlaying(true);
+      setAudioMode("custom");
     }
-    setIsCustomAudioPlaying(true);
-    setAudioMode("custom");
     toast.success(`เล่นเพลงประจำฉาก: ${activeScene.bgmTitle || "เพลงประจำฉาก"}`);
   };
 
@@ -351,15 +437,33 @@ export default function NovelReaderPage({
     if (audioPlayerRef.current) {
       audioPlayerRef.current.pause();
     }
+    if (youtubeIframeRef.current) {
+      youtubeIframeRef.current.contentWindow?.postMessage(
+        JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+        "*"
+      );
+    }
     setIsCustomAudioPlaying(false);
     toast.info("หยุดเพลงประจำฉาก");
   };
 
   const handleVolumeChange = (newVol: number) => {
-    setVolume(newVol);
-    ambientSound.setVolume(newVol);
+    const clamped = Math.max(0, Math.min(1, newVol));
+    setVolume(clamped);
+    if (isMuted && clamped > 0) setIsMuted(false);
+    ambientSound.setVolume(clamped);
     if (audioPlayerRef.current) {
-      audioPlayerRef.current.volume = newVol;
+      audioPlayerRef.current.volume = clamped;
+    }
+    if (youtubeIframeRef.current) {
+      youtubeIframeRef.current.contentWindow?.postMessage(
+        JSON.stringify({
+          event: "command",
+          func: "setVolume",
+          args: [Math.round(clamped * 100)],
+        }),
+        "*"
+      );
     }
   };
 
@@ -555,40 +659,88 @@ export default function NovelReaderPage({
       if (audioResolved.action === "stop") {
         ambientSound.stop();
         if (audioPlayerRef.current) audioPlayerRef.current.pause();
+        if (youtubeIframeRef.current) {
+          youtubeIframeRef.current.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+            "*"
+          );
+        }
         setIsCustomAudioPlaying(false);
         setIsPlayingBgm(false);
       } else if (audioResolved.action === "play_scene_bgm") {
-        if (activeScene.bgmUrl && audioPlayerRef.current) {
+        if (activeScene.bgmUrl) {
           ambientSound.stop();
           setIsPlayingBgm(false);
-          audioPlayerRef.current.src = activeScene.bgmUrl;
-          audioPlayerRef.current.volume = volume;
-          audioPlayerRef.current.play().catch(() => {});
-          setIsCustomAudioPlaying(true);
-          setAudioMode("custom");
+          const ytId = extractYouTubeVideoId(activeScene.bgmUrl);
+          if (ytId) {
+            if (audioPlayerRef.current) audioPlayerRef.current.pause();
+            youtubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+              "*"
+            );
+            youtubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({
+                event: "command",
+                func: "setVolume",
+                args: [Math.round((isMuted ? 0 : volume) * 100)],
+              }),
+              "*"
+            );
+            setIsCustomAudioPlaying(true);
+            setAudioMode("custom");
+          } else if (audioPlayerRef.current) {
+            audioPlayerRef.current.src = activeScene.bgmUrl;
+            audioPlayerRef.current.volume = isMuted ? 0 : volume;
+            audioPlayerRef.current.play().catch(() => {});
+            setIsCustomAudioPlaying(true);
+            setAudioMode("custom");
+          }
         }
       } else if (audioResolved.action === "play_url") {
         const directUrl = audioResolved.value.replace(/^url:/, "");
-        if (audioPlayerRef.current) {
-          ambientSound.stop();
-          setIsPlayingBgm(false);
+        ambientSound.stop();
+        setIsPlayingBgm(false);
+        const ytId = extractYouTubeVideoId(directUrl);
+        if (ytId) {
+          if (audioPlayerRef.current) audioPlayerRef.current.pause();
+          youtubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+            "*"
+          );
+          youtubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({
+              event: "command",
+              func: "setVolume",
+              args: [Math.round((isMuted ? 0 : volume) * 100)],
+            }),
+            "*"
+          );
+          setIsCustomAudioPlaying(true);
+          setAudioMode("custom");
+        } else if (audioPlayerRef.current) {
           audioPlayerRef.current.src = directUrl;
-          audioPlayerRef.current.volume = volume;
+          audioPlayerRef.current.volume = isMuted ? 0 : volume;
           audioPlayerRef.current.play().catch(() => {});
           setIsCustomAudioPlaying(true);
           setAudioMode("custom");
         }
       } else if (audioResolved.action === "play_ambient") {
         if (audioPlayerRef.current) audioPlayerRef.current.pause();
+        if (youtubeIframeRef.current) {
+          youtubeIframeRef.current.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+            "*"
+          );
+        }
         setIsCustomAudioPlaying(false);
-        ambientSound.setVolume(volume);
+        ambientSound.setVolume(isMuted ? 0 : volume);
         ambientSound.play(audioResolved.value as any);
         setIsPlayingBgm(true);
         setCurrentTrack(audioResolved.value as any);
         setAudioMode("ambient");
       }
     }
-  }, [activeDialogueIndex, dialogueBindings, activeScene?.id, activeScene?.bgmUrl, volume, parsedBlocks.length]);
+  }, [activeDialogueIndex, dialogueBindings, activeScene?.id, activeScene?.bgmUrl, volume, isMuted, parsedBlocks.length]);
 
   // Smoothly scroll active dialogue block into view
   useEffect(() => {
@@ -827,18 +979,35 @@ export default function NovelReaderPage({
                               )}
                             </button>
                             <span className="text-xs text-slate-200 truncate font-medium">
+                              {extractYouTubeVideoId(activeScene.bgmUrl) ? "🎬 " : "🎵 "}
                               {activeScene.bgmTitle || "เพลงประจำฉาก"}
                             </span>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={handleDeleteSceneBgm}
-                            className="p-1 rounded text-slate-500 hover:text-red-400 transition-colors"
-                            title="ลบเพลงประจำฉากนี้"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1">
+                            {extractYouTubeVideoId(activeScene.bgmUrl) && (
+                              <button
+                                type="button"
+                                onClick={() => setShowMiniVideoPlayer((prev) => !prev)}
+                                className={`px-2 py-0.5 rounded text-[10px] font-thai font-semibold border transition-all ${
+                                  showMiniVideoPlayer
+                                    ? "bg-red-500/20 text-red-300 border-red-500/40"
+                                    : "bg-slate-800 text-slate-400 hover:text-white border-slate-700"
+                                }`}
+                                title="เปิด/ปิด จอวิดีโอ YouTube ขนาดเล็ก"
+                              >
+                                📺 {showMiniVideoPlayer ? "ปิดจอ" : "ดู MV"}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={handleDeleteSceneBgm}
+                              className="p-1 rounded text-slate-500 hover:text-red-400 transition-colors"
+                              title="ลบเพลงประจำฉากนี้"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         <label className="cursor-pointer block text-center py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium border border-slate-700 transition-colors">
@@ -964,19 +1133,45 @@ export default function NovelReaderPage({
                   {/* 3. Master Volume Slider */}
                   <div className="space-y-1.5 pt-1 border-t border-slate-800">
                     <div className="flex items-center justify-between text-[11px] text-slate-400">
-                      <span className="flex items-center gap-1">
-                        <Volume2 className="w-3.5 h-3.5 text-amber-400" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextMute = !isMuted;
+                          setIsMuted(nextMute);
+                          const targetVol = nextMute ? 0 : volume;
+                          ambientSound.setVolume(targetVol);
+                          if (audioPlayerRef.current) audioPlayerRef.current.volume = targetVol;
+                          if (youtubeIframeRef.current) {
+                            youtubeIframeRef.current.contentWindow?.postMessage(
+                              JSON.stringify({ event: "command", func: nextMute ? "mute" : "unMute", args: [] }),
+                              "*"
+                            );
+                          }
+                        }}
+                        className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer"
+                        title={isMuted ? "เปิดเสียง" : "ปิดเสียงชั่วคราว"}
+                      >
+                        {isMuted || volume === 0 ? (
+                          <VolumeX className="w-3.5 h-3.5 text-red-400" />
+                        ) : volume < 0.5 ? (
+                          <Volume1 className="w-3.5 h-3.5 text-amber-400" />
+                        ) : (
+                          <Volume2 className="w-3.5 h-3.5 text-amber-400" />
+                        )}
                         <span>ระดับความดัง</span>
-                      </span>
-                      <span className="font-mono">{Math.round(volume * 100)}%</span>
+                      </button>
+                      <span className="font-mono">{Math.round((isMuted ? 0 : volume) * 100)}%</span>
                     </div>
                     <input
                       type="range"
                       min="0"
                       max="1"
                       step="0.05"
-                      value={volume}
-                      onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                      value={isMuted ? 0 : volume}
+                      onChange={(e) => {
+                        if (isMuted) setIsMuted(false);
+                        handleVolumeChange(parseFloat(e.target.value));
+                      }}
                       className="w-full accent-amber-400 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer"
                     />
                   </div>
@@ -1603,9 +1798,55 @@ export default function NovelReaderPage({
       <audio
         ref={audioPlayerRef}
         loop
+        crossOrigin="anonymous"
         className="hidden"
+        onPlay={() => setIsCustomAudioPlaying(true)}
+        onPause={() => setIsCustomAudioPlaying(false)}
         onEnded={() => setIsCustomAudioPlaying(false)}
+        onError={(e) => {
+          console.warn("Reader audio error:", e);
+          setIsCustomAudioPlaying(false);
+          const ytId = extractYouTubeVideoId(activeScene?.bgmUrl);
+          if (!ytId && activeScene?.bgmUrl) {
+            toast.error("ไม่สามารถเล่นไฟล์เสียงจากลิงก์นี้ได้ ลิงก์อาจติด CORS หรือไม่ใช่ Direct Audio (.mp3, .wav)");
+          }
+        }}
       />
+
+      {/* YouTube Background & Picture-in-Picture Player for Reader */}
+      {activeScene?.bgmUrl && extractYouTubeVideoId(activeScene.bgmUrl) && (
+        <div
+          className={
+            showMiniVideoPlayer
+              ? "fixed bottom-5 right-5 z-50 w-72 sm:w-80 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 bg-slate-950 transition-all duration-300 animate-in fade-in zoom-in-95"
+              : "fixed -bottom-96 -right-96 w-1 h-1 opacity-0 pointer-events-none"
+          }
+        >
+          {showMiniVideoPlayer && (
+            <div className="flex items-center justify-between px-3 py-2 bg-slate-900 border-b border-slate-800 text-xs text-slate-300 font-thai">
+              <span className="flex items-center gap-1.5 truncate">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="truncate font-semibold">{activeScene?.bgmTitle || "YouTube Soundtrack"}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowMiniVideoPlayer(false)}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                title="ซ่อนหน้าต่างวิดีโอ (เพลงยังเล่นต่อในพื้นหลัง)"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          <iframe
+            ref={youtubeIframeRef}
+            src={`https://www.youtube-nocookie.com/embed/${extractYouTubeVideoId(activeScene.bgmUrl)}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${extractYouTubeVideoId(activeScene.bgmUrl)}`}
+            title="Reader YouTube Audio Player"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            className={showMiniVideoPlayer ? "w-full aspect-video" : "w-1 h-1"}
+          />
+        </div>
+      )}
 
       {/* Lightbox Modal */}
       {lightboxImage && (

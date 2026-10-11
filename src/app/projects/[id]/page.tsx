@@ -42,9 +42,13 @@ import {
   Scissors,
   Video,
   VolumeX,
+  Volume1,
+  Youtube,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
+import { extractYouTubeVideoId } from "@/lib/audio/audioHelpers";
+import { SceneAudioModal } from "@/components/audio/SceneAudioModal";
 import { ImageCropModal, AspectRatioType } from "@/components/images/ImageCropModal";
 import { VideoTrimModal } from "@/components/media/VideoTrimModal";
 import { CollaboratorModal } from "@/components/collaboration/CollaboratorModal";
@@ -188,10 +192,14 @@ export default function StoryWorkspacePage({
 
   // Audio / Music State
   const studioAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const youtubeIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [currentAudioTrack, setCurrentAudioTrack] = useState<AudioTrack>("none");
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [audioVolume, setAudioVolume] = useState<number>(0.6);
+  const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const [showAudioModal, setShowAudioModal] = useState(false);
+  const [showMiniVideoPlayer, setShowMiniVideoPlayer] = useState(false);
 
   // Streaming State (Anthropic Claude)
   const [isStreaming, setIsStreaming] = useState(false);
@@ -322,6 +330,12 @@ export default function StoryWorkspacePage({
       if (studioAudioPlayerRef.current) {
         studioAudioPlayerRef.current.pause();
       }
+      if (youtubeIframeRef.current) {
+        youtubeIframeRef.current.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+          "*"
+        );
+      }
     } catch (err) {
       console.error(err);
     }
@@ -390,6 +404,12 @@ export default function StoryWorkspacePage({
     if (studioAudioPlayerRef.current) {
       studioAudioPlayerRef.current.pause();
     }
+    if (youtubeIframeRef.current) {
+      youtubeIframeRef.current.contentWindow?.postMessage(
+        JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+        "*"
+      );
+    }
     ambientSound.stop();
     setIsAudioPlaying(false);
 
@@ -399,20 +419,46 @@ export default function StoryWorkspacePage({
     }
 
     if (track === "custom") {
-      if (activeScene?.bgmUrl && studioAudioPlayerRef.current) {
-        studioAudioPlayerRef.current.src = activeScene.bgmUrl;
-        studioAudioPlayerRef.current.volume = audioVolume;
-        studioAudioPlayerRef.current.play().catch((e) => console.warn(e));
-        setIsAudioPlaying(true);
-        toast.success(`เล่นเพลง: ${activeScene.bgmTitle || "เพลงประจำฉาก"}`);
+      if (activeScene?.bgmUrl) {
+        const ytId = extractYouTubeVideoId(activeScene.bgmUrl);
+        if (ytId) {
+          setIsAudioPlaying(true);
+          setTimeout(() => {
+            youtubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+              "*"
+            );
+            youtubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({
+                event: "command",
+                func: "setVolume",
+                args: [Math.round((isAudioMuted ? 0 : audioVolume) * 100)],
+              }),
+              "*"
+            );
+          }, 350);
+          toast.success(`เล่นเพลง (YouTube): ${activeScene.bgmTitle || "เพลงประจำฉาก"}`);
+        } else if (studioAudioPlayerRef.current) {
+          studioAudioPlayerRef.current.src = activeScene.bgmUrl;
+          studioAudioPlayerRef.current.volume = isAudioMuted ? 0 : audioVolume;
+          studioAudioPlayerRef.current
+            .play()
+            .then(() => setIsAudioPlaying(true))
+            .catch((e) => {
+              console.warn(e);
+              setIsAudioPlaying(false);
+              toast.error("ไม่สามารถเล่นไฟล์เสียงจากลิงก์นี้ได้ ลิงก์อาจติด CORS หรือไม่ใช่ไฟล์เสียงตรง (.mp3)");
+            });
+          toast.success(`เล่นเพลง: ${activeScene.bgmTitle || "เพลงประจำฉาก"}`);
+        }
       } else {
-        toast.error("ฉากนี้ยังไม่ได้อัปโหลดไฟล์เพลง");
+        toast.error("ฉากนี้ยังไม่ได้อัปโหลดหรือใส่ลิงก์เพลง");
       }
       return;
     }
 
     // Ambient Synth Tracks
-    ambientSound.setVolume(audioVolume);
+    ambientSound.setVolume(isAudioMuted ? 0 : audioVolume);
     ambientSound.play(track);
     setIsAudioPlaying(true);
     const trackNames: Record<string, string> = {
@@ -427,16 +473,46 @@ export default function StoryWorkspacePage({
   const handleToggleAudioPlay = () => {
     if (isAudioPlaying) {
       if (studioAudioPlayerRef.current) studioAudioPlayerRef.current.pause();
+      if (youtubeIframeRef.current) {
+        youtubeIframeRef.current.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+          "*"
+        );
+      }
       ambientSound.stop();
       setIsAudioPlaying(false);
       toast.info("หยุดเพลง");
     } else {
-      if (currentAudioTrack === "custom" && activeScene?.bgmUrl && studioAudioPlayerRef.current) {
-        studioAudioPlayerRef.current.volume = audioVolume;
-        studioAudioPlayerRef.current.play().catch((e) => console.warn(e));
-        setIsAudioPlaying(true);
+      if (currentAudioTrack === "custom" && activeScene?.bgmUrl) {
+        const ytId = extractYouTubeVideoId(activeScene.bgmUrl);
+        if (ytId) {
+          setIsAudioPlaying(true);
+          youtubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+            "*"
+          );
+          youtubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({
+              event: "command",
+              func: "setVolume",
+              args: [Math.round((isAudioMuted ? 0 : audioVolume) * 100)],
+            }),
+            "*"
+          );
+          toast.success(`เล่นเพลง: ${activeScene.bgmTitle || "เพลงประจำฉาก"}`);
+        } else if (studioAudioPlayerRef.current) {
+          studioAudioPlayerRef.current.volume = isAudioMuted ? 0 : audioVolume;
+          studioAudioPlayerRef.current
+            .play()
+            .then(() => setIsAudioPlaying(true))
+            .catch((e) => {
+              console.warn(e);
+              setIsAudioPlaying(false);
+              toast.error("ไม่สามารถเล่นไฟล์เสียงได้ กรุณาตรวจสอบลิงก์หรืออัปโหลดไฟล์เพลง");
+            });
+        }
       } else if (currentAudioTrack !== "none" && currentAudioTrack !== "custom") {
-        ambientSound.setVolume(audioVolume);
+        ambientSound.setVolume(isAudioMuted ? 0 : audioVolume);
         ambientSound.play(currentAudioTrack);
         setIsAudioPlaying(true);
       } else if (activeScene?.bgmUrl) {
@@ -448,25 +524,73 @@ export default function StoryWorkspacePage({
   };
 
   const handleVolumeChange = (vol: number) => {
-    setAudioVolume(vol);
-    ambientSound.setVolume(vol);
+    const clamped = Math.max(0, Math.min(1, vol));
+    setAudioVolume(clamped);
+    if (isAudioMuted && clamped > 0) {
+      setIsAudioMuted(false);
+    }
+    ambientSound.setVolume(clamped);
     if (studioAudioPlayerRef.current) {
-      studioAudioPlayerRef.current.volume = vol;
+      studioAudioPlayerRef.current.volume = clamped;
+    }
+    if (youtubeIframeRef.current) {
+      youtubeIframeRef.current.contentWindow?.postMessage(
+        JSON.stringify({
+          event: "command",
+          func: "setVolume",
+          args: [Math.round(clamped * 100)],
+        }),
+        "*"
+      );
     }
   };
 
-  // Set Audio via Direct URL (MP3 / Audio stream - No file size limit!)
+  const handleToggleMute = () => {
+    const nextMute = !isAudioMuted;
+    setIsAudioMuted(nextMute);
+    const targetVol = nextMute ? 0 : audioVolume;
+    ambientSound.setVolume(targetVol);
+    if (studioAudioPlayerRef.current) {
+      studioAudioPlayerRef.current.volume = targetVol;
+    }
+    if (youtubeIframeRef.current) {
+      youtubeIframeRef.current.contentWindow?.postMessage(
+        JSON.stringify({
+          event: "command",
+          func: nextMute ? "mute" : "unMute",
+          args: [],
+        }),
+        "*"
+      );
+      if (!nextMute) {
+        youtubeIframeRef.current.contentWindow?.postMessage(
+          JSON.stringify({
+            event: "command",
+            func: "setVolume",
+            args: [Math.round(audioVolume * 100)],
+          }),
+          "*"
+        );
+      }
+    }
+    toast.info(nextMute ? "ปิดเสียงชั่วคราว (Muted)" : `เปิดเสียง: ${Math.round(audioVolume * 100)}%`);
+  };
+
+  // Set Audio via Direct URL (MP3 / Audio stream / YouTube)
   const handleSetAudioUrl = async (url: string, title?: string) => {
     if (!activeSceneId || !url.trim()) return;
 
     try {
       setIsUploadingAudio(true);
+      const isYt = Boolean(extractYouTubeVideoId(url.trim()));
+      const fallbackTitle = isYt ? "เพลงประกอบ (YouTube)" : "เพลงประกอบจากลิงก์";
+
       const res = await fetch(`/api/projects/${projectId}/scenes/${activeSceneId}/audio`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bgmUrl: url.trim(),
-          bgmTitle: title?.trim() || "เพลงประกอบจากลิงก์",
+          bgmTitle: title?.trim() || fallbackTitle,
         }),
       });
 
@@ -488,13 +612,37 @@ export default function StoryWorkspacePage({
       );
 
       setCurrentAudioTrack("custom");
-      if (studioAudioPlayerRef.current) {
-        studioAudioPlayerRef.current.src = data.bgmUrl;
-        studioAudioPlayerRef.current.volume = audioVolume;
-        studioAudioPlayerRef.current.play().catch((e) => console.warn(e));
-        setIsAudioPlaying(true);
-      }
       ambientSound.stop();
+
+      const ytId = extractYouTubeVideoId(data.bgmUrl);
+      if (ytId) {
+        if (studioAudioPlayerRef.current) studioAudioPlayerRef.current.pause();
+        setIsAudioPlaying(true);
+        setTimeout(() => {
+          youtubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+            "*"
+          );
+          youtubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({
+              event: "command",
+              func: "setVolume",
+              args: [Math.round((isAudioMuted ? 0 : audioVolume) * 100)],
+            }),
+            "*"
+          );
+        }, 500);
+      } else if (studioAudioPlayerRef.current) {
+        studioAudioPlayerRef.current.src = data.bgmUrl;
+        studioAudioPlayerRef.current.volume = isAudioMuted ? 0 : audioVolume;
+        studioAudioPlayerRef.current
+          .play()
+          .then(() => setIsAudioPlaying(true))
+          .catch((e) => {
+            console.warn(e);
+            toast.error("ไม่สามารถเล่นไฟล์เสียงจากลิงก์นี้ได้ ลิงก์อาจติด CORS หรือไม่ใช่ไฟล์เสียงตรง (.mp3)");
+          });
+      }
 
       toast.success(`ตั้งค่าเพลง "${data.bgmTitle}" สำเร็จและเริ่มเล่นทันที!`);
     } catch (err: any) {
@@ -593,6 +741,13 @@ export default function StoryWorkspacePage({
       if (!res.ok) throw new Error("ลบเพลงไม่สำเร็จ");
 
       if (studioAudioPlayerRef.current) studioAudioPlayerRef.current.pause();
+      if (youtubeIframeRef.current) {
+        youtubeIframeRef.current.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+          "*"
+        );
+      }
+      ambientSound.stop();
       setIsAudioPlaying(false);
       setCurrentAudioTrack("none");
 
@@ -941,27 +1096,59 @@ export default function StoryWorkspacePage({
     if (!audioValue || audioValue === "stop") {
       ambientSound.stop();
       if (studioAudioPlayerRef.current) studioAudioPlayerRef.current.pause();
+      if (youtubeIframeRef.current) {
+        youtubeIframeRef.current.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+          "*"
+        );
+      }
       setIsAudioPlaying(false);
       return;
     }
 
     if (audioValue === "scene_bgm") {
-      if (activeScene?.bgmUrl && studioAudioPlayerRef.current) {
+      if (activeScene?.bgmUrl) {
         ambientSound.stop();
-        studioAudioPlayerRef.current.src = activeScene.bgmUrl;
-        studioAudioPlayerRef.current.volume = audioVolume;
-        studioAudioPlayerRef.current.play().catch(() => {});
-        setIsAudioPlaying(true);
+        const ytId = extractYouTubeVideoId(activeScene.bgmUrl);
+        if (ytId) {
+          if (studioAudioPlayerRef.current) studioAudioPlayerRef.current.pause();
+          setIsAudioPlaying(true);
+          youtubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+            "*"
+          );
+          youtubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({
+              event: "command",
+              func: "setVolume",
+              args: [Math.round((isAudioMuted ? 0 : audioVolume) * 100)],
+            }),
+            "*"
+          );
+        } else if (studioAudioPlayerRef.current) {
+          studioAudioPlayerRef.current.src = activeScene.bgmUrl;
+          studioAudioPlayerRef.current.volume = isAudioMuted ? 0 : audioVolume;
+          studioAudioPlayerRef.current.play().catch(() => {});
+          setIsAudioPlaying(true);
+        }
       }
       return;
     }
 
     if (audioValue.startsWith("url:")) {
       const urlStr = audioValue.replace(/^url:/, "");
-      if (studioAudioPlayerRef.current) {
-        ambientSound.stop();
+      ambientSound.stop();
+      const ytId = extractYouTubeVideoId(urlStr);
+      if (ytId) {
+        if (studioAudioPlayerRef.current) studioAudioPlayerRef.current.pause();
+        setIsAudioPlaying(true);
+        youtubeIframeRef.current?.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+          "*"
+        );
+      } else if (studioAudioPlayerRef.current) {
         studioAudioPlayerRef.current.src = urlStr;
-        studioAudioPlayerRef.current.volume = audioVolume;
+        studioAudioPlayerRef.current.volume = isAudioMuted ? 0 : audioVolume;
         studioAudioPlayerRef.current.play().catch(() => {});
         setIsAudioPlaying(true);
       }
@@ -970,7 +1157,13 @@ export default function StoryWorkspacePage({
 
     // Ambient Synth Theme
     if (studioAudioPlayerRef.current) studioAudioPlayerRef.current.pause();
-    ambientSound.setVolume(audioVolume);
+    if (youtubeIframeRef.current) {
+      youtubeIframeRef.current.contentWindow?.postMessage(
+        JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+        "*"
+      );
+    }
+    ambientSound.setVolume(isAudioMuted ? 0 : audioVolume);
     ambientSound.play(audioValue as any);
     setIsAudioPlaying(true);
   };
@@ -1665,18 +1858,30 @@ export default function StoryWorkspacePage({
 
         {/* Center / Right: Scene BGM Audio Controls */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Audio Track Dropdown */}
-          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-sm">
-            <Music className="w-4 h-4 text-emerald-400" />
+          {/* Scene BGM & Volume Controller */}
+          <div className="flex items-center gap-2 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 shadow-sm">
+            {/* Animated Equalizer when playing */}
+            {isAudioPlaying ? (
+              <div className="flex items-end gap-0.5 h-3.5 px-0.5" title="กำลังเล่นเพลง">
+                <span className="w-0.5 h-3 bg-emerald-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                <span className="w-0.5 h-2 bg-emerald-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                <span className="w-0.5 h-3.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:300ms]" />
+              </div>
+            ) : (
+              <Music className="w-4 h-4 text-emerald-400" />
+            )}
+
+            {/* Audio Track Dropdown */}
             <select
               value={currentAudioTrack}
               onChange={(e) => handleSelectAudioTrack(e.target.value as AudioTrack)}
-              className="bg-transparent text-xs font-bold text-white focus:outline-none font-thai cursor-pointer max-w-[180px] truncate"
+              className="bg-transparent text-xs font-bold text-white focus:outline-none font-thai cursor-pointer max-w-[140px] sm:max-w-[180px] truncate"
             >
               <option value="none" className="bg-slate-900">⚪ ไม่มีเพลงประกอบ</option>
               {activeScene?.bgmUrl && (
                 <option value="custom" className="bg-slate-900">
-                  🎶 {activeScene.bgmTitle || "เพลงที่อัปโหลด"}
+                  {extractYouTubeVideoId(activeScene.bgmUrl) ? "🎬 " : "🎶 "}
+                  {activeScene.bgmTitle || "เพลงประจำฉาก"}
                 </option>
               )}
               <option value="wildfire" className="bg-slate-900">🔥 เพลิงป่า (Wildfire Drone)</option>
@@ -1688,15 +1893,97 @@ export default function StoryWorkspacePage({
             {/* Play/Pause Button */}
             <button
               onClick={handleToggleAudioPlay}
-              className={`p-1 rounded-lg transition-colors ${
+              className={`p-1 rounded-lg transition-all shadow-sm active:scale-95 ${
                 isAudioPlaying
-                  ? "bg-emerald-500 text-slate-950"
-                  : "bg-slate-800 text-slate-300 hover:text-white"
+                  ? "bg-emerald-500 text-slate-950 font-bold hover:bg-emerald-400"
+                  : "bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700"
               }`}
-              title={isAudioPlaying ? "หยุดเพลง" : "เล่นเพลง"}
+              title={isAudioPlaying ? "หยุดเพลง (Pause)" : "เล่นเพลง (Play)"}
             >
               {isAudioPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
             </button>
+
+            {/* Vertical Divider */}
+            <div className="w-[1px] h-4 bg-slate-700 mx-0.5" />
+
+            {/* Volume & Mute Controls */}
+            <div className="flex items-center gap-1.5" title="ปรับระดับเสียงเพลง">
+              {/* Mute Button */}
+              <button
+                type="button"
+                onClick={handleToggleMute}
+                className={`p-1 rounded-lg transition-colors ${
+                  isAudioMuted || audioVolume === 0
+                    ? "text-red-400 hover:bg-red-950/40"
+                    : "text-slate-400 hover:text-amber-300 hover:bg-slate-800"
+                }`}
+                title={isAudioMuted ? "เปิดเสียง (Unmute)" : "ปิดเสียงชั่วคราว (Mute)"}
+              >
+                {isAudioMuted || audioVolume === 0 ? (
+                  <VolumeX className="w-3.5 h-3.5" />
+                ) : audioVolume < 0.5 ? (
+                  <Volume1 className="w-3.5 h-3.5" />
+                ) : (
+                  <Volume2 className="w-3.5 h-3.5" />
+                )}
+              </button>
+
+              {/* Volume Decrease (-) */}
+              <button
+                type="button"
+                onClick={() => handleVolumeChange(Math.max(0, audioVolume - 0.1))}
+                className="w-4 h-4 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded text-xs font-mono font-bold transition-colors"
+                title="ลดเสียง 10%"
+              >
+                -
+              </button>
+
+              {/* Volume Slider */}
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={isAudioMuted ? 0 : audioVolume}
+                onChange={(e) => {
+                  if (isAudioMuted) setIsAudioMuted(false);
+                  handleVolumeChange(parseFloat(e.target.value));
+                }}
+                className="w-14 sm:w-20 accent-emerald-400 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer"
+                title={`ความดัง: ${Math.round((isAudioMuted ? 0 : audioVolume) * 100)}%`}
+              />
+
+              {/* Volume Increase (+) */}
+              <button
+                type="button"
+                onClick={() => handleVolumeChange(Math.min(1, audioVolume + 0.1))}
+                className="w-4 h-4 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded text-xs font-mono font-bold transition-colors"
+                title="เพิ่มเสียง 10%"
+              >
+                +
+              </button>
+
+              {/* Volume Percentage Text */}
+              <span className="font-mono text-[10px] text-slate-400 w-6 text-right select-none">
+                {Math.round((isAudioMuted ? 0 : audioVolume) * 100)}%
+              </span>
+            </div>
+
+            {/* YouTube MV Picture-in-Picture Toggle */}
+            {activeScene?.bgmUrl && extractYouTubeVideoId(activeScene.bgmUrl) && (
+              <button
+                type="button"
+                onClick={() => setShowMiniVideoPlayer((prev) => !prev)}
+                className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-thai font-semibold border transition-all ${
+                  showMiniVideoPlayer
+                    ? "bg-red-500/20 text-red-300 border-red-500/40"
+                    : "bg-slate-800 text-slate-400 hover:text-white border-slate-700"
+                }`}
+                title="เปิด/ปิด จอวิดีโอ YouTube ขนาดเล็ก (PiP)"
+              >
+                📺 {showMiniVideoPlayer ? "ปิดจอ" : "ดู MV"}
+              </button>
+            )}
           </div>
 
           {/* Upload Custom Audio Button */}
@@ -1710,21 +1997,12 @@ export default function StoryWorkspacePage({
             <span>{isUploadingAudio ? "กำลังอัปโหลด..." : "อัปโหลดเพลง"}</span>
           </button>
 
-          {/* Direct Audio URL Button */}
+          {/* Direct Audio URL / YouTube Modal Trigger */}
           <button
-            onClick={() => {
-              const url = prompt(
-                "ระบุลิงก์เพลงประกอบ (Direct MP3 URL / ลิงก์เสียงออนไลน์ - ไม่มีจำกัดขนาดไฟล์):",
-                activeScene?.bgmUrl || ""
-              );
-              if (url && url.trim()) {
-                const title = prompt("ระบุชื่อเพลง:", activeScene?.bgmTitle || "เพลงประกอบจากลิงก์");
-                handleSetAudioUrl(url.trim(), title || undefined);
-              }
-            }}
+            onClick={() => setShowAudioModal(true)}
             disabled={isUploadingAudio}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-300 border border-slate-700 text-xs font-thai font-semibold transition-all shadow-sm active:scale-95"
-            title="ใส่ลิงก์ URL เพลงจากอินเทอร์เน็ต (ไม่มีข้อจำกัดเรื่องขนาดไฟล์)"
+            title="ตั้งค่าหรือเปลี่ยนลิงก์เพลงประกอบ (YouTube หรือ Direct Audio Link)"
           >
             <Link2 className="w-3.5 h-3.5 text-sky-400" />
             <span>ใส่ลิงก์เพลง</span>
@@ -2955,12 +3233,73 @@ export default function StoryWorkspacePage({
         </div>
       </div>
 
-      {/* Hidden Audio Player for Custom Scene BGM */}
+      {/* Hidden HTML5 Audio Player for Direct Scene BGM */}
       <audio
         ref={studioAudioPlayerRef}
         loop
+        crossOrigin="anonymous"
         className="hidden"
+        onPlay={() => setIsAudioPlaying(true)}
+        onPause={() => setIsAudioPlaying(false)}
         onEnded={() => setIsAudioPlaying(false)}
+        onError={(e) => {
+          console.warn("Audio element error:", e);
+          setIsAudioPlaying(false);
+          const ytId = extractYouTubeVideoId(activeScene?.bgmUrl);
+          if (!ytId && activeScene?.bgmUrl) {
+            toast.error(
+              "ไม่สามารถเล่นไฟล์เสียงจากลิงก์นี้ได้ ลิงก์อาจติด CORS หรือไม่ใช่ Direct Audio (.mp3, .wav) แนะนำให้ใช้คลิป YouTube หรืออัปโหลดไฟล์เพลงตรง",
+              { duration: 7000 }
+            );
+          }
+        }}
+      />
+
+      {/* YouTube Background & Picture-in-Picture Player */}
+      {activeScene?.bgmUrl && extractYouTubeVideoId(activeScene.bgmUrl) && (
+        <div
+          className={
+            showMiniVideoPlayer
+              ? "fixed bottom-5 right-5 z-50 w-72 sm:w-80 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 bg-slate-950 transition-all duration-300 animate-in fade-in zoom-in-95"
+              : "fixed -bottom-96 -right-96 w-1 h-1 opacity-0 pointer-events-none"
+          }
+        >
+          {showMiniVideoPlayer && (
+            <div className="flex items-center justify-between px-3 py-2 bg-slate-900 border-b border-slate-800 text-xs text-slate-300 font-thai">
+              <span className="flex items-center gap-1.5 truncate">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="truncate font-semibold">{activeScene?.bgmTitle || "YouTube BGM"}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowMiniVideoPlayer(false)}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                title="ซ่อนหน้าต่างวิดีโอ (เพลงยังเล่นต่อในพื้นหลัง)"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          <iframe
+            ref={youtubeIframeRef}
+            src={`https://www.youtube-nocookie.com/embed/${extractYouTubeVideoId(activeScene.bgmUrl)}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${extractYouTubeVideoId(activeScene.bgmUrl)}`}
+            title="Scene YouTube Audio Player"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            className={showMiniVideoPlayer ? "w-full aspect-video" : "w-1 h-1"}
+          />
+        </div>
+      )}
+
+      {/* Scene Audio URL & YouTube Modal */}
+      <SceneAudioModal
+        isOpen={showAudioModal}
+        onClose={() => setShowAudioModal(false)}
+        currentUrl={activeScene?.bgmUrl}
+        currentTitle={activeScene?.bgmTitle}
+        onSave={async (url, title) => {
+          await handleSetAudioUrl(url, title);
+        }}
+        onDelete={activeScene?.bgmUrl ? handleDeleteAudio : undefined}
       />
 
       {/* Hidden File Inputs */}

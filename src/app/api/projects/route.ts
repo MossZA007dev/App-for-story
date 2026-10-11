@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { projects, characters, parts, scenes, continuityLedgers, abilities } from "@/lib/db/schema";
+import { projects, characters, parts, scenes, continuityLedgers, abilities, images } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { DEFAULT_STORY_RULES } from "@/lib/templates/defaultStoryRules";
 import crypto from "crypto";
@@ -70,6 +70,14 @@ export async function GET() {
 
       const completedParts = projectParts.filter((p) => p.status === "done").length;
 
+      const coverImg = db
+        .select()
+        .from(images)
+        .where(eq(images.projectId, proj.id))
+        .orderBy(desc(images.approved), desc(images.createdAt))
+        .limit(1)
+        .get();
+
       return {
         ...proj,
         characterCount: charCount,
@@ -77,6 +85,7 @@ export async function GET() {
         completedParts,
         sceneCount,
         totalWordCount,
+        coverImage: coverImg?.filePath || "/images/saga-got-cover.jpg",
       };
     });
 

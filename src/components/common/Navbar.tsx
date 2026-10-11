@@ -7,17 +7,45 @@ import { Sparkles, BookOpen, Settings, Plus, Flame, Database } from "lucide-reac
 export function Navbar() {
   const pathname = usePathname();
 
+  // Extract project id from pathname if currently in a project
+  const projectMatch = pathname.match(/\/projects\/([^\/]+)/);
+  const currentProjectId =
+    projectMatch && projectMatch[1] !== "new"
+      ? projectMatch[1]
+      : "678bba56-298f-4f65-9abc-8c6e9ef79156";
+
   const navLinks = [
-    { href: "/", label: "แดชบอร์ดโปรเจกต์", icon: BookOpen },
-    { href: "/projects/new", label: "สร้างเรื่องใหม่", icon: Plus },
-    { href: "/settings", label: "ตั้งค่าระบบ & API", icon: Settings },
+    {
+      href: "/sagas",
+      label: "แดชบอร์ดเนื้อเรื่องต่างๆ",
+      icon: BookOpen,
+      isActive: pathname === "/sagas" || pathname === "/",
+    },
+    {
+      href: `/projects/${currentProjectId}`,
+      label: "studio",
+      icon: BookOpen,
+      isActive: pathname === `/projects/${currentProjectId}`,
+    },
+    {
+      href: "/projects/new",
+      label: "สร้างเรื่องใหม่",
+      icon: Plus,
+      isActive: pathname === "/projects/new",
+    },
+    {
+      href: "/settings",
+      label: "ตั้งค่าระบบ & API",
+      icon: Settings,
+      isActive: pathname === "/settings",
+    },
   ];
 
   return (
     <header className="sticky top-0 z-50 border-b border-slate-800/80 bg-[#070a11]/90 backdrop-blur-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div className="max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Brand */}
-        <Link href="/" className="flex items-center gap-3 group">
+        <Link href="/sagas" className="flex items-center gap-3 group">
           <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-500/20 via-amber-600/10 to-red-600/20 border border-amber-500/40 flex items-center justify-center text-amber-400 group-hover:border-amber-400 transition-all shadow-[0_0_15px_rgba(245,158,11,0.2)]">
             <Flame className="w-5 h-5 text-amber-400 animate-pulse" />
           </div>
@@ -40,7 +68,7 @@ export function Navbar() {
         <nav className="flex items-center gap-1 sm:gap-2">
           {navLinks.map((link) => {
             const Icon = link.icon;
-            const isActive = pathname === link.href;
+            const isActive = link.isActive;
             return (
               <Link
                 key={link.href}
@@ -52,7 +80,7 @@ export function Navbar() {
                 }`}
               >
                 <Icon className={`w-4 h-4 ${isActive ? "text-amber-400" : "text-slate-400"}`} />
-                <span className="hidden md:inline font-thai">{link.label}</span>
+                <span className="hidden sm:inline font-thai">{link.label}</span>
               </Link>
             );
           })}

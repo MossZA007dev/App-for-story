@@ -33,6 +33,7 @@ export const characters = sqliteTable("characters", {
   visualSheet: text("visual_sheet").default("{}"),
   characterType: text("character_type", { enum: ["self", "friend", "canon"] }).default("friend"),
   realNickname: text("real_nickname").default(""),
+  avatarUrl: text("avatar_url").default(""),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

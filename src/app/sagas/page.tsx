@@ -292,7 +292,7 @@ export default function SagasDashboardPage() {
                   </div>
 
                   {/* Card Bottom Bar */}
-                  <div className="p-2 pt-1 flex items-center justify-between border-t border-slate-800/60 mt-1">
+                  <div className="p-2 pt-1.5 flex items-center justify-between border-t border-slate-800/60 mt-1">
                     <div className="flex items-center gap-2 text-[11px] text-slate-400 font-thai">
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                       <span>{project.sceneCount || 0} ฉากพร้อมอ่าน</span>
@@ -300,9 +300,10 @@ export default function SagasDashboardPage() {
 
                     <Link
                       href={`/projects/${project.id}/read`}
-                      className="inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 font-thai transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai transition-all shadow-sm"
                     >
-                      <span>เปิดอ่าน</span>
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span>อ่านแบบ Final</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </Link>
                   </div>

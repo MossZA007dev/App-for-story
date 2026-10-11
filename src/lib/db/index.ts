@@ -209,6 +209,9 @@ export function initDatabase() {
   try {
     sqlite.exec("ALTER TABLE images ADD COLUMN caption TEXT DEFAULT ''");
   } catch {}
+  try {
+    sqlite.exec("ALTER TABLE characters ADD COLUMN avatar_url TEXT DEFAULT ''");
+  } catch {}
 }
 
 // Auto-run initDatabase upon import

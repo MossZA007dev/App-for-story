@@ -14,7 +14,7 @@
     "share": "npx localtunnel --port 3000"
   },
   "engines": {
-    "node": "20.x"
+    "node": "22.x"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

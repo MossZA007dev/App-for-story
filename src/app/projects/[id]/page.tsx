@@ -344,8 +344,23 @@ export default function StoryWorkspacePage({
     return () => window.removeEventListener("focus", handleFocus);
   }, [activeSceneId, hasUnsavedChanges]);
 
+  // Safeguard: warn user before leaving if there are unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = "คุณมีการแก้ไขที่ยังไม่ได้บันทึก ต้องการออกจากหน้านี้หรือไม่?";
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
   // Switch Active Part
   const handleSelectPart = (partId: string) => {
+    if (hasUnsavedChanges && activeSceneId) {
+      handleSaveAll(true);
+    }
     setActivePartId(partId);
     const p = parts.find((item) => item.id === partId);
     if (p && p.scenes && p.scenes.length > 0) {
@@ -360,6 +375,9 @@ export default function StoryWorkspacePage({
 
   // Switch Active Scene
   const handleSelectScene = (sceneId: string) => {
+    if (hasUnsavedChanges && activeSceneId) {
+      handleSaveAll(true);
+    }
     setActiveSceneId(sceneId);
     setIsRawMarkdownMode(false);
     setStreamingText("");

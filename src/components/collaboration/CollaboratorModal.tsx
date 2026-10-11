@@ -563,52 +563,82 @@ export function CollaboratorModal({
         {/* TAB 3: ONLINE / REMOTE SHARING GUIDE */}
         {activeTab === "online" && (
           <div className="space-y-4 animate-fadeIn text-xs text-slate-300 leading-relaxed">
-            <div className="p-4 rounded-xl bg-gradient-to-br from-slate-900 to-black border border-slate-800 space-y-3">
-              <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
-                <Globe className="w-5 h-5" />
-                <span>วิธีแชร์ให้เพื่อนที่อยู่คนละบ้าน / อยู่คนละเน็ต เข้ามาร่วมแต่ง</span>
+            {/* Active Live Link Box */}
+            <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/60 to-slate-900 border border-emerald-500/40 space-y-3 shadow-lg">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-emerald-300 flex items-center gap-2 text-sm">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                  <span>🌐 ลิงก์ออนไลน์แชร์ข้ามเน็ตที่เปิดใช้งานอยู่ตอนนี้:</span>
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40">
+                  ONLINE NOW
+                </span>
               </div>
 
-              <p>
-                กรณีเพื่อนไม่ได้อยู่บ้านเดียวกันหรือไม่ได้ต่อ WiFi เดียวกัน คุณสามารถแชร์โปรเจกต์นี้ให้เพื่อนผ่านอินเทอร์เน็ตได้ง่ายๆ 2 วิธี:
-              </p>
-
-              {/* Option 1: Cloudflare Tunnel (Free & 1 Minute) */}
-              <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-white flex items-center gap-1.5">
-                    <span>⚡ วิธีที่ 1: ใช้ Cloudflare Tunnel (ฟรี ทันที ไม่ต้องสมัคร)</span>
-                  </span>
-                  <span className="text-[10px] text-amber-400 font-mono">แนะนำเร็วที่สุด</span>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 px-3 py-2 rounded-lg bg-black/60 border border-slate-700 font-mono text-emerald-300 text-xs truncate select-all">
+                  https://heavy-bars-pick.loca.lt/projects/{projectId}
                 </div>
-                <p className="text-[11px] text-slate-400">
-                  เปิด Terminal ในเครื่องของคุณ แล้วพิมพ์คำสั่งนี้:
-                </p>
-                <div className="flex items-center justify-between bg-black p-2.5 rounded border border-slate-800 font-mono text-amber-300 text-xs">
-                  <span>npx untun@latest tunnel --port 3000</span>
+                <button
+                  onClick={() => handleCopyLink(`https://heavy-bars-pick.loca.lt/projects/${projectId}`, "ลิงก์ออนไลน์ข้ามเน็ต")}
+                  className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1 transition-all shadow"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>คัดลอกลิงก์</span>
+                </button>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-black/40 border border-emerald-500/20 text-[11px] text-slate-300 space-y-1">
+                <p>
+                  🔑 <strong>รหัสผ่านเข้าเว็บครั้งแรก (Password IP):</strong>{" "}
+                  <code className="text-amber-300 bg-black/80 px-1.5 py-0.5 rounded border border-slate-700 font-bold">49.49.235.52</code>{" "}
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText("npx untun@latest tunnel --port 3000");
-                      toast.success("คัดลอกคำสั่งแล้ว! นำไปวางใน Terminal ได้เลย");
+                      navigator.clipboard.writeText("49.49.235.52");
+                      toast.success("คัดลอกรหัสผ่าน 49.49.235.52 แล้ว!");
+                    }}
+                    className="text-amber-400 hover:underline text-[10px] ml-1"
+                  >
+                    (คลิกคัดลอก)
+                  </button>
+                </p>
+                <p className="text-slate-400 text-[10px]">
+                  *เมื่อเพื่อนเปิดลิงก์ครั้งแรก เว็บจะถามรหัสผ่าน ให้เพื่อนกรอกเลขนี้แล้วกด Click to Submit ก็จะเข้าห้องแต่งนิยายได้ทันที!
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
+              <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+                <Globe className="w-4 h-4" />
+                <span>คำสั่งเปิดแชร์ข้ามเน็ตด้วยตนเองในครั้งถัดไป:</span>
+              </div>
+
+              {/* Option 1: npm run share */}
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white">⚡ คำสั่งเปิดแชร์ด่วน 1 บรรทัด (npm run share)</span>
+                  <span className="text-[10px] text-amber-400 font-mono">ง่ายที่สุด</span>
+                </div>
+                <div className="flex items-center justify-between bg-black p-2 rounded border border-slate-800 font-mono text-amber-300 text-xs">
+                  <span>npm run share</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText("npm run share");
+                      toast.success("คัดลอกคำสั่ง npm run share แล้ว!");
                     }}
                     className="p-1 hover:text-white"
-                    title="คัดลอกคำสั่ง"
                   >
                     <Copy className="w-3.5 h-3.5" />
                   </button>
                 </div>
-                <p className="text-[11px] text-slate-400">
-                  ระบบจะสร้างลิงก์ HTTPS สาธารณะ (เช่น <code className="text-amber-300">https://xxxx.trycloudflare.com</code>) ให้คุณส่งลิงก์นั้นให้เพื่อนเข้ามาร่วมแต่งจากที่ไหนก็ได้ทั่วโลก!
-                </p>
               </div>
 
-              {/* Option 2: Deploy to Vercel */}
-              <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
-                <span className="font-bold text-white block">
-                  ☁️ วิธีที่ 2: ขึ้นเว็บถาวรบน Vercel / Cloud
-                </span>
+              {/* Option 2: Cloudflare Tunnel */}
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1.5">
+                <span className="font-bold text-white block">☁️ Cloudflare Tunnel (ไม่มีหน้าถามรหัสผ่าน)</span>
                 <p className="text-[11px] text-slate-400">
-                  นำโค้ดขึ้น GitHub และกด Deploy บน Vercel หรือเซิร์ฟเวอร์ส่วนตัว เพื่อให้เว็บเปิดออนไลน์ 24 ชม. ตลอดเวลา
+                  พิมพ์คำสั่งใน Terminal: <code className="text-amber-300">winget install --id Cloudflare.cloudflared</code> จากนั้นรัน <code className="text-amber-300">cloudflared tunnel --url http://localhost:3000</code>
                 </p>
               </div>
             </div>

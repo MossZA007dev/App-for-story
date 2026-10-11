@@ -14,6 +14,8 @@ const RequestSchema = z.object({
     roleWishOrForbidden: z.string().optional(),
     faction: z.string().optional(),
     background: z.string().optional(),
+    characterType: z.string().optional(),
+    realNickname: z.string().optional(),
   }),
 });
 

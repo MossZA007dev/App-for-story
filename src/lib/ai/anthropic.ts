@@ -56,6 +56,8 @@ export async function proposeCharacterRoles(params: {
     roleWishOrForbidden?: string;
     faction?: string;
     background?: string;
+    characterType?: string;
+    realNickname?: string;
   };
 }): Promise<ProposeRolesResponse> {
   const { client, model } = await getAnthropicClient();
@@ -96,15 +98,17 @@ export async function proposeCharacterRoles(params: {
 ขอบเขตเวลา: ${params.timelineScope || "กำหนดเอง"}
 บันทึกโลก: ${params.worldNotes || "ไม่มี"}
 
-[ข้อมูลตัวละครที่ต้องออกแบบบทบาท]
-ชื่อ: ${params.character.name}
+[ข้อมูลตัวละครที่ต้องออกแบบบทบาท (คนจากชีวิตจริงที่หลุดเข้าไปในโลกนี้)]
+สถานะ: ${params.character.characterType === "self" ? "ตัวผู้ใช้เอง (Self / Protagonist)" : "เพื่อนสนิทในแก๊ง (Friend)"}
+ชื่อเล่นจริง: ${params.character.realNickname || "ไม่ระบุ"}
+ชื่อ/ฉายาในจักรวาลนี้: ${params.character.name}
 เพศ: ${params.character.gender || "ไม่ระบุ"}
 MBTI ตั้งต้น: ${params.character.startMbti || "ไม่ระบุ"}
-ฝ่าย / สังกัด: ${params.character.faction || "ไม่ระบุ"}
+ฝ่าย / สังกัดที่อยากเข้า: ${params.character.faction || "ไม่ระบุ"}
 บทบาทที่อยากได้ / ห้ามเป็น: ${params.character.roleWishOrForbidden || "ไม่มีข้อจำกัด"}
-ภูมิหลังย่อ: ${params.character.background || "ไม่มี"}
+ภูมิหลังย่อ/สภาพตอนหลุดเข้ามา: ${params.character.background || "ไม่มี"}
 
-กรุณาเสนอ 3 บทบาทที่ลึกซึ้งและมีความหลากหลายตามเกณฑ์`;
+กรุณาเสนอ 3 บทบาทที่ลึกซึ้งและมีความหลากหลายตามเกณฑ์ โดยปรับให้เข้ากับบรรยากาศมืดมน/เข้มข้นของจักรวาล ${params.universe} และมีเคมีต่อแก๊งเพื่อน`;
 
   const response = await client.messages.create({
     model,

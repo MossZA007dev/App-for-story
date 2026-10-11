@@ -16,6 +16,8 @@ const CharacterInputSchema = z.object({
   roleReason: z.string().optional().default(""),
   faction: z.string().optional().default(""),
   background: z.string().optional().default(""),
+  characterType: z.enum(["self", "friend", "canon"]).optional().default("friend"),
+  realNickname: z.string().optional().default(""),
   visualSheet: z.record(z.unknown()).optional().default({}),
   ability: z
     .object({
@@ -171,6 +173,8 @@ export async function POST(req: NextRequest) {
           roleReason: charInput.roleReason || "",
           faction: charInput.faction || "",
           background: charInput.background || "",
+          characterType: charInput.characterType || "friend",
+          realNickname: charInput.realNickname || "",
           status: "alive",
           locationNow: "",
           visualSheet: visualSheetStr,

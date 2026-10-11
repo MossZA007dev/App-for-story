@@ -21,6 +21,8 @@ import { toast } from "sonner";
 
 interface CharacterForm {
   id: string;
+  characterType: "self" | "friend";
+  realNickname: string;
   name: string;
   gender: string;
   startMbti: string;
@@ -71,16 +73,18 @@ export default function NewProjectPage() {
   );
   const [showRulesEditor, setShowRulesEditor] = useState(false);
 
-  // Step 2: Characters
+  // Step 2: Characters (You & Your Squad)
   const [charactersList, setCharactersList] = useState<CharacterForm[]>([
     {
       id: "char-1",
-      name: "Jon Snow",
+      characterType: "self",
+      realNickname: "มอส",
+      name: "Lord Moss of House Blackwood",
       gender: "ชาย",
-      startMbti: "ISFP",
-      faction: "Night's Watch / Stark",
-      roleWishOrForbidden: "ต้องการให้กลายเป็นผู้บัญชาการเงาที่ต้องแลกด้วยคุณธรรม ห้ามเป็นพระเอกไร้เดียงสา",
-      background: "บุตรนอกสมรสผู้ค้นพบความลับโบราณที่ The Wall",
+      startMbti: "INTJ",
+      faction: "อิสระ / พันธมิตรลับของฝ่ายเหนือ",
+      roleWishOrForbidden: "ต้องการเป็นผู้วางแผนเอาชีวิตรอดและผู้ถือความลับโบราณ ห้ามตายง่ายหรือเป็นหมากไร้ประโยชน์",
+      background: "ตัวฉันเองที่หลุดเข้ามาในโลกนี้พร้อมความทรงจำเดิม และต้องหาทางรอดในสงคราม",
       isProposingRoles: false,
       proposedRoles: [],
       aiRecommendedIndex: 0,
@@ -91,12 +95,14 @@ export default function NewProjectPage() {
     },
     {
       id: "char-2",
-      name: "Daenerys Targaryen",
-      gender: "หญิง",
-      startMbti: "ENFJ",
-      faction: "Targaryen",
-      roleWishOrForbidden: "ต้องการเป็นผู้นำที่จิตใจเริ่มแข็งกร้าว ห้ามเป็นผู้ปลดปล่อยที่ไร้ความด่างพร้อย",
-      background: "มารดาแห่งมังกร ผู้กำลังเผชิญกับการกลืนกินจากสายเลือดมังกร",
+      characterType: "friend",
+      realNickname: "นนท์",
+      name: "Sir Nont the Ironbound",
+      gender: "ชาย",
+      startMbti: "ISTP",
+      faction: "Night's Watch / อัศวินเร่ร่อน",
+      roleWishOrForbidden: "ต้องการเป็นยอดนักดาบที่สู้เก่งแต่มีปมบาดแผลในใจ ห้ามทรยศเพื่อน",
+      background: "เพื่อนสนิทที่หลุดมิติมาด้วยกัน ถูกพลัดพรากไปอยู่แถบชายแดน",
       isProposingRoles: false,
       proposedRoles: [],
       aiRecommendedIndex: 0,
@@ -109,16 +115,19 @@ export default function NewProjectPage() {
 
   const addCharacter = () => {
     const newId = `char-${Date.now()}`;
+    const friendNum = charactersList.length;
     setCharactersList((prev) => [
       ...prev,
       {
         id: newId,
+        characterType: "friend",
+        realNickname: `เพื่อนคนที่ ${friendNum}`,
         name: "",
-        gender: "ไม่ระบุ",
-        startMbti: "INTJ",
-        faction: "",
-        roleWishOrForbidden: "",
-        background: "",
+        gender: "ชาย",
+        startMbti: "ENTP",
+        faction: "ตามสถานการณ์",
+        roleWishOrForbidden: "อยากให้มีบทบาทเด่นในแก๊ง",
+        background: "เพื่อนในแก๊งที่หลุดเข้ามาในโลกนี้ด้วยกัน",
         isProposingRoles: false,
         proposedRoles: [],
         aiRecommendedIndex: 0,
@@ -149,8 +158,9 @@ export default function NewProjectPage() {
     const char = charactersList.find((c) => c.id === charId);
     if (!char) return;
 
-    if (!char.name.trim()) {
-      toast.error("กรุณาระบุชื่อตัวละครก่อนให้ AI เสนอบทบาท");
+    const effectiveName = char.name.trim() || char.realNickname.trim();
+    if (!effectiveName) {
+      toast.error("กรุณาระบุชื่อเล่นหรือชื่อตัวละครก่อนให้ AI เสนอบทบาท");
       return;
     }
 
@@ -165,7 +175,9 @@ export default function NewProjectPage() {
           timelineScope,
           worldNotes,
           character: {
-            name: char.name,
+            name: effectiveName,
+            characterType: char.characterType,
+            realNickname: char.realNickname,
             gender: char.gender,
             startMbti: char.startMbti,
             roleWishOrForbidden: char.roleWishOrForbidden,
@@ -181,6 +193,7 @@ export default function NewProjectPage() {
       const { roles, aiSelectionRecommendationIndex, recommendationReason } = data.data;
 
       updateCharacter(charId, {
+        name: char.name.trim() || effectiveName,
         proposedRoles: roles,
         aiRecommendedIndex: aiSelectionRecommendationIndex,
         recommendationReason,
@@ -189,7 +202,7 @@ export default function NewProjectPage() {
         chosenAbility: roles[aiSelectionRecommendationIndex].suggestedAbility,
       });
 
-      toast.success(`AI ได้เสนอ 3 บทบาทสำหรับ ${char.name} เรียบร้อยแล้ว`);
+      toast.success(`AI ได้เสนอ 3 บทบาทสำหรับ ${effectiveName} เรียบร้อยแล้ว`);
     } catch (err: unknown) {
       console.error(err);
       const msg = err instanceof Error ? err.message : "เรียก AI ล้มเหลว";
@@ -218,8 +231,8 @@ export default function NewProjectPage() {
       return;
     }
 
-    if (charactersList.some((c) => !c.name.trim())) {
-      toast.error("กรุณากรอกชื่อตัวละครให้ครบทุกตัว");
+    if (charactersList.some((c) => !c.name.trim() && !c.realNickname.trim())) {
+      toast.error("กรุณาระบุชื่อหรือชื่อเล่นของสมาชิกในแก๊งให้ครบทุกตัว");
       setStep(2);
       return;
     }
@@ -235,13 +248,17 @@ export default function NewProjectPage() {
           roleReason = c.proposedRoles[c.chosenRoleIndex].narrativeFunction;
         }
 
+        const resolvedName = c.name.trim() || c.realNickname.trim() || "ตัวละครในแก๊ง";
+
         return {
-          name: c.name,
+          name: resolvedName,
+          characterType: c.characterType || "friend",
+          realNickname: c.realNickname || "",
           gender: c.gender,
           startMbti: c.startMbti,
           currentMbti: c.startMbti,
           roleOptions: JSON.stringify(c.proposedRoles),
-          chosenRole: c.chosenRoleCustom || "ตัวละครสำคัญ",
+          chosenRole: c.chosenRoleCustom || "สมาชิกแก๊งผู้ข้ามมิติ",
           roleReason: roleReason || c.recommendationReason || "",
           faction: c.faction,
           background: c.background,
@@ -479,25 +496,39 @@ export default function NewProjectPage() {
       {/* STEP 2: Character Brief & AI Propose Roles */}
       {step === 2 && (
         <div className="space-y-6 animate-fadeIn">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold text-white flex items-center gap-2 font-heading">
                 <Users className="w-5 h-5 text-amber-400" />
-                <span>CHARACTER BIBLE & DIVERSITY SETUP</span>
+                <span>YOU & YOUR SQUAD CASTING (แก๊งของเราที่จะข้ามมิติไป)</span>
               </h2>
               <p className="text-xs text-slate-400 font-thai">
-                ระบุตัวละครอย่างน้อย 1-6 ตัว และกดปุ่ม &quot;✨ ให้ AI เสนอ 3 บทบาทต่อคน&quot;
-                เพื่อให้ระบบค้นหาบทบาทที่หลากหลายตามเกณฑ์
+                กรอกตัวละครของคุณและเพื่อนๆ เพื่อให้ AI แปลงบุคลิกเป็นบทบาทในจักรวาล {universe}
               </p>
             </div>
 
             <button
               onClick={addCharacter}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-semibold border border-slate-700 transition-colors font-thai"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/40 transition-colors font-thai whitespace-nowrap"
             >
               <Plus className="w-4 h-4" />
-              <span>เพิ่มตัวละครอีกคน</span>
+              <span>+ เพิ่มเพื่อนในแก๊งอีกคน</span>
             </button>
+          </div>
+
+          {/* Canon Characters Explanatory Banner */}
+          <div className="rounded-xl p-4 bg-slate-900/90 border border-slate-800 flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0 mt-0.5">
+              ⚔️
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-xs font-bold text-amber-300 font-mono uppercase tracking-wider">
+                ตัวละครดั้งเดิมในจักรวาล {universe} (CANON CHARACTERS)
+              </h4>
+              <p className="text-xs text-slate-300 font-thai leading-relaxed">
+                ตัวละครต้นฉบับในเรื่อง <span className="text-white font-semibold">{universe}</span> (เช่น Jon Snow, Daenerys Targaryen, Tyrion Lannister, Cersei, Arya...) <strong className="text-amber-400 font-semibold">ไม่ต้องกรอกในหน้านี้ครับ!</strong> AI จะดึงตัวละครต้นฉบับในจักรวาลมาร่วมดำเนินเรื่อง เป็นมิตร/ศัตรู และมีบทสนทนากับแก๊งของคุณโดยอัตโนมัติ
+              </p>
+            </div>
           </div>
 
           {/* Character Cards list */}
@@ -508,14 +539,47 @@ export default function NewProjectPage() {
                 className="cinematic-card rounded-xl p-6 border-slate-800 space-y-5 relative"
               >
                 {/* Character Header */}
-                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                  <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-3 gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center justify-center text-xs font-bold font-mono">
                       {index + 1}
                     </span>
+
+                    {/* Self vs Friend Toggle */}
+                    <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => updateCharacter(char.id, { characterType: "self" })}
+                        className={`px-2 py-0.5 rounded text-[11px] font-thai font-semibold transition-all ${
+                          char.characterType === "self"
+                            ? "bg-amber-500 text-slate-950 font-bold"
+                            : "text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        👑 ตัวฉันเอง (Me)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateCharacter(char.id, { characterType: "friend" })}
+                        className={`px-2 py-0.5 rounded text-[11px] font-thai font-semibold transition-all ${
+                          char.characterType === "friend"
+                            ? "bg-sky-600 text-white font-bold"
+                            : "text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        🧑‍🤝‍🧑 เพื่อนในแก๊ง (Friend)
+                      </button>
+                    </div>
+
                     <h3 className="font-bold text-white text-base font-heading">
-                      {char.name ? char.name : `ตัวละครที่ ${index + 1}`}
+                      {char.realNickname ? `${char.realNickname}` : `สมาชิกคนที่ ${index + 1}`}
+                      {char.name && (
+                        <span className="text-xs font-normal text-slate-400 font-thai ml-2">
+                          ({char.name})
+                        </span>
+                      )}
                     </h3>
+
                     {char.chosenRoleCustom && (
                       <span className="px-2 py-0.5 rounded text-xs bg-amber-500/10 text-amber-300 border border-amber-500/30">
                         บทบาท: {char.chosenRoleCustom}
@@ -526,7 +590,7 @@ export default function NewProjectPage() {
                   <button
                     onClick={() => removeCharacter(char.id)}
                     className="text-slate-500 hover:text-red-400 p-1.5 rounded hover:bg-slate-800/80 transition-colors"
-                    title="ลบตัวละครนี้"
+                    title="ลบสมาชิกนี้"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -536,11 +600,24 @@ export default function NewProjectPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-slate-300 font-thai">
-                      ชื่อตัวละคร <span className="text-red-400">*</span>
+                      ชื่อเล่นจริงในชีวิตจริง <span className="text-red-400">*</span>
                     </label>
                     <input
                       type="text"
-                      placeholder="เช่น Jon Snow, Daenerys"
+                      placeholder="เช่น มอส, นนท์, ก้อย, บาส"
+                      value={char.realNickname}
+                      onChange={(e) => updateCharacter(char.id, { realNickname: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-thai"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-300 font-thai">
+                      ชื่อ/ฉายาในจักรวาล {universe}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={`เช่น Lord ${char.realNickname || "Moss"} of Blackwood (เว้นว่างได้)`}
                       value={char.name}
                       onChange={(e) => updateCharacter(char.id, { name: e.target.value })}
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
@@ -593,49 +670,49 @@ export default function NewProjectPage() {
                       ))}
                     </select>
                   </div>
+                </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-slate-300 font-thai">
-                      ฝ่าย / ตระกูล / สังกัด
+                      ฝ่าย / ตระกูลที่อยากสังกัดใน {universe}
                     </label>
                     <input
                       type="text"
-                      placeholder="เช่น House Stark, Guild"
+                      placeholder="เช่น House Stark, Night's Watch, กลุ่มอิสระ"
                       value={char.faction}
                       onChange={(e) => updateCharacter(char.id, { faction: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-thai"
                     />
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1">
+                  <div className="space-y-1 md:col-span-2">
                     <label className="text-xs font-semibold text-slate-300 font-thai">
                       บทบาทที่อยากได้ / ห้ามเป็น (Role Wish or Forbidden)
                     </label>
                     <input
                       type="text"
-                      placeholder="เช่น อยากให้เป็นที่ปรึกษาเงา ห้ามเป็นนักรบซื่อตรง"
+                      placeholder="เช่น อยากเป็นจอมวางแผนที่เอาตัวรอดเก่ง ห้ามตายไว, อยากมีพลังที่แลกด้วยสายตา"
                       value={char.roleWishOrForbidden}
                       onChange={(e) =>
                         updateCharacter(char.id, { roleWishOrForbidden: e.target.value })
                       }
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-thai"
                     />
                   </div>
+                </div>
 
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-300 font-thai">
-                      ภูมิหลังย่อ (Background Brief)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="เช่น เติบโตมาในเงามืด ค้นพบความจริงที่ถูกปิดบัง..."
-                      value={char.background}
-                      onChange={(e) => updateCharacter(char.id, { background: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
-                    />
-                  </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-300 font-thai">
+                    ปูมหลังย่อ / สภาพตอนหลุดเข้ามาในโลกนี้ (Background Brief)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="เช่น หลุดเข้ามาพร้อมความทรงจำในโลกปัจจุบัน ตื่นขึ้นมาริมชายหาด..."
+                    value={char.background}
+                    onChange={(e) => updateCharacter(char.id, { background: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-thai"
+                  />
                 </div>
 
                 {/* AI Propose Roles Trigger Button */}

@@ -61,7 +61,7 @@ export function Navbar() {
   return (
     <>
       <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-[#070a11]/90 backdrop-blur-md">
-        <div className="max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div className="max-w-[1920px] mx-auto px-4 sm:px-8 h-16 flex items-center justify-between">
           {/* Brand */}
           <Link href="/sagas" className="flex items-center gap-3 group">
             <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-500/20 via-amber-600/10 to-red-600/20 border border-amber-500/40 flex items-center justify-center text-amber-400 group-hover:border-amber-400 transition-all shadow-[0_0_15px_rgba(245,158,11,0.2)]">

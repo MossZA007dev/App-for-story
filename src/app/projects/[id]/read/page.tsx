@@ -360,7 +360,7 @@ export default function NovelReaderPage({
   }
 
   return (
-    <div className="min-h-screen bg-[#070A11] text-slate-100 pb-20 pt-2 px-3 sm:px-6 max-w-[1850px] mx-auto">
+    <div className="w-full min-h-screen bg-[#070A11] text-slate-100 pb-20 pt-2 px-4 sm:px-8 xl:px-10">
       {/* ========================================================================= */}
       {/* 1. TOP HEADER & BREADCRUMBS WITH MUSIC PLAYER (182x38px Figma Widget)     */}
       {/* ========================================================================= */}
@@ -596,14 +596,14 @@ export default function NovelReaderPage({
       {/* ========================================================================= */}
       {/* 2. MAIN SPLIT-SCREEN CONTAINER (Figma #313131 cards with #2D2D2D inset)   */}
       {/* ========================================================================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 xl:gap-8 items-start w-full">
         {/* ----------------------------------------------------------------------- */}
-        {/* LEFT COLUMN: Large Image Card (#313131, rounded-2xl, inner rounded 13px) */}
+        {/* LEFT COLUMN: Large Image Card (Figma width: 1196px, 2/3 of screen)        */}
         {/* ----------------------------------------------------------------------- */}
-        <div className="lg:col-span-6 space-y-4">
-          <div className="rounded-2xl p-5 bg-[#313131] border border-slate-700/60 shadow-2xl space-y-4">
-            {/* Main Cinematic Image Display */}
-            <div className="relative w-full aspect-[16/10] sm:h-[520px] rounded-[13px] overflow-hidden bg-[#1e232d] group border border-black/20">
+        <div className="lg:col-span-8 space-y-4">
+          <div className="rounded-[16px] p-5 sm:p-6 bg-[#313131] border border-slate-700/60 shadow-2xl space-y-4 flex flex-col justify-between">
+            {/* Main Cinematic Image Display (Height ~775px matching Figma) */}
+            <div className="relative w-full h-[520px] sm:h-[640px] lg:h-[720px] xl:h-[775px] rounded-[13px] overflow-hidden bg-[#1e232d] group border border-black/20">
               {currentFeaturedImage ? (
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -704,10 +704,10 @@ export default function NovelReaderPage({
         </div>
 
         {/* ----------------------------------------------------------------------- */}
-        {/* RIGHT COLUMN: Dialogue & Scene Narrative Card (#313131 with #2D2D2D)     */}
+        {/* RIGHT COLUMN: Dialogue & Scene Narrative Card (Figma width: 596px, 1/3)   */}
         {/* ----------------------------------------------------------------------- */}
-        <div className="lg:col-span-6 space-y-4">
-          <div className="rounded-2xl p-6 bg-[#313131] border border-slate-700/60 shadow-2xl space-y-6">
+        <div className="lg:col-span-4 space-y-4">
+          <div className="rounded-[16px] p-6 bg-[#313131] border border-slate-700/60 shadow-2xl space-y-5">
             {/* Header: Part subtitle & Scene Title */}
             <div className="space-y-2 border-b border-slate-700/50 pb-4">
               {currentPart && (
@@ -716,7 +716,7 @@ export default function NovelReaderPage({
                 </div>
               )}
 
-              <h2 className="font-heading text-2xl sm:text-3xl font-bold text-white tracking-tight leading-snug">
+              <h2 className="font-heading text-2xl font-bold text-white tracking-tight leading-snug">
                 ฉากที่ {activeScene?.order || 1}: {activeScene?.title || "เถ้าถ่านสีมรกตเหนืออ่าวแบล็กวอเตอร์"}
               </h2>
 
@@ -767,7 +767,7 @@ export default function NovelReaderPage({
             </div>
 
             {/* Inner Dialogue Container (#2D2D2D, rounded-[18px]) */}
-            <div className="rounded-[18px] bg-[#2D2D2D] p-5 border border-slate-700/40 min-h-[480px]">
+            <div className="rounded-[18px] bg-[#2D2D2D] p-4 sm:p-5 border border-slate-700/40 min-h-[580px] lg:min-h-[660px] xl:min-h-[715px] max-h-[775px] overflow-y-auto space-y-4">
               {readerViewMode === "dialogue" ? (
                 /* ============================================================= */
                 /* VISUAL DIALOGUE STREAM (Matching Figma & Screenshot)          */

@@ -31,7 +31,8 @@ export const characters = sqliteTable("characters", {
   locationNow: text("location_now").default(""),
   // visual_sheet: { age, build, hair_eyes, face, default_clothing, scars_marks }
   visualSheet: text("visual_sheet").default("{}"),
-  portraitImageId: text("portrait_image_id"),
+  characterType: text("character_type", { enum: ["self", "friend", "canon"] }).default("friend"),
+  realNickname: text("real_nickname").default(""),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -134,8 +135,9 @@ export const images = sqliteTable("images", {
   provider: text("provider").notNull(), // openai, replicate, stability
   seed: text("seed"),
   filePath: text("file_path").notNull(),
-  kind: text("kind", { enum: ["portrait", "scene", "cover"] }).notNull(),
+  kind: text("kind", { enum: ["portrait", "scene", "cover", "movie_still", "reference"] }).notNull(),
   approved: integer("approved").default(0), // 0: rejected/pending, 1: approved
+  caption: text("caption").default(""),
   metadata: text("metadata").default("{}"),
   createdAt: text("created_at").notNull(),
 });

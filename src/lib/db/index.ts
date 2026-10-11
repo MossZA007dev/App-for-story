@@ -180,6 +180,7 @@ export function initDatabase() {
       file_path TEXT NOT NULL,
       kind TEXT NOT NULL,
       approved INTEGER DEFAULT 0,
+      caption TEXT DEFAULT '',
       metadata TEXT DEFAULT '{}',
       created_at TEXT NOT NULL,
       FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -197,7 +198,19 @@ export function initDatabase() {
       updated_at TEXT NOT NULL
     );
   `);
+
+  // Safe migrations for newly added columns
+  try {
+    sqlite.exec("ALTER TABLE characters ADD COLUMN character_type TEXT DEFAULT 'friend'");
+  } catch {}
+  try {
+    sqlite.exec("ALTER TABLE characters ADD COLUMN real_nickname TEXT DEFAULT ''");
+  } catch {}
+  try {
+    sqlite.exec("ALTER TABLE images ADD COLUMN caption TEXT DEFAULT ''");
+  } catch {}
 }
 
 // Auto-run initDatabase upon import
 initDatabase();
+

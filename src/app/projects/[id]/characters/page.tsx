@@ -29,6 +29,8 @@ interface CharacterData {
   roleReason: string;
   faction: string;
   background: string;
+  characterType?: "self" | "friend" | "canon";
+  realNickname?: string;
   status: "alive" | "dead" | "missing" | "captive";
   locationNow: string;
   visualSheet: string;
@@ -162,6 +164,8 @@ export default function CharacterBiblePage({
           roleReason: editingChar.roleReason,
           faction: editingChar.faction,
           background: editingChar.background,
+          characterType: editingChar.characterType || "friend",
+          realNickname: editingChar.realNickname || "",
           status: editingChar.status,
           locationNow: editingChar.locationNow,
           visualSheet: editingChar.visualSheetParsed,
@@ -308,10 +312,25 @@ export default function CharacterBiblePage({
                   {/* Card Header */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-heading text-xl font-bold text-white">
                           {char.name}
                         </h3>
+                        {char.characterType === "self" && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 font-thai">
+                            👑 ตัวฉันเอง (Self)
+                          </span>
+                        )}
+                        {char.characterType === "friend" && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-sky-950/80 text-sky-300 border border-sky-800/60 font-thai">
+                            🧑‍🤝‍🧑 เพื่อนในแก๊ง {char.realNickname ? `(ชื่อเล่น: ${char.realNickname})` : ""}
+                          </span>
+                        )}
+                        {char.characterType === "canon" && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700 font-thai">
+                            ⚔️ ตัวละครเดิมในเรื่อง
+                          </span>
+                        )}
                         {getStatusBadge(char.status)}
                       </div>
                       <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 font-thai">
@@ -460,13 +479,46 @@ export default function CharacterBiblePage({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-300 font-thai">
-                    ชื่อตัวละคร <span className="text-red-400">*</span>
+                    ชื่อตัวละครในเรื่อง <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="text"
                     value={editingChar.name || ""}
                     onChange={(e) =>
                       setEditingChar((prev) => ({ ...prev, name: e.target.value }))
+                    }
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-300 font-thai">ประเภทตัวละคร</label>
+                  <select
+                    value={editingChar.characterType || "friend"}
+                    onChange={(e) =>
+                      setEditingChar((prev) => ({
+                        ...prev,
+                        characterType: e.target.value as "self" | "friend" | "canon",
+                      }))
+                    }
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-thai"
+                  >
+                    <option value="self">👑 ตัวฉันเอง (Self)</option>
+                    <option value="friend">🧑‍🤝‍🧑 เพื่อนในแก๊ง (Friend)</option>
+                    <option value="canon">⚔️ ตัวละครดั้งเดิมในเรื่อง (Canon)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-300 font-thai">
+                    ชื่อเล่นจริงในชีวิตจริง (Real Nickname)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="เช่น มอส, นนท์, ก้อย"
+                    value={editingChar.realNickname || ""}
+                    onChange={(e) =>
+                      setEditingChar((prev) => ({ ...prev, realNickname: e.target.value }))
                     }
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
                   />

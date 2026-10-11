@@ -39,6 +39,11 @@ import {
   Pause,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  parseSceneToDialogueBlocks,
+  autoDistributeDialogueImages,
+  DialogueBlock,
+} from "@/lib/story/dialogueParser";
 
 interface CharacterSummary {
   id: string;
@@ -72,6 +77,7 @@ interface SceneItem {
   wordCount: number;
   version: number;
   directorNote: string;
+  dialogueBindings?: string | null;
   createdAt: string;
   updatedAt: string;
   charactersPresentParsed?: string[];
@@ -132,7 +138,9 @@ export default function StoryWorkspacePage({
   const [directorsNote, setDirectorsNote] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
-  const [isEditMode, setIsEditMode] = useState(false);
+  const [studioViewMode, setStudioViewMode] = useState<"preview" | "edit" | "dialogue_bindings">("preview");
+  const [localDialogueBindings, setLocalDialogueBindings] = useState<Record<string, string>>({});
+  const [isSavingBindings, setIsSavingBindings] = useState(false);
   const [editableMarkdown, setEditableMarkdown] = useState("");
   const [isSavingScene, setIsSavingScene] = useState(false);
 
@@ -205,6 +213,19 @@ export default function StoryWorkspacePage({
       setDirectorsNote(data.scene.directorNote || "");
       setEditableMarkdown(data.scene.contentMarkdown || "");
       setSceneVersions(data.versions || []);
+      if (data.scene.dialogueBindings) {
+        try {
+          const parsed =
+            typeof data.scene.dialogueBindings === "string"
+              ? JSON.parse(data.scene.dialogueBindings)
+              : data.scene.dialogueBindings;
+          setLocalDialogueBindings(parsed || {});
+        } catch {
+          setLocalDialogueBindings({});
+        }
+      } else {
+        setLocalDialogueBindings({});
+      }
     } catch (err) {
       console.error(err);
     }
@@ -232,8 +253,86 @@ export default function StoryWorkspacePage({
   // Switch Active Scene
   const handleSelectScene = (sceneId: string) => {
     setActiveSceneId(sceneId);
-    setIsEditMode(false);
+    setStudioViewMode("preview");
     setStreamingText("");
+  };
+
+  // Dialogue-to-Image Binding Handlers
+  const handleAssignImageToBlock = async (blockIndex: number, imageId: string) => {
+    const updated = { ...localDialogueBindings };
+    if (!imageId) {
+      delete updated[String(blockIndex)];
+    } else {
+      updated[String(blockIndex)] = imageId;
+    }
+    setLocalDialogueBindings(updated);
+
+    // Auto-save the binding to server
+    try {
+      await fetch(`/api/projects/${projectId}/scenes/${activeSceneId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dialogueBindings: JSON.stringify(updated),
+        }),
+      });
+      if (activeScene) {
+        setActiveScene({ ...activeScene, dialogueBindings: JSON.stringify(updated) });
+      }
+      toast.success(
+        imageId
+          ? `ผูกภาพกับประโยค #${blockIndex + 1} สำเร็จ`
+          : `ยกเลิกการผูกภาพประโยค #${blockIndex + 1}`
+      );
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSaveDialogueBindings = async (bindingsToSave?: Record<string, string>) => {
+    if (!activeSceneId) return;
+    try {
+      setIsSavingBindings(true);
+      const dataToSend = bindingsToSave ?? localDialogueBindings;
+      const res = await fetch(`/api/projects/${projectId}/scenes/${activeSceneId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dialogueBindings: JSON.stringify(dataToSend),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "บันทึกไม่สำเร็จ");
+      setActiveScene(data.scene);
+      toast.success("บันทึกการตั้งค่าภาพตามบทพูดเรียบร้อยแล้ว!");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "บันทึกการผูกภาพไม่สำเร็จ");
+    } finally {
+      setIsSavingBindings(false);
+    }
+  };
+
+  const handleAutoDistributeImages = () => {
+    if (!activeScene || sceneImages.length === 0) {
+      toast.error("ไม่มีภาพประกอบในฉากนี้สำหรับจับคู่อัตโนมัติ");
+      return;
+    }
+    const blocks = parseSceneToDialogueBlocks(activeScene.contentMarkdown || "", characters);
+    if (blocks.length === 0) {
+      toast.error("ไม่มีบทพูดหรือเนื้อเรื่องในฉากนี้");
+      return;
+    }
+    const distributed = autoDistributeDialogueImages(blocks.length, sceneImages);
+    setLocalDialogueBindings(distributed);
+    handleSaveDialogueBindings(distributed);
+    toast.success(`จับคู่อัตโนมัติ ${Object.keys(distributed).length} ภาพ กระจายตามบทพูดเรียบร้อย!`);
+  };
+
+  const handleClearAllBindings = () => {
+    setLocalDialogueBindings({});
+    handleSaveDialogueBindings({});
+    toast.info("ล้างการผูกภาพทั้งหมดเรียบร้อย");
   };
 
   // 3. Create New Scene
@@ -296,7 +395,7 @@ export default function StoryWorkspacePage({
       if (!res.ok) throw new Error(data.error || "บันทึกไม่สำเร็จ");
 
       setActiveScene(data.scene);
-      setIsEditMode(false);
+      setStudioViewMode("preview");
       toast.success("บันทึกเนื้อหาฉากเรียบร้อยแล้ว");
       loadSceneDetails(activeSceneId);
     } catch (err: any) {
@@ -316,7 +415,7 @@ export default function StoryWorkspacePage({
 
     try {
       setIsStreaming(true);
-      setIsEditMode(false);
+      setStudioViewMode("preview");
       setStreamingText("");
 
       const charsPresent = activeScene.charactersPresentParsed || [];
@@ -735,6 +834,11 @@ export default function StoryWorkspacePage({
   const movieStills = sceneImages.filter((img) => img.kind === "movie_still" || img.kind === "reference");
 
   const currentPart = parts.find((p) => p.id === activePartId);
+
+  const studioDialogueBlocks = activeScene
+    ? parseSceneToDialogueBlocks(activeScene.contentMarkdown || "", characters)
+    : [];
+  const boundDialogueCount = Object.keys(localDialogueBindings).length;
 
   return (
     <div className="space-y-4">
@@ -1382,17 +1486,55 @@ export default function StoryWorkspacePage({
                 <span>ขยายฉาก</span>
               </button>
 
-              <button
-                onClick={() => setIsEditMode(!isEditMode)}
-                className={`inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-thai transition-colors ${
-                  isEditMode
-                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                    : "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
-                }`}
-              >
-                <Edit3 className="w-3.5 h-3.5 text-amber-400" />
-                <span>{isEditMode ? "สลับเป็นโหมดอ่าน" : "แก้ไขเอง (Markdown)"}</span>
-              </button>
+              {/* Studio View Mode Switcher (Read / Markdown Edit / Dialogue-Image Pairing) */}
+              <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-700/80">
+                <button
+                  onClick={() => setStudioViewMode("preview")}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-thai transition-colors ${
+                    studioViewMode === "preview"
+                      ? "bg-amber-500 text-slate-950 font-bold shadow"
+                      : "text-slate-300 hover:text-white hover:bg-slate-800"
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>โหมดอ่าน</span>
+                </button>
+
+                <button
+                  onClick={() => setStudioViewMode("edit")}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-thai transition-colors ${
+                    studioViewMode === "edit"
+                      ? "bg-amber-500 text-slate-950 font-bold shadow"
+                      : "text-slate-300 hover:text-white hover:bg-slate-800"
+                  }`}
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>แก้ไขเอง (Markdown)</span>
+                </button>
+
+                <button
+                  onClick={() => setStudioViewMode("dialogue_bindings")}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-thai transition-colors ${
+                    studioViewMode === "dialogue_bindings"
+                      ? "bg-amber-500 text-slate-950 font-bold shadow"
+                      : "text-slate-300 hover:text-white hover:bg-slate-800"
+                  }`}
+                >
+                  <Film className="w-3.5 h-3.5" />
+                  <span>🎬 กำกับภาพตามบทพูด</span>
+                  {boundDialogueCount > 0 && (
+                    <span
+                      className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                        studioViewMode === "dialogue_bindings"
+                          ? "bg-slate-950 text-amber-400"
+                          : "bg-amber-500/20 text-amber-300"
+                      }`}
+                    >
+                      {boundDialogueCount}
+                    </span>
+                  )}
+                </button>
+              </div>
 
               <button
                 disabled={isAnalyzing || !activeScene?.contentMarkdown}
@@ -1418,7 +1560,7 @@ export default function StoryWorkspacePage({
                   <span className="inline-block w-2 h-4 bg-amber-400 ml-1 animate-pulse" />
                 </div>
               </div>
-            ) : isEditMode ? (
+            ) : studioViewMode === "edit" ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-slate-400 font-thai">
@@ -1438,6 +1580,215 @@ export default function StoryWorkspacePage({
                   onChange={(e) => setEditableMarkdown(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-sm text-slate-100 font-thai leading-relaxed focus:outline-none focus:border-amber-400"
                 />
+              </div>
+            ) : studioViewMode === "dialogue_bindings" ? (
+              <div className="space-y-4">
+                {/* Director Header Controls */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-xl bg-slate-950/80 border border-slate-800">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-heading text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                        <Film className="w-4 h-4 text-amber-400" />
+                        <span>🎬 สตูดิโอกำกับภาพตามบทสนทนา (Dialogue-Image Sync)</span>
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-thai font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        จับคู่แล้ว {boundDialogueCount} / {studioDialogueBlocks.length} ประโยค
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 font-thai">
+                      เลือกภาพประกอบที่จะให้ปรากฏบนการ์ดภาพฝั่งซ้ายเมื่อผู้อ่านเลื่อนอ่านถึงประโยคนี้
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={handleAutoDistributeImages}
+                      disabled={sceneImages.length === 0 || studioDialogueBlocks.length === 0}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 border border-slate-700 text-xs font-thai font-semibold transition-colors"
+                      title="กระจายภาพทั้งหมดในฉากนี้อย่างสม่ำเสมอตามบทพูด"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>✨ จับคู่อัตโนมัติ</span>
+                    </button>
+
+                    {boundDialogueCount > 0 && (
+                      <button
+                        onClick={handleClearAllBindings}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-red-950/50 hover:text-red-300 text-slate-400 border border-slate-700 text-xs font-thai transition-colors"
+                        title="ล้างการจับคู่ภาพทั้งหมด"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                        <span>ล้างทั้งหมด</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => handleSaveDialogueBindings()}
+                      disabled={isSavingBindings}
+                      className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai transition-colors shadow-[0_0_15px_rgba(245,158,11,0.25)]"
+                    >
+                      {isSavingBindings ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      )}
+                      <span>{isSavingBindings ? "กำลังบันทึก..." : "บันทึกการผูกภาพ"}</span>
+                    </button>
+
+                    <Link
+                      href={`/projects/${projectId}/read?sceneId=${activeSceneId}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 text-xs font-thai font-semibold transition-colors"
+                      target="_blank"
+                    >
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span>เปิดอ่านใน Reader ↗</span>
+                    </Link>
+                  </div>
+                </div>
+
+                {/* Scene Images Summary Banner */}
+                {sceneImages.length === 0 ? (
+                  <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200 text-xs font-thai flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                      <span>ฉากนี้ยังไม่มีภาพประกอบ กรุณาสร้างภาพ AI หรืออัปโหลด Movie Still จากฝั่งซ้าย (Visual Stage) ก่อน</span>
+                    </div>
+                    <button
+                      onClick={() => setVisualTab("ai_scenes")}
+                      className="px-3 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs font-thai hover:bg-amber-400"
+                    >
+                      ไปที่ Visual Stage
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs font-thai text-slate-400">
+                    <span>คลังภาพในฉากนี้: {sceneImages.length} ภาพ (AI: {aiImages.length}, หนังจริง: {movieStills.length})</span>
+                    <span className="text-[11px] text-slate-500">เลือกภาพในแต่ละประโยคด้านล่างได้เลย ระบบบันทึกให้อัตโนมัติ</span>
+                  </div>
+                )}
+
+                {/* Dialogue Sentences List */}
+                {studioDialogueBlocks.length > 0 ? (
+                  <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
+                    {studioDialogueBlocks.map((block, idx) => {
+                      const assignedImageId = localDialogueBindings[String(idx)];
+                      const assignedImage = sceneImages.find((img) => img.id === assignedImageId);
+                      const isSelf = block.speaker?.characterType === "self";
+                      const isFriend = block.speaker?.characterType === "friend";
+                      const displayName =
+                        block.speaker?.realNickname || block.speaker?.name || block.speakerName || "ผู้พูด";
+
+                      return (
+                        <div
+                          key={block.id}
+                          className={`p-3.5 rounded-xl border transition-all ${
+                            assignedImage
+                              ? "bg-amber-500/10 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.1)]"
+                              : "bg-slate-950/40 border-slate-800/80 hover:border-slate-700"
+                          }`}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                            {/* Left: Speaker & Dialogue Text */}
+                            <div className="flex items-start gap-3 flex-1">
+                              {/* Line Index Badge */}
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 flex-shrink-0">
+                                #{idx + 1}
+                              </span>
+
+                              {/* Speaker Avatar & Name */}
+                              <div className="space-y-1 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`text-xs font-thai font-bold ${
+                                      isSelf ? "text-amber-400" : isFriend ? "text-sky-400" : "text-slate-300"
+                                    }`}
+                                  >
+                                    {isSelf ? "👑 " : isFriend ? "🧑‍🤝‍🧑 " : ""}{displayName}
+                                  </span>
+                                  {block.isNarrator && (
+                                    <span className="text-[9px] font-thai text-amber-300 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.2 rounded font-semibold">
+                                      ผู้บรรยาย
+                                    </span>
+                                  )}
+                                  {block.type === "sound" && (
+                                    <span className="text-[9px] font-thai text-slate-400 bg-slate-800 px-1.5 py-0.2 rounded">
+                                      เสียงประกอบ
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="font-thai text-slate-200 text-sm leading-relaxed">
+                                  {block.text}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Right: Image Selector Dropdown & Assigned Thumbnail */}
+                            <div className="flex-shrink-0 w-full sm:w-72 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={assignedImageId || ""}
+                                  onChange={(e) => handleAssignImageToBlock(idx, e.target.value)}
+                                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-thai focus:outline-none focus:border-amber-400"
+                                >
+                                  <option value="">⚪ คงภาพเดิม (ไม่เปลี่ยนภาพ)</option>
+                                  {sceneImages.map((img, imgIdx) => {
+                                    const isMovie = img.kind === "movie_still" || img.kind === "reference";
+                                    const label = img.caption || img.prompt.slice(0, 35);
+                                    return (
+                                      <option key={img.id} value={img.id}>
+                                        🖼️ ภาพ #{imgIdx + 1} [{isMovie ? "MOVIE" : "AI"}]: {label}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
+
+                                {assignedImageId && (
+                                  <button
+                                    onClick={() => handleAssignImageToBlock(idx, "")}
+                                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-red-950 text-slate-400 hover:text-red-300 transition-colors"
+                                    title="ยกเลิกการผูกภาพ"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Assigned Image Thumbnail Card */}
+                              {assignedImage && (
+                                <div className="flex items-center gap-2.5 p-2 rounded-lg bg-slate-900/90 border border-amber-500/40">
+                                  <div className="relative aspect-video w-16 h-10 rounded overflow-hidden flex-shrink-0 border border-black/40">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={assignedImage.filePath}
+                                      alt={assignedImage.caption || ""}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-[10px] font-bold text-amber-400 block truncate font-thai">
+                                      {assignedImage.caption || "ภาพประจำประโยคนี้"}
+                                    </span>
+                                    <span className="text-[9px] font-mono text-slate-400 block truncate">
+                                      {assignedImage.kind === "movie_still" ? "CANON MOVIE STILL" : "AI SCENE"}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-16 text-slate-500">
+                    <PenTool className="w-10 h-10 mx-auto mb-3 opacity-40 text-amber-400" />
+                    <p className="text-sm font-thai">ยังไม่มีบทพูดหรือเนื้อเรื่องในฉากนี้</p>
+                    <p className="text-xs font-thai mt-1 text-slate-400">
+                      กรอก Director&apos;s Note ด้านบน แล้วกดปุ่ม &quot;🖋️ ให้ AI เขียนฉากนี้&quot; ก่อน
+                    </p>
+                  </div>
+                )}
               </div>
             ) : activeScene?.contentMarkdown ? (
               <div className="prose prose-invert prose-amber max-w-none font-thai text-slate-200 text-sm leading-relaxed">
@@ -1805,7 +2156,7 @@ export default function StoryWorkspacePage({
                     <button
                       onClick={() => {
                         setEditableMarkdown(v.contentMarkdown);
-                        setIsEditMode(true);
+                        setStudioViewMode("edit");
                         setShowVersionModal(false);
                         toast.info(`โหลดเนื้อหา Version ${v.versionNumber} เข้าสู่ตัวแก้ไขแล้ว`);
                       }}

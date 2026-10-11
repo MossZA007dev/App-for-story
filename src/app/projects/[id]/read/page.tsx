@@ -7,6 +7,8 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Film,
   Sparkles,
   MapPin,
@@ -24,9 +26,15 @@ import {
   Users,
   Upload,
   Trash2,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
+import {
+  parseSceneToDialogueBlocks,
+  resolveImageForDialogueIndex,
+  DialogueBlock,
+} from "@/lib/story/dialogueParser";
 
 interface SceneImage {
   id: string;
@@ -48,6 +56,7 @@ interface SceneItem {
   summary: string;
   wordCount: number;
   version: number;
+  dialogueBindings?: string | null;
   charactersPresentParsed?: string[];
   images?: SceneImage[];
   bgmUrl?: string | null;
@@ -75,16 +84,6 @@ interface CharacterItem {
 
 type AudioTrack = "wildfire" | "winter" | "war" | "shadows";
 
-interface DialogueBlock {
-  id: string;
-  type: "dialogue" | "narration" | "sound";
-  speaker?: CharacterItem | null;
-  speakerName?: string;
-  isNarrator?: boolean;
-  side: "left" | "right";
-  text: string;
-}
-
 export default function NovelReaderPage({
   params,
 }: {
@@ -102,8 +101,11 @@ export default function NovelReaderPage({
   const [allScenesList, setAllScenesList] = useState<{ part: PartItem; scene: SceneItem }[]>([]);
   const [activeSceneImages, setActiveSceneImages] = useState<SceneImage[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [activeDialogueIndex, setActiveDialogueIndex] = useState(0);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const dialogueBlockRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   // Audio Engine State
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
@@ -120,7 +122,7 @@ export default function NovelReaderPage({
     (audioMode === "custom" && isCustomAudioPlaying) ||
     (audioMode === "ambient" && isPlayingBgm);
 
-  // Load scene images
+  // Load scene images & details
   const loadSceneImages = async (sceneId: string) => {
     try {
       const res = await fetch(`/api/projects/${projectId}/scenes/${sceneId}`);
@@ -128,6 +130,10 @@ export default function NovelReaderPage({
       const data = await res.json();
       setActiveSceneImages(data.images || []);
       setSelectedImageIndex(0);
+      setActiveDialogueIndex(0);
+      if (data.scene) {
+        setActiveScene((prev) => (prev ? { ...prev, ...data.scene } : data.scene));
+      }
     } catch (err) {
       console.error(err);
     }
@@ -135,6 +141,7 @@ export default function NovelReaderPage({
 
   const handleSelectSceneItem = (scene: SceneItem) => {
     setActiveScene(scene);
+    setActiveDialogueIndex(0);
     loadSceneImages(scene.id);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -447,112 +454,96 @@ export default function NovelReaderPage({
       : null;
 
   // Parse markdown into Dialogue Blocks for Visual Novel Mode
-  // Narration is voiced by User's character (Self) as the Narrator!
-  const parseSceneToDialogueBlocks = (contentMarkdown: string): DialogueBlock[] => {
-    if (!contentMarkdown) return [];
+  const parsedBlocks = activeScene
+    ? parseSceneToDialogueBlocks(activeScene.contentMarkdown, characters)
+    : [];
 
-    const lines = contentMarkdown
-      .split(/\n+/)
-      .map((l) => l.trim())
-      .filter(Boolean);
+  // Parse Dialogue-to-Image Bindings from Scene
+  const dialogueBindings: Record<string, string> = (() => {
+    if (!activeScene?.dialogueBindings) return {};
+    try {
+      return typeof activeScene.dialogueBindings === "string"
+        ? JSON.parse(activeScene.dialogueBindings)
+        : activeScene.dialogueBindings;
+    } catch {
+      return {};
+    }
+  })();
 
-    const blocks: DialogueBlock[] = [];
-    const selfChar = characters.find((c) => c.characterType === "self") || null;
-    const friendChars = characters.filter((c) => c.characterType === "friend");
+  // Synchronize featured image automatically when activeDialogueIndex changes
+  useEffect(() => {
+    if (activeSceneImages.length > 0 && parsedBlocks.length > 0) {
+      const resolved = resolveImageForDialogueIndex(
+        activeDialogueIndex,
+        dialogueBindings,
+        activeSceneImages
+      );
+      if (resolved.imageIndex >= 0 && resolved.imageIndex !== selectedImageIndex) {
+        setSelectedImageIndex(resolved.imageIndex);
+      }
+    }
+  }, [activeDialogueIndex, activeSceneImages, dialogueBindings, parsedBlocks.length]);
 
-    let dialogueTurn = 0;
+  // Smoothly scroll active dialogue block into view
+  useEffect(() => {
+    if (activeDialogueIndex >= 0 && dialogueBlockRefs.current[activeDialogueIndex]) {
+      dialogueBlockRefs.current[activeDialogueIndex]?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    }
+  }, [activeDialogueIndex]);
 
-    lines.forEach((line, index) => {
-      // 1. Check if line is Sound Effect / Atmospheric stage direction
-      const isSound =
-        line.startsWith("เสียง") ||
-        line.includes("..........") ||
-        line.includes(".....") ||
-        (line.startsWith("*") && line.endsWith("*")) ||
-        (line.startsWith("(") && line.endsWith(")"));
-
-      if (isSound) {
-        blocks.push({
-          id: `sound-${index}`,
-          type: "sound",
-          side: "left",
-          text: line.replace(/^\*+|\*+$/g, ""),
-        });
+  // Keyboard navigation for dialogue stepping (ArrowUp, ArrowDown, Spacebar)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const targetTag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (targetTag === "input" || targetTag === "textarea" || targetTag === "select") {
         return;
       }
 
-      // 2. Check if line is Dialogue (quoted with "..." or “...”)
-      const quoteMatch = line.match(/^["“](.+?)["”](.*)$/);
-      const speakerPrefixMatch = line.match(/^([^:：]+)[:：]\s*["“]?(.*?)["”]?$/);
-
-      if (quoteMatch || speakerPrefixMatch) {
-        dialogueTurn++;
-        const isOdd = dialogueTurn % 2 !== 0;
-
-        let speakerName = "";
-        let speechText = line;
-        let speakerObj: CharacterItem | null = null;
-
-        if (speakerPrefixMatch) {
-          speakerName = speakerPrefixMatch[1].trim();
-          speechText = speakerPrefixMatch[2] || line;
-          speakerObj =
-            characters.find(
-              (c) =>
-                c.name.toLowerCase() === speakerName.toLowerCase() ||
-                (c.realNickname && c.realNickname.toLowerCase() === speakerName.toLowerCase())
-            ) || null;
-        } else if (quoteMatch) {
-          speechText = line;
-          // Determine speaker: if odd, assign User Character (Self); if even, assign Friend or counterpart
-          if (isOdd && selfChar) {
-            speakerObj = selfChar;
-            speakerName = selfChar.realNickname || selfChar.name;
-          } else if (!isOdd && friendChars.length > 0) {
-            speakerObj = friendChars[(Math.floor(dialogueTurn / 2) - 1) % friendChars.length];
-            speakerName = speakerObj.realNickname || speakerObj.name;
-          }
+      if (e.key === "ArrowDown" || e.key === " " || e.key === "PageDown") {
+        if (parsedBlocks.length > 0) {
+          e.preventDefault();
+          setActiveDialogueIndex((prev) => Math.min(prev + 1, parsedBlocks.length - 1));
         }
-
-        const isSelf = speakerObj?.characterType === "self" || (!speakerObj && isOdd);
-        const side = isSelf ? "left" : "right";
-
-        blocks.push({
-          id: `dialogue-${index}`,
-          type: "dialogue",
-          speaker: speakerObj || (isSelf ? selfChar : friendChars[0] || null),
-          speakerName: speakerName || (isSelf ? selfChar?.realNickname || "ฉัน" : "เพื่อน"),
-          isNarrator: false,
-          side,
-          text: speechText,
-        });
-      } else {
-        // 3. Descriptive scene narration: Use User's Character as the Narrator on the LEFT!
-        const narratorName = selfChar?.realNickname || selfChar?.name || "ฉัน";
-
-        blocks.push({
-          id: `narr-${index}`,
-          type: "narration",
-          speaker: selfChar,
-          speakerName: narratorName,
-          isNarrator: true,
-          side: "left",
-          text: line,
-        });
+      } else if (e.key === "ArrowUp" || e.key === "PageUp") {
+        if (parsedBlocks.length > 0) {
+          e.preventDefault();
+          setActiveDialogueIndex((prev) => Math.max(prev - 1, 0));
+        }
       }
-    });
+    };
 
-    return blocks;
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [parsedBlocks.length]);
+
+  // Dialogue Step Handlers
+  const handleStepDialogue = (direction: "next" | "prev") => {
+    if (parsedBlocks.length === 0) return;
+    if (direction === "next") {
+      setActiveDialogueIndex((prev) => Math.min(prev + 1, parsedBlocks.length - 1));
+    } else {
+      setActiveDialogueIndex((prev) => Math.max(prev - 1, 0));
+    }
   };
 
-  const parsedBlocks = activeScene
-    ? parseSceneToDialogueBlocks(activeScene.contentMarkdown)
-    : [];
+  const handleSelectDialogueBlock = (index: number) => {
+    setActiveDialogueIndex(index);
+  };
 
-  // Bottom caption on the left card (first descriptive sentence or caption)
+  const handleResetDialogue = () => {
+    setActiveDialogueIndex(0);
+  };
+
+  // Active Dialogue Block & Caption
+  const activeBlock = parsedBlocks[activeDialogueIndex];
+  const hasActiveBinding = Boolean(dialogueBindings[String(activeDialogueIndex)]);
+
   const leftCardCaption =
     currentFeaturedImage?.caption ||
-    (parsedBlocks.length > 0 ? parsedBlocks[0].text : "") ||
+    (activeBlock ? activeBlock.text : (parsedBlocks.length > 0 ? parsedBlocks[0].text : "")) ||
     "กลิ่นของไฟป่า (Wildfire) ยังคงติดแน่นอยู่ในชั้นบรรยากาศ มันไม่ได้มีกลิ่นเหมือนฟืนไหม้ทั่วไป แต่เป็นกลิ่นฉุนแสบจมูกของสารเคมีโบราณที่เผาผลาญทั้งไม้ เหล็ก และเนื้อมนุษย์จนกลายเป็นเถ้าสีมรกต";
 
   // Formatted clean title without duplicate "ฉากที่ 1: ฉากที่ 1:"
@@ -991,7 +982,15 @@ export default function NovelReaderPage({
           )}
 
           {/* Atmospheric sensory caption underneath the image (Matching Figma & Screenshot) */}
-          <div className="flex-shrink-0 p-3 pt-3 border-t border-slate-700/50">
+          <div className="flex-shrink-0 p-3 pt-3 border-t border-slate-700/50 space-y-1">
+            {activeBlock && (
+              <div className="flex items-center gap-2 text-[11px] font-thai text-amber-400 font-bold">
+                <span className="flex-shrink-0">🎬 ประโยคปัจจุบัน:</span>
+                <span className="text-slate-300 font-normal truncate">
+                  {activeBlock.speakerName ? `${activeBlock.speakerName}: ` : ""}&quot;{activeBlock.text}&quot;
+                </span>
+              </div>
+            )}
             <p className="text-sm font-thai text-[#E2E8F0] leading-relaxed line-clamp-3">
               {leftCardCaption}
             </p>
@@ -1029,16 +1028,108 @@ export default function NovelReaderPage({
             </div>
           </div>
 
+          {/* Interactive Dialogue Reader Controls (Step Through Dialogue with Arrow Buttons) */}
+          {parsedBlocks.length > 0 && (
+            <div className="flex-shrink-0 bg-[#252525] rounded-xl p-2.5 border border-slate-700/60 shadow-md space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                {/* Step Backward Arrow Button */}
+                <button
+                  onClick={() => handleStepDialogue("prev")}
+                  disabled={activeDialogueIndex <= 0}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-35 disabled:cursor-not-allowed text-xs font-thai font-semibold text-slate-200 border border-slate-700/80 transition-all active:scale-95 cursor-pointer shadow-sm"
+                  title="ประโยคก่อนหน้า (คีย์บอร์ด ↑)"
+                >
+                  <ChevronUp className="w-4 h-4 text-amber-400" />
+                  <span>ก่อนหน้า</span>
+                </button>
+
+                {/* Progress Counter & Step Bar */}
+                <div className="flex-1 text-center px-1">
+                  <div className="flex items-center justify-center gap-1.5 text-[11px] font-thai text-slate-300">
+                    <span className="font-mono font-bold text-amber-400">
+                      {activeDialogueIndex + 1}
+                    </span>
+                    <span className="text-slate-500">/</span>
+                    <span className="font-mono text-slate-400">
+                      {parsedBlocks.length}
+                    </span>
+                    <span className="text-slate-400 text-[10px] hidden sm:inline">(ประโยค)</span>
+                  </div>
+                  <div className="w-full bg-slate-800 h-1.5 rounded-full mt-1 overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-amber-500 to-amber-300 h-full transition-all duration-300"
+                      style={{
+                        width: `${((activeDialogueIndex + 1) / parsedBlocks.length) * 100}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Step Forward Arrow Button (Primary Highlight) */}
+                <button
+                  onClick={() => handleStepDialogue("next")}
+                  disabled={activeDialogueIndex >= parsedBlocks.length - 1}
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-400 hover:brightness-110 disabled:opacity-35 disabled:hover:brightness-100 disabled:cursor-not-allowed text-xs font-thai font-black text-slate-950 transition-all shadow-[0_0_15px_rgba(245,158,11,0.35)] active:scale-95 cursor-pointer"
+                  title="ประโยคถัดไป (คีย์บอร์ด ↓ หรือ Spacebar)"
+                >
+                  <span>ถัดไป</span>
+                  <ChevronDown className="w-4 h-4 stroke-[3]" />
+                </button>
+              </div>
+
+              {/* Keyboard shortcuts & auto-switch hint */}
+              <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 pt-0.5 border-t border-slate-700/40">
+                <span className="flex items-center gap-1">
+                  <kbd className="px-1 py-0.2 bg-slate-800 rounded text-[9px] text-slate-300 border border-slate-700">↑</kbd>
+                  <kbd className="px-1 py-0.2 bg-slate-800 rounded text-[9px] text-slate-300 border border-slate-700">↓</kbd>
+                  <span className="text-slate-400">หรือ</span>
+                  <kbd className="px-1.5 py-0.2 bg-slate-800 rounded text-[9px] text-slate-300 border border-slate-700">Space</kbd>
+                  <span>เลื่อนอ่านทีละประโยค</span>
+                </span>
+
+                <div className="flex items-center gap-2">
+                  {hasActiveBinding && (
+                    <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                      <Sparkles className="w-2.5 h-2.5" />
+                      <span>ภาพเปลี่ยนตามบทนี้</span>
+                    </span>
+                  )}
+                  {activeDialogueIndex > 0 && (
+                    <button
+                      onClick={handleResetDialogue}
+                      className="text-slate-400 hover:text-amber-300 transition-colors flex items-center gap-0.5"
+                      title="กลับไปประโยคแรก"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" />
+                      <span>เริ่มใหม่</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Inner Dialogue Container (#2D2D2D, rounded-[18px]) - FULLY SCROLLABLE */}
-          <div className="flex-1 min-h-0 rounded-[18px] bg-[#2D2D2D] p-4 sm:p-5 border border-slate-700/40 overflow-y-auto dialogue-scroll space-y-4 pr-3">
+          <div className="relative flex-1 min-h-0 rounded-[18px] bg-[#2D2D2D] p-4 sm:p-5 border border-slate-700/40 overflow-y-auto dialogue-scroll space-y-4 pr-3">
             {parsedBlocks.length > 0 ? (
-              parsedBlocks.map((block) => {
+              parsedBlocks.map((block, idx) => {
+                const isActive = idx === activeDialogueIndex;
+                const hasBinding = Boolean(dialogueBindings[String(idx)]);
+
                 // 1. SOUND EFFECT ROW (Centered atmospheric text)
                 if (block.type === "sound") {
                   return (
                     <div
                       key={block.id}
-                      className="py-3 px-4 text-center text-slate-300 font-thai text-sm italic tracking-widest opacity-90 select-none animate-fadeIn"
+                      ref={(el) => {
+                        dialogueBlockRefs.current[idx] = el;
+                      }}
+                      onClick={() => handleSelectDialogueBlock(idx)}
+                      className={`py-3 px-4 text-center font-thai text-sm italic tracking-widest cursor-pointer rounded-xl transition-all ${
+                        isActive
+                          ? "bg-amber-500/20 text-amber-200 ring-2 ring-amber-400 border border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.25)] font-bold scale-[1.01]"
+                          : "text-slate-300 opacity-80 hover:opacity-100 hover:bg-black/20"
+                      }`}
                     >
                       {block.text}
                     </div>
@@ -1057,7 +1148,9 @@ export default function NovelReaderPage({
                 const AvatarIcon = () => (
                   <div
                     className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden border-2 shadow-md transition-transform hover:scale-110 ${
-                      isSelf
+                      isActive
+                        ? "border-amber-400 ring-2 ring-amber-400 bg-amber-500/30 text-amber-200 scale-105"
+                        : isSelf
                         ? "border-amber-400 ring-2 ring-amber-400/40 bg-amber-950/60 text-amber-300"
                         : isFriend
                         ? "border-sky-400 ring-2 ring-sky-400/40 bg-sky-950/60 text-sky-300"
@@ -1085,7 +1178,15 @@ export default function NovelReaderPage({
                   return (
                     <div
                       key={block.id}
-                      className="flex items-start gap-3.5 group p-2 rounded-xl hover:bg-black/10 transition-colors animate-fadeIn"
+                      ref={(el) => {
+                        dialogueBlockRefs.current[idx] = el;
+                      }}
+                      onClick={() => handleSelectDialogueBlock(idx)}
+                      className={`flex items-start gap-3.5 group p-2.5 rounded-xl transition-all cursor-pointer ${
+                        isActive
+                          ? "bg-amber-500/15 ring-2 ring-amber-400/90 border-l-4 border-l-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.25)] scale-[1.01]"
+                          : "hover:bg-black/20 opacity-80 hover:opacity-100"
+                      }`}
                     >
                       <AvatarIcon />
 
@@ -1108,8 +1209,19 @@ export default function NovelReaderPage({
                               [{mbti}]
                             </span>
                           )}
+                          {isActive && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-400 text-slate-950 font-mono shadow animate-pulse">
+                              ▶ อ่านอยู่นี่
+                            </span>
+                          )}
+                          {hasBinding && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                              <Sparkles className="w-2.5 h-2.5" />
+                              <span>สลับภาพ</span>
+                            </span>
+                          )}
                         </div>
-                        <p className="font-thai text-[#E2E8F0] text-sm leading-relaxed">
+                        <p className={`font-thai text-sm leading-relaxed ${isActive ? "text-white font-medium" : "text-[#E2E8F0]"}`}>
                           {block.text}
                         </p>
                       </div>
@@ -1120,10 +1232,29 @@ export default function NovelReaderPage({
                   return (
                     <div
                       key={block.id}
-                      className="flex items-start justify-end gap-3.5 group p-2 rounded-xl hover:bg-black/10 transition-colors animate-fadeIn"
+                      ref={(el) => {
+                        dialogueBlockRefs.current[idx] = el;
+                      }}
+                      onClick={() => handleSelectDialogueBlock(idx)}
+                      className={`flex items-start justify-end gap-3.5 group p-2.5 rounded-xl transition-all cursor-pointer ${
+                        isActive
+                          ? "bg-amber-500/15 ring-2 ring-amber-400/90 border-r-4 border-r-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.25)] scale-[1.01]"
+                          : "hover:bg-black/20 opacity-80 hover:opacity-100"
+                      }`}
                     >
                       <div className="flex-1 space-y-1 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          {hasBinding && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                              <Sparkles className="w-2.5 h-2.5" />
+                              <span>สลับภาพ</span>
+                            </span>
+                          )}
+                          {isActive && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-400 text-slate-950 font-mono shadow animate-pulse">
+                              ▶ อ่านอยู่นี่
+                            </span>
+                          )}
                           {mbti && (
                             <span className="text-[10px] font-mono text-slate-500 font-semibold">
                               [{mbti}]
@@ -1137,7 +1268,7 @@ export default function NovelReaderPage({
                             {displayName}{isFriend ? " 🧑‍🤝‍🧑" : ""}
                           </span>
                         </div>
-                        <p className="font-thai text-[#E2E8F0] text-sm leading-relaxed text-right">
+                        <p className={`font-thai text-sm leading-relaxed text-right ${isActive ? "text-white font-medium" : "text-[#E2E8F0]"}`}>
                           {block.text}
                         </p>
                       </div>
@@ -1156,6 +1287,31 @@ export default function NovelReaderPage({
                 >
                   ไปที่ Studio เพื่อสั่ง AI เขียนฉากนี้
                 </Link>
+              </div>
+            )}
+
+            {/* Floating Quick Step Pill */}
+            {parsedBlocks.length > 0 && (
+              <div className="sticky bottom-2 ml-auto w-fit flex items-center gap-1 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-full border border-slate-700 shadow-2xl z-20">
+                <button
+                  onClick={() => handleStepDialogue("prev")}
+                  disabled={activeDialogueIndex <= 0}
+                  className="p-1.5 rounded-full bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white transition-all active:scale-95 cursor-pointer"
+                  title="ประโยคก่อนหน้า"
+                >
+                  <ChevronUp className="w-3.5 h-3.5 text-amber-400" />
+                </button>
+                <span className="font-mono text-[10px] font-bold text-slate-300 px-1.5">
+                  {activeDialogueIndex + 1}/{parsedBlocks.length}
+                </span>
+                <button
+                  onClick={() => handleStepDialogue("next")}
+                  disabled={activeDialogueIndex >= parsedBlocks.length - 1}
+                  className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 disabled:opacity-30 text-slate-950 font-bold transition-all active:scale-95 cursor-pointer"
+                  title="ประโยคถัดไป"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
               </div>
             )}
           </div>

@@ -130,6 +130,9 @@ export function initDatabase() {
       word_count INTEGER DEFAULT 0,
       version INTEGER DEFAULT 1,
       director_note TEXT DEFAULT '',
+      bgm_url TEXT DEFAULT '',
+      bgm_title TEXT DEFAULT '',
+      dialogue_bindings TEXT DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(part_id) REFERENCES parts(id) ON DELETE CASCADE
@@ -221,6 +224,9 @@ export function initDatabase() {
   } catch {}
   try {
     sqlite.exec("ALTER TABLE scenes ADD COLUMN bgm_title TEXT DEFAULT ''");
+  } catch {}
+  try {
+    sqlite.exec("ALTER TABLE scenes ADD COLUMN dialogue_bindings TEXT DEFAULT '{}'");
   } catch {}
 }
 

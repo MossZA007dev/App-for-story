@@ -14,6 +14,7 @@ const UpdateSceneSchema = z.object({
   directorNote: z.string().optional(),
   bgmUrl: z.string().optional(),
   bgmTitle: z.string().optional(),
+  dialogueBindings: z.string().optional(),
 });
 
 export async function GET(
@@ -111,6 +112,7 @@ export async function PUT(
         directorNote: validated.directorNote ?? currentScene.directorNote,
         bgmUrl: validated.bgmUrl ?? currentScene.bgmUrl,
         bgmTitle: validated.bgmTitle ?? currentScene.bgmTitle,
+        dialogueBindings: validated.dialogueBindings ?? currentScene.dialogueBindings,
         wordCount,
         version: newVersion,
         updatedAt: now,

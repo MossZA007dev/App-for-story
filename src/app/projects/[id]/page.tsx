@@ -36,9 +36,12 @@ import {
   FileText,
   User,
   Users,
+  Crop,
+  Crown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
+import { ImageCropModal, AspectRatioType } from "@/components/images/ImageCropModal";
 import {
   parseSceneToDialogueBlocks,
   blocksToMarkdown,
@@ -142,6 +145,12 @@ export default function StoryWorkspacePage({
   const [showAiImageModal, setShowAiImageModal] = useState(false);
   const [aiImagePromptInput, setAiImagePromptInput] = useState("");
   const [isGeneratingAiImage, setIsGeneratingAiImage] = useState(false);
+  const [cropModalData, setCropModalData] = useState<{
+    isOpen: boolean;
+    imageSrc: string;
+    imageId?: string;
+    defaultAspect?: AspectRatioType;
+  } | null>(null);
 
   // Audio / Music State
   const studioAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
@@ -502,6 +511,43 @@ export default function StoryWorkspacePage({
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "ลบภาพไม่สำเร็จ");
+    }
+  };
+
+  // Set image as novel cover
+  const handleSetAsCover = async (image: SceneImage | string) => {
+    const imagePath = typeof image === "string" ? image : image.filePath;
+    const imageId = typeof image === "string" ? undefined : image.id;
+    try {
+      const res = await fetch(`/api/projects/${projectId}/cover`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imagePath, imageId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "ตั้งภาพหน้าปกไม่สำเร็จ");
+      setProject((prev: any) => (prev ? { ...prev, coverImage: imagePath } : prev));
+      toast.success("👑 ตั้งภาพนี้เป็นหน้าปกนิยายเรียบร้อยแล้ว!");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "เกิดข้อผิดพลาดในการตั้งหน้าปก");
+    }
+  };
+
+  // Crop success handler
+  const handleCropSuccess = (savedImage: any, isCover?: boolean) => {
+    setSceneImages((prev) => {
+      const exists = prev.findIndex((img) => img.id === savedImage.id);
+      if (exists !== -1) {
+        const next = [...prev];
+        next[exists] = savedImage;
+        return next;
+      }
+      return [savedImage, ...prev];
+    });
+    setSelectedImageIndex(0);
+    if (isCover) {
+      setProject((prev: any) => (prev ? { ...prev, coverImage: savedImage.filePath } : prev));
     }
   };
 
@@ -1137,7 +1183,7 @@ export default function StoryWorkspacePage({
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
 
                 {/* Top Floating Controls */}
-                <div className="absolute top-3.5 left-3.5 flex items-center gap-2">
+                <div className="absolute top-3.5 left-3.5 flex items-center gap-2 flex-wrap max-w-[85%]">
                   <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/95 text-slate-950 font-thai flex items-center gap-1.5 backdrop-blur-md shadow">
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>
@@ -1145,13 +1191,49 @@ export default function StoryWorkspacePage({
                     </span>
                   </span>
 
+                  {project?.coverImage === currentFeaturedImage.filePath && (
+                    <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-400 text-slate-950 font-thai flex items-center gap-1 shadow-[0_0_12px_rgba(251,191,36,0.6)]">
+                      <Crown className="w-3.5 h-3.5" />
+                      <span>ภาพหน้าปกนิยาย</span>
+                    </span>
+                  )}
+
                   <button
                     onClick={() => imageFileInputRef.current?.click()}
                     disabled={isUploadingImage}
                     className="px-2.5 py-1 rounded-full text-xs font-bold bg-black/80 hover:bg-black text-white font-thai flex items-center gap-1.5 backdrop-blur-md border border-slate-700 shadow transition-all active:scale-95"
                   >
                     <Upload className="w-3 h-3 text-amber-400" />
-                    <span>{isUploadingImage ? "กำลังอัปโหลด..." : "+ อัปโหลดรูปภาพ"}</span>
+                    <span>{isUploadingImage ? "กำลังอัปโหลด..." : "+ อัปโหลด"}</span>
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      setCropModalData({
+                        isOpen: true,
+                        imageSrc: currentFeaturedImage.filePath,
+                        imageId: currentFeaturedImage.id,
+                        defaultAspect: "16:9",
+                      })
+                    }
+                    className="px-2.5 py-1 rounded-full text-xs font-bold bg-black/80 hover:bg-black text-amber-300 font-thai flex items-center gap-1.5 backdrop-blur-md border border-slate-700 hover:border-amber-500/50 shadow transition-all active:scale-95"
+                    title="ครอบตัดรูปภาพนี้ (Crop)"
+                  >
+                    <Crop className="w-3 h-3 text-amber-400" />
+                    <span>ครอปรูป</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleSetAsCover(currentFeaturedImage)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-bold font-thai flex items-center gap-1.5 backdrop-blur-md border shadow transition-all active:scale-95 ${
+                      project?.coverImage === currentFeaturedImage.filePath
+                        ? "bg-amber-400 text-slate-950 border-amber-300"
+                        : "bg-black/80 hover:bg-black text-amber-400 border-amber-500/40 hover:border-amber-400"
+                    }`}
+                    title="ตั้งรูปนี้เป็นภาพหน้าปกของนิยายเรื่องนี้"
+                  >
+                    <Crown className="w-3 h-3" />
+                    <span>{project?.coverImage === currentFeaturedImage.filePath ? "หน้าปกปัจจุบัน" : "ตั้งเป็นหน้าปก"}</span>
                   </button>
 
                   <button
@@ -1244,16 +1326,53 @@ export default function StoryWorkspacePage({
                       alt={img.caption || ""}
                       className="w-full h-full object-cover"
                     />
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteImage(img.id);
-                      }}
-                      className="absolute top-1 right-1 p-1 rounded bg-black/80 hover:bg-red-950 text-slate-400 hover:text-red-300 opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="ลบภาพนี้"
-                    >
-                      <Trash2 className="w-2.5 h-2.5 text-red-400" />
-                    </button>
+
+                    {/* Cover indicator */}
+                    {project?.coverImage === img.filePath && (
+                      <div className="absolute top-1 left-1 px-1 py-0.5 rounded bg-amber-400 text-slate-950 text-[9px] font-bold flex items-center gap-0.5 shadow z-10">
+                        <Crown className="w-2.5 h-2.5" />
+                        <span>ปก</span>
+                      </div>
+                    )}
+
+                    {/* Hover actions */}
+                    <div className="absolute top-1 right-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCropModalData({
+                            isOpen: true,
+                            imageSrc: img.filePath,
+                            imageId: img.id,
+                            defaultAspect: "16:9",
+                          });
+                        }}
+                        className="p-1 rounded bg-black/80 hover:bg-amber-950 text-slate-300 hover:text-amber-300"
+                        title="ครอปรูปนี้"
+                      >
+                        <Crop className="w-2.5 h-2.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSetAsCover(img);
+                        }}
+                        className="p-1 rounded bg-black/80 hover:bg-amber-950 text-slate-300 hover:text-amber-400"
+                        title="ตั้งรูปนี้เป็นหน้าปก"
+                      >
+                        <Crown className="w-2.5 h-2.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteImage(img.id);
+                        }}
+                        className="p-1 rounded bg-black/80 hover:bg-red-950 text-slate-400 hover:text-red-300"
+                        title="ลบภาพนี้"
+                      >
+                        <Trash2 className="w-2.5 h-2.5 text-red-400" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -2054,15 +2173,75 @@ export default function StoryWorkspacePage({
       {lightboxImage && (
         <div
           onClick={() => setLightboxImage(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-md cursor-pointer animate-fadeIn"
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 bg-black/95 backdrop-blur-md cursor-pointer animate-fadeIn"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={lightboxImage}
-            alt="Fullscreen Preview"
-            className="max-w-full max-h-[92vh] object-contain rounded-2xl shadow-2xl"
-          />
+          <div
+            className="relative max-w-full max-h-[85vh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={lightboxImage}
+              alt="Fullscreen Preview"
+              className="max-w-full max-h-[80vh] object-contain rounded-2xl shadow-2xl"
+            />
+
+            {/* Lightbox Action Controls */}
+            <div className="flex items-center gap-3 mt-4 flex-wrap justify-center">
+              <button
+                onClick={() => {
+                  const targetImg = sceneImages.find((img) => img.filePath === lightboxImage);
+                  setCropModalData({
+                    isOpen: true,
+                    imageSrc: lightboxImage,
+                    imageId: targetImg?.id,
+                    defaultAspect: "16:9",
+                  });
+                  setLightboxImage(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 font-bold text-xs font-thai flex items-center gap-2 shadow transition-all"
+              >
+                <Crop className="w-4 h-4 text-amber-400" />
+                <span>ครอปรูปภาพนี้</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleSetAsCover(lightboxImage);
+                }}
+                className={`px-4 py-2 rounded-xl font-bold text-xs font-thai flex items-center gap-2 shadow transition-all ${
+                  project?.coverImage === lightboxImage
+                    ? "bg-amber-400 text-slate-950"
+                    : "bg-amber-500 hover:bg-amber-400 text-slate-950"
+                }`}
+              >
+                <Crown className="w-4 h-4" />
+                <span>{project?.coverImage === lightboxImage ? "✓ หน้าปกเรื่องแล้ว" : "ตั้งเป็นภาพหน้าปกนิยาย"}</span>
+              </button>
+
+              <button
+                onClick={() => setLightboxImage(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-thai"
+              >
+                ปิด
+              </button>
+            </div>
+          </div>
         </div>
+      )}
+
+      {/* Image Crop Modal */}
+      {cropModalData && (
+        <ImageCropModal
+          isOpen={cropModalData.isOpen}
+          onClose={() => setCropModalData(null)}
+          imageSrc={cropModalData.imageSrc}
+          imageId={cropModalData.imageId}
+          sceneId={activeSceneId}
+          projectId={projectId}
+          defaultAspect={cropModalData.defaultAspect || "16:9"}
+          onCropSuccess={handleCropSuccess}
+        />
       )}
     </div>
   );

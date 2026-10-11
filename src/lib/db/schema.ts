@@ -11,6 +11,7 @@ export const projects = sqliteTable("projects", {
   storyRules: text("story_rules").notNull(), // Master story rules prompt template
   styleGuide: text("style_guide").default("dark fantasy cinematic painting, muted palette, dramatic lighting, film still, highly detailed"),
   targetSceneWords: integer("target_scene_words").default(1200),
+  coverImage: text("cover_image").default(""),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

@@ -22,6 +22,7 @@ const UpdateProjectSchema = z.object({
   storyRules: z.string().optional(),
   styleGuide: z.string().optional(),
   targetSceneWords: z.number().optional(),
+  coverImage: z.string().optional(),
 });
 
 export async function GET(

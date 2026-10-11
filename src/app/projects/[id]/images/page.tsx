@@ -22,8 +22,11 @@ import {
   Camera,
   ArrowRight,
   Filter,
+  Crop,
+  Crown,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ImageCropModal, AspectRatioType } from "@/components/images/ImageCropModal";
 
 interface SceneOption {
   id: string;
@@ -95,6 +98,14 @@ export default function ImageStudioPage({
 
   // Lightbox
   const [lightboxImage, setLightboxImage] = useState<ImageItem | null>(null);
+
+  // Crop Modal state
+  const [cropModalData, setCropModalData] = useState<{
+    isOpen: boolean;
+    imageSrc: string;
+    imageId?: string;
+    defaultAspect?: AspectRatioType;
+  } | null>(null);
 
   useEffect(() => {
     fetchInitialData();
@@ -281,6 +292,42 @@ export default function ImageStudioPage({
     } catch (err) {
       console.error(err);
       toast.error("เกิดข้อผิดพลาดในการลบรูปภาพ");
+    }
+  };
+
+  // Set as Project Cover
+  const handleSetAsCover = async (image: ImageItem | string) => {
+    const imagePath = typeof image === "string" ? image : image.filePath;
+    const imageId = typeof image === "string" ? undefined : image.id;
+    try {
+      const res = await fetch(`/api/projects/${projectId}/cover`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imagePath, imageId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "ตั้งภาพหน้าปกไม่สำเร็จ");
+      setProject((prev: any) => (prev ? { ...prev, coverImage: imagePath } : prev));
+      toast.success("👑 ตั้งภาพนี้เป็นหน้าปกนิยายเรียบร้อยแล้ว!");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "เกิดข้อผิดพลาดในการตั้งหน้าปก");
+    }
+  };
+
+  // Crop Success Handler
+  const handleCropSuccess = (savedImage: any, isCover?: boolean) => {
+    setImagesList((prev) => {
+      const exists = prev.findIndex((img) => img.id === savedImage.id);
+      if (exists !== -1) {
+        const next = [...prev];
+        next[exists] = savedImage;
+        return next;
+      }
+      return [savedImage, ...prev];
+    });
+    if (isCover) {
+      setProject((prev: any) => (prev ? { ...prev, coverImage: savedImage.filePath } : prev));
     }
   };
 
@@ -712,6 +759,13 @@ export default function ImageStudioPage({
                           : "🎨 AI Illustration"}
                       </span>
 
+                      {project?.coverImage === img.filePath && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-400 text-slate-950 border border-amber-300 backdrop-blur-md flex items-center gap-1 shadow-[0_0_10px_rgba(251,191,36,0.5)]">
+                          <Crown className="w-3 h-3" />
+                          <span>หน้าปกเรื่อง</span>
+                        </span>
+                      )}
+
                       {img.approved === 1 && (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 backdrop-blur-md">
                           ✓ Approved
@@ -750,27 +804,60 @@ export default function ImageStudioPage({
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-800 gap-2">
-                      <button
-                        onClick={() => handleToggleApprove(img)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold font-thai transition-colors ${
-                          img.approved === 1
-                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30"
-                            : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                        }`}
-                        title="ภาพที่ Approve จะถูกนำไปแสดงในหน้าอ่านนิยาย Reader"
-                      >
-                        {img.approved === 1 ? (
-                          <>
-                            <Check className="w-3.5 h-3.5" />
-                            <span>อนุมัติแล้ว</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>กด Approve</span>
-                          </>
-                        )}
-                      </button>
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800 gap-1.5 flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleToggleApprove(img)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold font-thai transition-colors ${
+                            img.approved === 1
+                              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30"
+                              : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                          }`}
+                          title="ภาพที่ Approve จะถูกนำไปแสดงในหน้าอ่านนิยาย Reader"
+                        >
+                          {img.approved === 1 ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>อนุมัติแล้ว</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>กด Approve</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* Crop button */}
+                        <button
+                          onClick={() =>
+                            setCropModalData({
+                              isOpen: true,
+                              imageSrc: img.filePath,
+                              imageId: img.id,
+                              defaultAspect: img.kind === "cover" ? "3:4" : "16:9",
+                            })
+                          }
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold font-thai bg-slate-800 text-amber-300 hover:bg-slate-700 border border-slate-700/60 transition-colors"
+                          title="ครอบตัดรูปภาพนี้ (Crop)"
+                        >
+                          <Crop className="w-3.5 h-3.5 text-amber-400" />
+                          <span>ครอป</span>
+                        </button>
+
+                        {/* Set as Cover button */}
+                        <button
+                          onClick={() => handleSetAsCover(img)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold font-thai transition-colors ${
+                            project?.coverImage === img.filePath
+                              ? "bg-amber-400 text-slate-950 font-bold border border-amber-300"
+                              : "bg-slate-800 text-amber-400 hover:bg-slate-700 border border-amber-500/30"
+                          }`}
+                          title="ตั้งภาพนี้เป็นภาพหน้าปกของนิยายเรื่องนี้"
+                        >
+                          <Crown className="w-3.5 h-3.5" />
+                          <span>{project?.coverImage === img.filePath ? "หน้าปกแล้ว" : "ตั้งหน้าปก"}</span>
+                        </button>
+                      </div>
 
                       <div className="flex items-center gap-1">
                         <button
@@ -901,7 +988,7 @@ export default function ImageStudioPage({
             <img
               src={lightboxImage.filePath}
               alt={lightboxImage.caption || lightboxImage.prompt}
-              className="max-h-[75vh] w-auto max-w-full rounded-xl object-contain border border-slate-800 shadow-2xl"
+              className="max-h-[72vh] w-auto max-w-full rounded-xl object-contain border border-slate-800 shadow-2xl"
             />
 
             <div className="mt-3 text-center space-y-1 max-w-2xl">
@@ -914,8 +1001,62 @@ export default function ImageStudioPage({
                 {lightboxImage.prompt}
               </p>
             </div>
+
+            {/* Lightbox Actions */}
+            <div className="flex items-center gap-3 mt-4 flex-wrap justify-center">
+              <button
+                onClick={() => {
+                  setCropModalData({
+                    isOpen: true,
+                    imageSrc: lightboxImage.filePath,
+                    imageId: lightboxImage.id,
+                    defaultAspect: lightboxImage.kind === "cover" ? "3:4" : "16:9",
+                  });
+                  setLightboxImage(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 font-bold text-xs font-thai flex items-center gap-2 shadow transition-all"
+              >
+                <Crop className="w-4 h-4 text-amber-400" />
+                <span>ครอปรูปภาพนี้</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleSetAsCover(lightboxImage);
+                }}
+                className={`px-4 py-2 rounded-xl font-bold text-xs font-thai flex items-center gap-2 shadow transition-all ${
+                  project?.coverImage === lightboxImage.filePath
+                    ? "bg-amber-400 text-slate-950 font-bold"
+                    : "bg-amber-500 hover:bg-amber-400 text-slate-950"
+                }`}
+              >
+                <Crown className="w-4 h-4" />
+                <span>{project?.coverImage === lightboxImage.filePath ? "✓ หน้าปกเรื่องแล้ว" : "ตั้งเป็นภาพหน้าปกนิยาย"}</span>
+              </button>
+
+              <button
+                onClick={() => setLightboxImage(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-thai"
+              >
+                ปิด
+              </button>
+            </div>
           </div>
         </div>
+      )}
+
+      {/* Image Crop Modal */}
+      {cropModalData && (
+        <ImageCropModal
+          isOpen={cropModalData.isOpen}
+          onClose={() => setCropModalData(null)}
+          imageSrc={cropModalData.imageSrc}
+          imageId={cropModalData.imageId}
+          sceneId={selectedSceneId || undefined}
+          projectId={projectId}
+          defaultAspect={cropModalData.defaultAspect || "16:9"}
+          onCropSuccess={handleCropSuccess}
+        />
       )}
     </div>
   );

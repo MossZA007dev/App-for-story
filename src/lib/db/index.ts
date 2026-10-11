@@ -228,6 +228,9 @@ export function initDatabase() {
   try {
     sqlite.exec("ALTER TABLE scenes ADD COLUMN dialogue_bindings TEXT DEFAULT '{}'");
   } catch {}
+  try {
+    sqlite.exec("ALTER TABLE projects ADD COLUMN cover_image TEXT DEFAULT ''");
+  } catch {}
 }
 
 // Auto-run initDatabase upon import

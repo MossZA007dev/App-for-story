@@ -86,7 +86,7 @@ export async function GET() {
         completedParts,
         sceneCount,
         totalWordCount,
-        coverImage: coverImg?.filePath || "/images/saga-got-cover.jpg",
+        coverImage: proj.coverImage || coverImg?.filePath || "/images/saga-got-cover.jpg",
       };
     });
 

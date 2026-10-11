@@ -577,10 +577,10 @@ export function CollaboratorModal({
 
               <div className="flex items-center gap-2">
                 <div className="flex-1 px-3 py-2 rounded-lg bg-black/60 border border-slate-700 font-mono text-emerald-300 text-xs truncate select-all">
-                  https://heavy-bars-pick.loca.lt/projects/{projectId}
+                  https://saga-forge-moss.loca.lt/projects/{projectId}
                 </div>
                 <button
-                  onClick={() => handleCopyLink(`https://heavy-bars-pick.loca.lt/projects/${projectId}`, "ลิงก์ออนไลน์ข้ามเน็ต")}
+                  onClick={() => handleCopyLink(`https://saga-forge-moss.loca.lt/projects/${projectId}`, "ลิงก์ออนไลน์ข้ามเน็ต")}
                   className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1 transition-all shadow"
                 >
                   <Copy className="w-3.5 h-3.5" />

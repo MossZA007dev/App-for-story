@@ -2889,6 +2889,199 @@ export default function StoryWorkspacePage({
                         : "border-transparent hover:border-slate-700/60 hover:bg-black/20"
                     }`}
                   >
+                    {/* Top Row Header: Dropdowns on left, Action tools on right (clean flex layout, no overlapping!) */}
+                    <div className="flex items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-slate-800/60 flex-wrap">
+                      {/* Left: Speaker Selector & Media Bindings */}
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                        <select
+                          value={
+                            block.isNarrator
+                              ? "narrator"
+                              : block.speaker?.id || block.speaker?.name || "narrator"
+                          }
+                          onChange={(e) => handleUpdateBlockSpeaker(idx, e.target.value)}
+                          className={`bg-slate-900 border border-slate-700 rounded-lg px-2 py-0.5 text-[11px] font-thai font-bold focus:outline-none cursor-pointer max-w-[170px] sm:max-w-[210px] truncate ${
+                            isSelf ? "text-amber-400" : isFriend ? "text-sky-400" : "text-slate-300"
+                          }`}
+                        >
+                          <option value="narrator">📜 ผู้บรรยาย (Narrator)</option>
+                          <option value="sound">⚡ เสียงประกอบ (Sound FX)</option>
+                          {characters.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.characterType === "self" ? "👑 " : c.characterType === "friend" ? "🧑‍🤝‍🧑 " : ""}
+                              {c.name} {c.realNickname ? `(${c.realNickname})` : ""}
+                            </option>
+                          ))}
+                          {block.speaker &&
+                            !block.isNarrator &&
+                            !characters.some(
+                              (c) =>
+                                c.id === block.speaker?.id ||
+                                c.name.toLowerCase() === (block.speaker?.name || "").toLowerCase()
+                            ) && (
+                              <option value={block.speaker.id || block.speaker.name}>
+                                🎭 {block.speaker.realNickname || block.speaker.name}
+                              </option>
+                            )}
+                        </select>
+
+                        {mbti && (
+                          <span className="text-[10px] font-mono text-slate-500 font-semibold">
+                            [{mbti}]
+                          </span>
+                        )}
+
+                        {/* Image & Video Binding Dropdown */}
+                        <div className="flex items-center gap-1">
+                          <select
+                            value={assignedImageId || ""}
+                            onChange={(e) => {
+                              if (e.target.value === "__upload_new__") {
+                                targetUploadBlockIdxRef.current = idx;
+                                blockImageUploadRef.current?.click();
+                              } else if (e.target.value === "__custom_url__") {
+                                const customUrl = window.prompt("กรุณาระบุลิงก์รูปภาพ หรือ วิดีโอ/GIF ภายนอก (เช่น https://.../ice.jpg หรือ .gif หรือ .mp4):");
+                                if (customUrl && customUrl.trim()) {
+                                  handleAssignBlockImage(idx, `url:${customUrl.trim()}`);
+                                }
+                              } else {
+                                handleAssignBlockImage(idx, e.target.value);
+                              }
+                            }}
+                            className={`rounded-lg px-2 py-0.5 text-[10px] font-thai border focus:outline-none cursor-pointer max-w-[160px] sm:max-w-[190px] truncate ${
+                              assignedImage || assignedImageId
+                                ? "bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold"
+                                : "bg-slate-900 text-slate-400 border-slate-700"
+                            }`}
+                            title="เปลี่ยนภาพหรือวิดีโอประกอบในบทนี้"
+                          >
+                            <option value="">⚪ คงภาพเดิม</option>
+                            {sceneImages.map((img, i) => (
+                              <option key={img.id} value={img.id}>
+                                {isVideoMedia(img) ? "🎬 วิดีโอ" : "🖼️ ภาพ"} #{i + 1}: {img.caption || img.prompt.slice(0, 20)}
+                              </option>
+                            ))}
+                            <option value="__upload_new__">+ 📁 อัปโหลดภาพหรือวิดีโอใหม่สำหรับบทนี้...</option>
+                            <option value="__custom_url__">+ 🔗 ใส่ลิงก์รูป/วิดีโอ/GIF ภายนอก...</option>
+                          </select>
+
+                          {(assignedImage || assignedImageId) && (
+                            <button
+                              onClick={() => handleAssignBlockImage(idx, "")}
+                              className="p-0.5 rounded text-slate-400 hover:text-red-400"
+                              title="ยกเลิกการผูกภาพ"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Audio Mood Binding Dropdown */}
+                        <div className="flex items-center gap-1">
+                          <select
+                            value={assignedAudioValue || ""}
+                            onChange={(e) => {
+                              if (e.target.value === "__custom_url__") {
+                                const customUrl = window.prompt("กรุณาระบุลิงก์ไฟล์เสียง/เพลงภายนอก (MP3/WAV/Direct URL):");
+                                if (customUrl && customUrl.trim()) {
+                                  handleAssignBlockAudio(idx, `url:${customUrl.trim()}`);
+                                }
+                              } else {
+                                handleAssignBlockAudio(idx, e.target.value);
+                              }
+                            }}
+                            className={`rounded-lg px-2 py-0.5 text-[10px] font-thai border focus:outline-none cursor-pointer max-w-[140px] sm:max-w-[170px] truncate ${
+                              assignedAudioValue
+                                ? "bg-purple-500/20 text-purple-300 border-purple-500/50 font-bold"
+                                : "bg-slate-900 text-slate-400 border-slate-700"
+                            }`}
+                            title="เปลี่ยนอารมณ์เพลง / เสียงประกอบในบทนี้"
+                          >
+                            <option value="">🎶 คงเพลงเดิม</option>
+                            <optgroup label="บรรยากาศเสียงสังเคราะห์">
+                              {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "บรรยากาศ").map((o) => (
+                                <option key={o.id} value={o.id}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="เอฟเฟกต์เสียง">
+                              {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เอฟเฟกต์").map((o) => (
+                                <option key={o.id} value={o.id}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="ควบคุมเพลง">
+                              {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เพลง").map((o) => (
+                                <option key={o.id} value={o.id}>
+                                  {o.label}
+                                </option>
+                              ))}
+                              <option value="__custom_url__">+ 🎵 ใส่ลิงก์เพลงภายนอก...</option>
+                            </optgroup>
+                          </select>
+
+                          {assignedAudioValue && (
+                            <button
+                              type="button"
+                              onClick={() => handleAssignBlockAudio(idx, "")}
+                              className="p-0.5 rounded text-slate-400 hover:text-red-400"
+                              title="ยกเลิกการผูกเพลง"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right: Action Buttons Toolbar (In normal flow with flex-shrink-0 - NEVER overlapping!) */}
+                      <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-700/80 rounded-lg p-0.5 flex-shrink-0 shadow-sm opacity-80 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => handleToggleBlockSide(idx)}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-thai font-semibold transition-colors ${
+                            block.side === "right"
+                              ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                              : "text-slate-400 hover:text-white hover:bg-slate-800"
+                          }`}
+                          title="สลับฝั่งซ้าย/ขวา"
+                        >
+                          {block.side === "left" ? "ชิดขวา" : "ชิดซ้าย"}
+                        </button>
+                        <button
+                          onClick={() => handleAddBlock("self", idx)}
+                          className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-amber-400 transition-colors"
+                          title="แทรกประโยคใหม่ด้านล่าง"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => handleMoveBlock(idx, "up")}
+                          disabled={idx === 0}
+                          className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-20 transition-colors"
+                          title="เลื่อนขึ้น"
+                        >
+                          <ArrowUp className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => handleMoveBlock(idx, "down")}
+                          disabled={idx === dialogueBlocks.length - 1}
+                          className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-20 transition-colors"
+                          title="เลื่อนลง"
+                        >
+                          <ArrowDown className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteBlock(idx)}
+                          className="p-1 rounded hover:bg-red-950/60 text-red-400 hover:text-red-300 transition-colors"
+                          title="ลบประโยคนี้"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Dialogue Row Body: Avatar + Speech Textarea */}
                     <div
                       className={`flex items-start gap-3 ${
                         block.side === "right" ? "flex-row-reverse" : "flex-row"
@@ -2897,160 +3090,12 @@ export default function StoryWorkspacePage({
                       <AvatarIcon />
 
                       <div className={`flex-1 space-y-1 ${block.side === "right" ? "text-right" : "text-left"}`}>
-                        {/* Speaker Selector & Line Meta */}
-                        <div
-                          className={`flex items-center gap-2 flex-wrap ${
-                            block.side === "right" ? "justify-end" : "justify-start"
-                          }`}
-                        >
-                          <select
-                            value={
-                              block.isNarrator
-                                ? "narrator"
-                                : block.speaker?.id || block.speaker?.name || "narrator"
-                            }
-                            onChange={(e) => handleUpdateBlockSpeaker(idx, e.target.value)}
-                            className={`bg-slate-900 border border-slate-700 rounded-lg px-2 py-0.5 text-[11px] font-thai font-bold focus:outline-none cursor-pointer ${
-                              isSelf ? "text-amber-400" : isFriend ? "text-sky-400" : "text-slate-300"
-                            }`}
-                          >
-                            <option value="narrator">📜 ผู้บรรยาย (Narrator)</option>
-                            <option value="sound">⚡ เสียงประกอบ (Sound FX)</option>
-                            {characters.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.characterType === "self" ? "👑 " : c.characterType === "friend" ? "🧑‍🤝‍🧑 " : ""}
-                                {c.name} {c.realNickname ? `(${c.realNickname})` : ""}
-                              </option>
-                            ))}
-                            {block.speaker &&
-                              !block.isNarrator &&
-                              !characters.some(
-                                (c) =>
-                                  c.id === block.speaker?.id ||
-                                  c.name.toLowerCase() === (block.speaker?.name || "").toLowerCase()
-                              ) && (
-                                <option value={block.speaker.id || block.speaker.name}>
-                                  🎭 {block.speaker.realNickname || block.speaker.name}
-                                </option>
-                              )}
-                          </select>
-
-                          {mbti && (
-                            <span className="text-[10px] font-mono text-slate-500 font-semibold">
-                              [{mbti}]
-                            </span>
-                          )}
-
-                          {/* Image & Video Binding Dropdown */}
-                          <div className="flex items-center gap-1">
-                            <select
-                              value={assignedImageId || ""}
-                              onChange={(e) => {
-                                if (e.target.value === "__upload_new__") {
-                                  targetUploadBlockIdxRef.current = idx;
-                                  blockImageUploadRef.current?.click();
-                                } else if (e.target.value === "__custom_url__") {
-                                  const customUrl = window.prompt("กรุณาระบุลิงก์รูปภาพ หรือ วิดีโอ/GIF ภายนอก (เช่น https://.../ice.jpg หรือ .gif หรือ .mp4):");
-                                  if (customUrl && customUrl.trim()) {
-                                    handleAssignBlockImage(idx, `url:${customUrl.trim()}`);
-                                  }
-                                } else {
-                                  handleAssignBlockImage(idx, e.target.value);
-                                }
-                              }}
-                              className={`rounded-lg px-2 py-0.5 text-[10px] font-thai border focus:outline-none cursor-pointer ${
-                                assignedImage || assignedImageId
-                                  ? "bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold"
-                                  : "bg-slate-900 text-slate-400 border-slate-700"
-                              }`}
-                              title="เปลี่ยนภาพหรือวิดีโอประกอบในบทนี้"
-                            >
-                              <option value="">⚪ คงภาพเดิม</option>
-                              {sceneImages.map((img, i) => (
-                                <option key={img.id} value={img.id}>
-                                  {isVideoMedia(img) ? "🎬 วิดีโอ" : "🖼️ ภาพ"} #{i + 1}: {img.caption || img.prompt.slice(0, 20)}
-                                </option>
-                              ))}
-                              <option value="__upload_new__">+ 📁 อัปโหลดภาพหรือวิดีโอใหม่สำหรับบทนี้...</option>
-                              <option value="__custom_url__">+ 🔗 ใส่ลิงก์รูป/วิดีโอ/GIF ภายนอก...</option>
-                            </select>
-
-                            {(assignedImage || assignedImageId) && (
-                              <button
-                                onClick={() => handleAssignBlockImage(idx, "")}
-                                className="p-0.5 rounded text-slate-400 hover:text-red-400"
-                                title="ยกเลิกการผูกภาพ"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-
-                          {/* Audio Mood Binding Dropdown */}
-                          <div className="flex items-center gap-1">
-                            <select
-                              value={assignedAudioValue || ""}
-                              onChange={(e) => {
-                                if (e.target.value === "__custom_url__") {
-                                  const customUrl = window.prompt("กรุณาระบุลิงก์ไฟล์เสียง/เพลงภายนอก (MP3/WAV/Direct URL):");
-                                  if (customUrl && customUrl.trim()) {
-                                    handleAssignBlockAudio(idx, `url:${customUrl.trim()}`);
-                                  }
-                                } else {
-                                  handleAssignBlockAudio(idx, e.target.value);
-                                }
-                              }}
-                              className={`rounded-lg px-2 py-0.5 text-[10px] font-thai border focus:outline-none cursor-pointer ${
-                                assignedAudioValue
-                                  ? "bg-purple-500/20 text-purple-300 border-purple-500/50 font-bold"
-                                  : "bg-slate-900 text-slate-400 border-slate-700"
-                              }`}
-                              title="เปลี่ยนอารมณ์เพลง / เสียงประกอบในบทนี้"
-                            >
-                              <option value="">🎶 คงเพลงเดิม</option>
-                              <optgroup label="บรรยากาศเสียงสังเคราะห์">
-                                {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "บรรยากาศ").map((o) => (
-                                  <option key={o.id} value={o.id}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                              </optgroup>
-                              <optgroup label="เอฟเฟกต์เสียง">
-                                {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เอฟเฟกต์").map((o) => (
-                                  <option key={o.id} value={o.id}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                              </optgroup>
-                              <optgroup label="ควบคุมเพลง">
-                                {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เพลง").map((o) => (
-                                  <option key={o.id} value={o.id}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                                <option value="__custom_url__">+ 🎵 ใส่ลิงก์เพลงภายนอก...</option>
-                              </optgroup>
-                            </select>
-
-                            {assignedAudioValue && (
-                              <button
-                                type="button"
-                                onClick={() => handleAssignBlockAudio(idx, "")}
-                                className="p-0.5 rounded text-slate-400 hover:text-red-400"
-                                title="ยกเลิกการผูกเพลง"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
                         {/* Editable Speech Text */}
                         <textarea
                           rows={2}
                           value={block.text}
                           onChange={(e) => handleUpdateBlockText(idx, e.target.value)}
-                          className={`w-full bg-transparent p-1 rounded font-thai text-sm leading-relaxed text-[#E2E8F0] focus:bg-slate-950 focus:border focus:border-amber-400/60 focus:outline-none resize-none ${
+                          className={`w-full bg-slate-950/40 p-2 rounded-xl font-thai text-sm leading-relaxed text-[#E2E8F0] border border-slate-800/80 focus:bg-slate-950 focus:border focus:border-amber-400/60 focus:outline-none resize-none transition-all shadow-inner ${
                             block.side === "right" ? "text-right" : "text-left"
                           }`}
                         />
@@ -3131,47 +3176,6 @@ export default function StoryWorkspacePage({
                           </div>
                         )}
                       </div>
-                    </div>
-
-                    {/* Floating Action Tools on Row */}
-                    <div className="absolute top-1 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/90 rounded-lg p-1 border border-slate-700 shadow-md">
-                      <button
-                        onClick={() => handleToggleBlockSide(idx)}
-                        className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-amber-300 text-[10px] font-mono"
-                        title="สลับฝั่งซ้าย/ขวา"
-                      >
-                        {block.side === "left" ? "ชิดขวา" : "ชิดซ้าย"}
-                      </button>
-                      <button
-                        onClick={() => handleAddBlock("self", idx)}
-                        className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white"
-                        title="แทรกประโยคใหม่ด้านล่าง"
-                      >
-                        <Plus className="w-3 h-3 text-amber-400" />
-                      </button>
-                      <button
-                        onClick={() => handleMoveBlock(idx, "up")}
-                        disabled={idx === 0}
-                        className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-30"
-                        title="เลื่อนขึ้น"
-                      >
-                        <ArrowUp className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() => handleMoveBlock(idx, "down")}
-                        disabled={idx === dialogueBlocks.length - 1}
-                        className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-30"
-                        title="เลื่อนลง"
-                      >
-                        <ArrowDown className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteBlock(idx)}
-                        className="p-1 rounded hover:bg-red-950 text-red-400"
-                        title="ลบประโยคนี้"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
                     </div>
                   </div>
                 );

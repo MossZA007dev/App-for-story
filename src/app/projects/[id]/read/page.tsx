@@ -31,10 +31,13 @@ import {
   Upload,
   Trash2,
   RotateCcw,
+  Layers,
+  Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
 import { extractYouTubeVideoId } from "@/lib/audio/audioHelpers";
+import { PartModal } from "@/components/parts/PartModal";
 import {
   parseSceneToDialogueBlocks,
   resolveImageForDialogueIndex,
@@ -207,49 +210,109 @@ export default function NovelReaderPage({
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  // Part Modal (New Season / SS) State
+  const [partModalOpen, setPartModalOpen] = useState(false);
+
+  // Direct Screenshot Upload State
+  const [isUploadingScreenshot, setIsUploadingScreenshot] = useState(false);
+  const screenshotInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleUploadReaderScreenshot = async (file: File) => {
+    if (!activeScene) {
+      toast.error("ไม่พบข้อมูลฉากปัจจุบัน");
+      return;
+    }
+
+    try {
+      setIsUploadingScreenshot(true);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("sceneId", activeScene.id);
+      formData.append("caption", file.name.replace(/\.[^/.]+$/, ""));
+
+      const res = await fetch(`/api/projects/${projectId}/images/reference`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const resText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(resText);
+      } catch {}
+
+      if (!res.ok) {
+        if (
+          res.status === 413 ||
+          resText.includes("PAYLOAD_TOO_LARGE") ||
+          resText.includes("Request Entity Too Large")
+        ) {
+          throw new Error("ไฟล์มีขนาดใหญ่เกินกว่าที่ Vercel รองรับ (ไม่เกิน 4.5 MB)");
+        }
+        throw new Error(data?.error || "อัปโหลดภาพไม่สำเร็จ");
+      }
+
+      const newImg = data.image;
+      setActiveSceneImages((prev) => [newImg, ...prev]);
+      setSelectedImageIndex(0);
+      toast.success("📷 อัปโหลดภาพ Screenshot (SS) สำหรับฉากนี้เรียบร้อยแล้ว!");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "เกิดข้อผิดพลาดในการอัปโหลดภาพ");
+    } finally {
+      setIsUploadingScreenshot(false);
+      if (screenshotInputRef.current) screenshotInputRef.current.value = "";
+    }
+  };
+
+  const reloadProjectData = async (targetSceneId?: string) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`);
+      if (!res.ok) throw new Error("โหลดข้อมูลไม่สำเร็จ");
+      const data = await res.json();
+
+      setProject(data.project);
+      setParts(data.parts || []);
+      setCharacters(data.characters || []);
+
+      const flatList: { part: PartItem; scene: SceneItem }[] = [];
+      (data.parts || []).forEach((p: PartItem) => {
+        (p.scenes || []).forEach((s: SceneItem) => {
+          flatList.push({ part: p, scene: s });
+        });
+      });
+      setAllScenesList(flatList);
+
+      const toSelectId = targetSceneId || initialSceneId;
+      if (flatList.length > 0) {
+        if (toSelectId) {
+          const found = flatList.find((item) => item.scene.id === toSelectId);
+          if (found) {
+            setActiveScene(found.scene);
+            loadSceneImages(found.scene.id);
+            return;
+          }
+        }
+        setActiveScene(flatList[0].scene);
+        loadSceneImages(flatList[0].scene.id);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("ไม่สามารถโหลดเนื้อหานิยายได้");
+    }
+  };
+
+  const handlePartModalSuccess = async (newPart: any, newScene?: any) => {
+    await reloadProjectData(newScene?.id);
+    if (newScene) {
+      toast.success(`🎉 สร้าง ${newPart.title} (SS${newPart.number}) เรียบร้อย! เปิดฉากที่ 1 ให้ทันที`);
+    }
+  };
+
   // Fetch project and scene data
   useEffect(() => {
-    const fetchProject = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch(`/api/projects/${projectId}`);
-        if (!res.ok) throw new Error("โหลดข้อมูลไม่สำเร็จ");
-        const data = await res.json();
-
-        setProject(data.project);
-        setParts(data.parts || []);
-        setCharacters(data.characters || []);
-
-        // Flatten all scenes across all parts
-        const flatList: { part: PartItem; scene: SceneItem }[] = [];
-        (data.parts || []).forEach((p: PartItem) => {
-          (p.scenes || []).forEach((s: SceneItem) => {
-            flatList.push({ part: p, scene: s });
-          });
-        });
-        setAllScenesList(flatList);
-
-        if (flatList.length > 0) {
-          if (initialSceneId) {
-            const found = flatList.find((item) => item.scene.id === initialSceneId);
-            if (found) {
-              setActiveScene(found.scene);
-              loadSceneImages(found.scene.id);
-              return;
-            }
-          }
-          setActiveScene(flatList[0].scene);
-          loadSceneImages(flatList[0].scene.id);
-        }
-      } catch (err) {
-        console.error(err);
-        toast.error("ไม่สามารถโหลดเนื้อหานิยายได้");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchProject();
+    setLoading(true);
+    reloadProjectData().finally(() => setLoading(false));
   }, [projectId, initialSceneId]);
 
   // Stop sound when leaving page
@@ -1238,7 +1301,7 @@ export default function NovelReaderPage({
             <span>Image Studio</span>
           </Link>
 
-          {/* Quick Scene Selector on Right */}
+          {/* Quick Scene Selector & New Part / SS button on Right */}
           <div className="ml-auto flex items-center gap-2">
             <select
               value={activeScene?.id || ""}
@@ -1254,6 +1317,16 @@ export default function NovelReaderPage({
                 </option>
               ))}
             </select>
+
+            <button
+              type="button"
+              onClick={() => setPartModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500/20 to-amber-600/20 hover:from-amber-500/30 hover:to-amber-600/30 text-amber-300 hover:text-white border border-amber-500/40 text-xs font-thai font-bold transition-all shadow-sm active:scale-95 whitespace-nowrap"
+              title="เพิ่มภาคใหม่ / ซีซั่นใหม่ (SS)"
+            >
+              <Layers className="w-3.5 h-3.5 text-amber-400" />
+              <span>+ เพิ่มภาค / SS</span>
+            </button>
           </div>
         </div>
       </div>
@@ -1329,6 +1402,27 @@ export default function NovelReaderPage({
                   )}
                 </div>
 
+                {/* Upload More Screenshot (SS) Trigger */}
+                <input
+                  ref={screenshotInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleUploadReaderScreenshot(f);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => screenshotInputRef.current?.click()}
+                  disabled={isUploadingScreenshot}
+                  className="absolute top-3.5 right-14 p-2 rounded-xl bg-black/70 hover:bg-black text-slate-300 hover:text-amber-300 backdrop-blur-md transition-all shadow"
+                  title="อัปโหลดภาพ Screenshot (SS) เพิ่มสำหรับฉากนี้"
+                >
+                  <Camera className="w-4 h-4" />
+                </button>
+
                 {/* Zoom Lightbox Trigger */}
                 <button
                   onClick={() => setLightboxImage(currentFeaturedImage.filePath)}
@@ -1340,17 +1434,39 @@ export default function NovelReaderPage({
               </>
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-slate-400">
+                <input
+                  ref={screenshotInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleUploadReaderScreenshot(f);
+                  }}
+                />
                 <Film className="w-12 h-12 mb-3 text-slate-600" />
                 <p className="font-thai font-semibold text-slate-300">ยังไม่มีภาพประกอบสำหรับฉากนี้</p>
                 <p className="text-xs font-thai text-slate-500 mt-1 max-w-sm">
-                  คุณสามารถสลับไปที่ Studio เพื่อสั่ง AI สร้างภาพประกอบ หรืออัปโหลดภาพจริงจากหนัง
+                  คุณสามารถอัปโหลดภาพ Screenshot (SS) จากหนัง หรือกลับไปที่ Studio เพื่อสั่ง AI สร้างภาพประกอบ
                 </p>
-                <Link
-                  href={`/projects/${projectId}`}
-                  className="mt-4 px-4 py-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-thai font-bold hover:bg-amber-500/30 transition-colors"
-                >
-                  ไปที่ Studio เพื่อใส่รูป
-                </Link>
+                <div className="flex items-center gap-2 mt-4 flex-wrap justify-center">
+                  <button
+                    type="button"
+                    onClick={() => screenshotInputRef.current?.click()}
+                    disabled={isUploadingScreenshot}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 text-xs font-thai font-bold shadow-[0_0_15px_rgba(245,158,11,0.3)] hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{isUploadingScreenshot ? "กำลังอัปโหลด..." : "📷 อัปโหลดภาพ / Screenshot (SS)"}</span>
+                  </button>
+                  <Link
+                    href={`/projects/${projectId}?sceneId=${activeScene?.id || ""}`}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-thai font-semibold transition-colors"
+                  >
+                    <PenTool className="w-3.5 h-3.5 text-amber-400" />
+                    <span>ไปที่ Studio เพื่อใส่รูป / สร้าง AI</span>
+                  </Link>
+                </div>
               </div>
             )}
           </div>
@@ -1916,6 +2032,16 @@ export default function NovelReaderPage({
           )}
         </div>
       )}
+
+      {/* Part / Season (SS) Modal */}
+      <PartModal
+        isOpen={partModalOpen}
+        onClose={() => setPartModalOpen(false)}
+        projectId={projectId}
+        mode="create"
+        nextPartNumber={parts.reduce((max, p) => Math.max(max, p.number || 0), 0) + 1}
+        onSuccess={handlePartModalSuccess}
+      />
     </div>
   );
 }

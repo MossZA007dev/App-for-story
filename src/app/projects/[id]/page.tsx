@@ -56,6 +56,7 @@ import { VideoTrimModal } from "@/components/media/VideoTrimModal";
 import { CollaboratorModal } from "@/components/collaboration/CollaboratorModal";
 import { ClaudeScriptImportModal } from "@/components/story/ClaudeScriptImportModal";
 import { CharacterAvatarModal, AvatarCharacterInfo } from "@/components/characters/CharacterAvatarModal";
+import { PartModal, PartModalData } from "@/components/parts/PartModal";
 import {
   parseSceneToDialogueBlocks,
   parseClaudeScript,
@@ -247,6 +248,28 @@ export default function StoryWorkspacePage({
   // Character Profile Picture / Avatar Modal State
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
   const [avatarModalChar, setAvatarModalChar] = useState<AvatarCharacterInfo | null>(null);
+
+  // Part / Season (SS) Modal State
+  const [partModalOpen, setPartModalOpen] = useState(false);
+  const [partModalMode, setPartModalMode] = useState<"create" | "edit">("create");
+
+  const handlePartModalSuccess = (newOrUpdatedPart: any, newScene?: any) => {
+    if (partModalMode === "create") {
+      setParts((prev) => [...prev, newOrUpdatedPart]);
+      setActivePartId(newOrUpdatedPart.id);
+      if (newScene) {
+        setActiveSceneId(newScene.id);
+        setActiveScene(newScene);
+        setDialogueBlocks(parseSceneToDialogueBlocks(newScene.contentMarkdown || ""));
+        setSceneImages([]);
+        setSelectedImageIndex(0);
+      }
+    } else {
+      setParts((prev) =>
+        prev.map((p) => (p.id === newOrUpdatedPart.id ? { ...p, ...newOrUpdatedPart } : p))
+      );
+    }
+  };
 
   const handleOpenAvatarModal = (char: CharacterSummary | any) => {
     if (!char) return;
@@ -2029,7 +2052,7 @@ export default function StoryWorkspacePage({
       <div className="cinematic-card rounded-2xl p-3 sm:p-4 border-slate-700/60 flex flex-wrap items-center justify-between gap-3 bg-slate-950/80 shadow-xl">
         {/* Left: Part & Scene Selectors */}
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Part Dropdown */}
+          {/* Part Dropdown & Controls */}
           <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-sm">
             <Layers className="w-4 h-4 text-amber-400" />
             <select
@@ -2043,7 +2066,33 @@ export default function StoryWorkspacePage({
                 </option>
               ))}
             </select>
+            {/* Edit active part button */}
+            <button
+              type="button"
+              onClick={() => {
+                setPartModalMode("edit");
+                setPartModalOpen(true);
+              }}
+              title="แก้ไขชื่อภาค / ขอบเขตเวลาของภาคนี้"
+              className="p-1 rounded text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors ml-0.5"
+            >
+              <Edit3 className="w-3 h-3" />
+            </button>
           </div>
+
+          {/* New Part / Season (SS) Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setPartModalMode("create");
+              setPartModalOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-amber-600/20 hover:from-amber-500/30 hover:to-amber-600/30 text-amber-300 hover:text-white border border-amber-500/40 text-xs font-thai font-bold transition-all shadow-sm active:scale-95"
+            title="เพิ่มภาคใหม่ / ซีซั่นใหม่ (SS)"
+          >
+            <Plus className="w-3.5 h-3.5 text-amber-400" />
+            <span>+ เพิ่มภาคใหม่ (SS)</span>
+          </button>
 
           {/* Scene / Episode Dropdown */}
           {currentPart && currentPart.scenes.length > 0 && (
@@ -4296,6 +4345,17 @@ export default function StoryWorkspacePage({
         currentSceneTitle={sceneTitleInput || activeScene?.title}
         onApplySingleScene={handleConvertAndApplyScript}
         onApplyMultiScenes={handleImportAllScenes}
+      />
+
+      {/* Part / Season (SS) Modal */}
+      <PartModal
+        isOpen={partModalOpen}
+        onClose={() => setPartModalOpen(false)}
+        projectId={projectId}
+        mode={partModalMode}
+        initialData={partModalMode === "edit" ? currentPart : null}
+        nextPartNumber={parts.reduce((max, p) => Math.max(max, p.number || 0), 0) + 1}
+        onSuccess={handlePartModalSuccess}
       />
     </div>
   );

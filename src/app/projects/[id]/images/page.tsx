@@ -24,9 +24,16 @@ import {
   Filter,
   Crop,
   Crown,
+  Scissors,
+  Video,
+  Play,
+  Volume2,
+  VolumeX,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ImageCropModal, AspectRatioType } from "@/components/images/ImageCropModal";
+import { VideoTrimModal } from "@/components/media/VideoTrimModal";
 
 interface SceneOption {
   id: string;
@@ -52,6 +59,7 @@ interface ImageItem {
   createdAt: string;
   sceneTitle?: string;
   sceneOrder?: number;
+  metadata?: string | null;
 }
 
 interface VisualMoment {
@@ -105,6 +113,16 @@ export default function ImageStudioPage({
     imageSrc: string;
     imageId?: string;
     defaultAspect?: AspectRatioType;
+  } | null>(null);
+
+  // Video Trim Modal state
+  const [videoTrimData, setVideoTrimData] = useState<{
+    isOpen: boolean;
+    videoSrc: string;
+    videoId?: string;
+    startTime?: number;
+    endTime?: number | null;
+    caption?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -315,6 +333,49 @@ export default function ImageStudioPage({
     }
   };
 
+  // Helper to check if a media item is a video
+  const isVideoMedia = (img?: { filePath?: string; metadata?: string | null; provider?: string } | null) => {
+    if (!img || !img.filePath) return false;
+    const fp = img.filePath.toLowerCase();
+    if (fp.endsWith(".mp4") || fp.endsWith(".webm") || fp.endsWith(".mov") || fp.endsWith(".mkv")) return true;
+    if (img.provider === "video") return true;
+    if (img.metadata) {
+      try {
+        const parsed = typeof img.metadata === "string" ? JSON.parse(img.metadata) : img.metadata;
+        if (parsed.isVideo || parsed.mediaType === "video") return true;
+      } catch {}
+    }
+    return false;
+  };
+
+  // Helper to extract video range timings
+  const getVideoTiming = (img?: { metadata?: string | null }) => {
+    if (!img?.metadata) return { startTime: 0, endTime: null, isMuted: true };
+    try {
+      const parsed = typeof img.metadata === "string" ? JSON.parse(img.metadata) : img.metadata;
+      return {
+        startTime: typeof parsed.startTime === "number" ? parsed.startTime : 0,
+        endTime: typeof parsed.endTime === "number" ? parsed.endTime : null,
+        isMuted: parsed.muted !== undefined ? parsed.muted : true,
+      };
+    } catch {
+      return { startTime: 0, endTime: null, isMuted: true };
+    }
+  };
+
+  // Video trim success handler
+  const handleTrimSuccess = (updatedMedia: any) => {
+    setImagesList((prev) => {
+      const idx = prev.findIndex((img) => img.id === updatedMedia.id);
+      if (idx !== -1) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...updatedMedia };
+        return next;
+      }
+      return [updatedMedia, ...prev];
+    });
+  };
+
   // Crop Success Handler
   const handleCropSuccess = (savedImage: any, isCover?: boolean) => {
     setImagesList((prev) => {
@@ -335,7 +396,7 @@ export default function ImageStudioPage({
   const handleAddStillFromUrl = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!stillUrlInput.trim()) {
-      toast.error("กรุณาระบุ URL ของรูปภาพ");
+      toast.error("กรุณาระบุ URL ของรูปภาพหรือวิดีโอ");
       return;
     }
 
@@ -347,18 +408,30 @@ export default function ImageStudioPage({
         body: JSON.stringify({
           sceneId: selectedSceneId || undefined,
           imageUrl: stillUrlInput.trim(),
-          caption: stillCaptionInput.trim() || "ภาพนิ่งจากภาพยนตร์/ซีรีส์ต้นฉบับ",
+          caption: stillCaptionInput.trim() || "ภาพ/วิดีโอนิ่งจากภาพยนตร์ต้นฉบับ",
         }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "เพิ่มรูปภาพอ้างอิงไม่สำเร็จ");
+      if (!res.ok) throw new Error(data.error || "เพิ่มรูปภาพหรือวิดีโอไม่สำเร็จ");
 
-      toast.success("เพิ่มภาพประกอบจริงจากภาพยนตร์เรียบร้อย!");
+      toast.success("เพิ่มสื่อประกอบจริงเรียบร้อย!");
       setImagesList((prev) => [data.image, ...prev]);
       setShowAddStillModal(false);
       setStillUrlInput("");
       setStillCaptionInput("");
+
+      if (isVideoMedia(data.image)) {
+        toast.info("คุณสามารถเลือกช่วงเวลาของวิดีโอนี้ได้ทันที");
+        setVideoTrimData({
+          isOpen: true,
+          videoSrc: data.image.filePath,
+          videoId: data.image.id,
+          startTime: 0,
+          endTime: null,
+          caption: data.image.caption || "",
+        });
+      }
     } catch (err: unknown) {
       console.error(err);
       const msg = err instanceof Error ? err.message : "เกิดข้อผิดพลาด";
@@ -385,12 +458,25 @@ export default function ImageStudioPage({
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "อัปโหลดภาพไม่สำเร็จ");
+      if (!res.ok) throw new Error(data.error || "อัปโหลดไม่สำเร็จ");
 
-      toast.success("อัปโหลดภาพประกอบจริงสำเร็จ!");
+      toast.success("อัปโหลดสำเร็จ!");
       setImagesList((prev) => [data.image, ...prev]);
       setShowAddStillModal(false);
       setStillCaptionInput("");
+
+      const isVideo = file.type.startsWith("video/") || /\.(mp4|webm|mov|mkv)$/i.test(file.name);
+      if (isVideo) {
+        toast.info("คุณสามารถเลือกช่วงเวลาของวิดีโอนี้ได้ทันที");
+        setVideoTrimData({
+          isOpen: true,
+          videoSrc: data.image.filePath,
+          videoId: data.image.id,
+          startTime: 0,
+          endTime: null,
+          caption: data.image.caption || file.name,
+        });
+      }
     } catch (err: unknown) {
       console.error(err);
       const msg = err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการอัปโหลด";
@@ -734,25 +820,52 @@ export default function ImageStudioPage({
                   key={img.id}
                   className="cinematic-card rounded-xl overflow-hidden border-slate-800 group relative flex flex-col justify-between"
                 >
-                  {/* Image Aspect ratio box */}
+                  {/* Image/Video Aspect ratio box */}
                   <div className="relative aspect-video bg-slate-950 overflow-hidden cursor-pointer">
-                    <img
-                      src={img.filePath}
-                      alt={img.caption || img.prompt}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      onClick={() => setLightboxImage(img)}
-                    />
+                    {isVideoMedia(img) ? (
+                      <video
+                        src={img.filePath}
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        onLoadedMetadata={(e) => {
+                          const timing = getVideoTiming(img);
+                          if (timing.startTime > 0) e.currentTarget.currentTime = timing.startTime;
+                        }}
+                        onTimeUpdate={(e) => {
+                          const timing = getVideoTiming(img);
+                          if (timing.endTime && e.currentTarget.currentTime >= timing.endTime) {
+                            e.currentTarget.currentTime = timing.startTime || 0;
+                            e.currentTarget.play().catch(() => {});
+                          }
+                        }}
+                        onClick={() => setLightboxImage(img)}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <img
+                        src={img.filePath}
+                        alt={img.caption || img.prompt}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        onClick={() => setLightboxImage(img)}
+                      />
+                    )}
 
                     {/* Kind & Status Badges */}
                     <div className="absolute top-2 left-2 flex items-center gap-1.5 flex-wrap">
                       <span
                         className={`text-[10px] font-bold px-2 py-0.5 rounded backdrop-blur-md ${
-                          img.kind === "movie_still" || img.kind === "reference"
+                          isVideoMedia(img)
+                            ? "bg-purple-950/80 text-purple-300 border border-purple-500/40"
+                            : img.kind === "movie_still" || img.kind === "reference"
                             ? "bg-sky-950/80 text-sky-300 border border-sky-500/40"
                             : "bg-amber-950/80 text-amber-300 border border-amber-500/40"
                         }`}
                       >
-                        {img.kind === "movie_still" || img.kind === "reference"
+                        {isVideoMedia(img)
+                          ? "🎬 วิดีโอคลิป"
+                          : img.kind === "movie_still" || img.kind === "reference"
                           ? "🎬 ภาพจริงในหนัง"
                           : img.kind === "portrait"
                           ? "👤 Portrait"
@@ -778,6 +891,19 @@ export default function ImageStudioPage({
                       <div className="absolute top-2 right-2">
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-black/70 text-slate-300 backdrop-blur-md">
                           ฉาก {img.sceneOrder}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Video timing badge */}
+                    {isVideoMedia(img) && (
+                      <div className="absolute bottom-2 left-2 pointer-events-none">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-black/80 text-amber-300 border border-amber-500/30 backdrop-blur-md flex items-center gap-1">
+                          <Clock className="w-2.5 h-2.5" />
+                          <span>
+                            {getVideoTiming(img).startTime.toFixed(1)}s
+                            {getVideoTiming(img).endTime ? ` - ${getVideoTiming(img).endTime?.toFixed(1)}s` : " (เต็มคลิป)"}
+                          </span>
                         </span>
                       </div>
                     )}
@@ -827,22 +953,43 @@ export default function ImageStudioPage({
                           )}
                         </button>
 
-                        {/* Crop button */}
-                        <button
-                          onClick={() =>
-                            setCropModalData({
-                              isOpen: true,
-                              imageSrc: img.filePath,
-                              imageId: img.id,
-                              defaultAspect: img.kind === "cover" ? "3:4" : "16:9",
-                            })
-                          }
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold font-thai bg-slate-800 text-amber-300 hover:bg-slate-700 border border-slate-700/60 transition-colors"
-                          title="ครอบตัดรูปภาพนี้ (Crop)"
-                        >
-                          <Crop className="w-3.5 h-3.5 text-amber-400" />
-                          <span>ครอป</span>
-                        </button>
+                        {/* Crop or Video Trim button */}
+                        {isVideoMedia(img) ? (
+                          <button
+                            onClick={() => {
+                              const timing = getVideoTiming(img);
+                              setVideoTrimData({
+                                isOpen: true,
+                                videoSrc: img.filePath,
+                                videoId: img.id,
+                                startTime: timing.startTime,
+                                endTime: timing.endTime,
+                                caption: img.caption || "",
+                              });
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold font-thai bg-slate-800 text-amber-300 hover:bg-slate-700 border border-slate-700/60 transition-colors"
+                            title="เลือกช่วงเวลาของวิดีโอนี้ (Trim Video)"
+                          >
+                            <Scissors className="w-3.5 h-3.5 text-amber-400" />
+                            <span>ตัดช่วง</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() =>
+                              setCropModalData({
+                                isOpen: true,
+                                imageSrc: img.filePath,
+                                imageId: img.id,
+                                defaultAspect: img.kind === "cover" ? "3:4" : "16:9",
+                              })
+                            }
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold font-thai bg-slate-800 text-amber-300 hover:bg-slate-700 border border-slate-700/60 transition-colors"
+                            title="ครอบตัดรูปภาพนี้ (Crop)"
+                          >
+                            <Crop className="w-3.5 h-3.5 text-amber-400" />
+                            <span>ครอป</span>
+                          </button>
+                        )}
 
                         {/* Set as Cover button */}
                         <button
@@ -894,7 +1041,7 @@ export default function ImageStudioPage({
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white font-heading flex items-center gap-2">
                 <Film className="w-5 h-5 text-sky-400" />
-                <span>นำเข้าภาพจริงในภาพยนตร์/ซีรีส์ ({project?.universe})</span>
+                <span>นำเข้าภาพจริงหรือคลิปวิดีโอในภาพยนตร์/ซีรีส์ ({project?.universe})</span>
               </h3>
               <button
                 onClick={() => setShowAddStillModal(false)}
@@ -905,39 +1052,39 @@ export default function ImageStudioPage({
             </div>
 
             <p className="text-xs text-slate-300 font-thai leading-relaxed">
-              ใส่ภาพจริงจากหนัง/ซีรีส์เพื่อวางคู่กับภาพ AI ในหน้าอ่านนิยาย
-              ช่วยให้ผู้อ่านเห็นภาพชัดเจนว่าฉากนี้เกิดขึ้นที่ไหนหรือเทียบกับนักแสดงจริงอย่างไร
+              ใส่ภาพนิ่งหรือคลิปวิดีโอจริงจากหนัง/ซีรีส์ (MP4, WEBM, MOV, GIF, JPG, PNG) เพื่อวางคู่กับภาพ AI ในหน้าอ่านนิยาย
+              และสามารถเลือกตัดช่วงเวลา (Trim) วิดีโอเพื่อวนลูปประกอบฉากได้ทันที
             </p>
 
             {/* Option A: Upload File */}
             <div className="space-y-2 p-4 rounded-lg bg-slate-950 border border-slate-800">
               <span className="text-xs font-bold text-sky-300 font-thai block">
-                วิธีที่ 1: อัปโหลดรูปจากเครื่องของคุณ (JPG/PNG)
+                วิธีที่ 1: อัปโหลดรูปภาพหรือวิดีโอจากเครื่องของคุณ (JPG/PNG/MP4/WEBM/MOV/GIF)
               </span>
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,video/*,.gif,.mp4,.webm,.mov"
                 onChange={handleFileUploadStill}
                 disabled={isUploadingStill}
                 className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-sky-600 file:text-white hover:file:bg-sky-500"
               />
             </div>
 
-            {/* Option B: Image URL */}
+            {/* Option B: Image / Video URL */}
             <form onSubmit={handleAddStillFromUrl} className="space-y-3">
               <span className="text-xs font-bold text-sky-300 font-thai block">
-                วิธีที่ 2: นำเข้าผ่าน URL ของรูปภาพ
+                วิธีที่ 2: นำเข้าผ่าน URL ของรูปภาพหรือคลิปวิดีโอ
               </span>
               <input
                 type="url"
-                placeholder="https://example.com/movie-still.jpg"
+                placeholder="https://example.com/movie-still.jpg หรือ video.mp4"
                 value={stillUrlInput}
                 onChange={(e) => setStillUrlInput(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white"
               />
 
               <div className="space-y-1">
-                <label className="text-xs text-slate-300 font-thai">คำอธิบายภาพ (Caption)</label>
+                <label className="text-xs text-slate-300 font-thai">คำอธิบายภาพ/วิดีโอ (Caption)</label>
                 <input
                   type="text"
                   placeholder="เช่น Jon Snow และ Night's Watch ที่ Castle Black"
@@ -960,7 +1107,7 @@ export default function ImageStudioPage({
                   disabled={isUploadingStill || !stillUrlInput.trim()}
                   className="px-5 py-2 rounded-lg bg-sky-600 text-white font-bold text-xs font-thai hover:bg-sky-500 disabled:opacity-50"
                 >
-                  {isUploadingStill ? "กำลังนำเข้าภาพ..." : "นำเข้ารูปภาพ"}
+                  {isUploadingStill ? "กำลังนำเข้าสื่อ..." : "นำเข้าสื่อประกอบ"}
                 </button>
               </div>
             </form>
@@ -985,11 +1132,33 @@ export default function ImageStudioPage({
               <X className="w-6 h-6" />
             </button>
 
-            <img
-              src={lightboxImage.filePath}
-              alt={lightboxImage.caption || lightboxImage.prompt}
-              className="max-h-[72vh] w-auto max-w-full rounded-xl object-contain border border-slate-800 shadow-2xl"
-            />
+            {isVideoMedia(lightboxImage) ? (
+              <video
+                src={lightboxImage.filePath}
+                controls
+                autoPlay
+                loop
+                playsInline
+                onLoadedMetadata={(e) => {
+                  const timing = getVideoTiming(lightboxImage);
+                  if (timing.startTime > 0) e.currentTarget.currentTime = timing.startTime;
+                }}
+                onTimeUpdate={(e) => {
+                  const timing = getVideoTiming(lightboxImage);
+                  if (timing.endTime && e.currentTarget.currentTime >= timing.endTime) {
+                    e.currentTarget.currentTime = timing.startTime || 0;
+                    e.currentTarget.play().catch(() => {});
+                  }
+                }}
+                className="max-h-[72vh] w-auto max-w-full rounded-xl object-contain border border-slate-800 shadow-2xl bg-black"
+              />
+            ) : (
+              <img
+                src={lightboxImage.filePath}
+                alt={lightboxImage.caption || lightboxImage.prompt}
+                className="max-h-[72vh] w-auto max-w-full rounded-xl object-contain border border-slate-800 shadow-2xl"
+              />
+            )}
 
             <div className="mt-3 text-center space-y-1 max-w-2xl">
               {lightboxImage.caption && (
@@ -1004,21 +1173,42 @@ export default function ImageStudioPage({
 
             {/* Lightbox Actions */}
             <div className="flex items-center gap-3 mt-4 flex-wrap justify-center">
-              <button
-                onClick={() => {
-                  setCropModalData({
-                    isOpen: true,
-                    imageSrc: lightboxImage.filePath,
-                    imageId: lightboxImage.id,
-                    defaultAspect: lightboxImage.kind === "cover" ? "3:4" : "16:9",
-                  });
-                  setLightboxImage(null);
-                }}
-                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 font-bold text-xs font-thai flex items-center gap-2 shadow transition-all"
-              >
-                <Crop className="w-4 h-4 text-amber-400" />
-                <span>ครอปรูปภาพนี้</span>
-              </button>
+              {isVideoMedia(lightboxImage) ? (
+                <button
+                  onClick={() => {
+                    const timing = getVideoTiming(lightboxImage);
+                    setVideoTrimData({
+                      isOpen: true,
+                      videoSrc: lightboxImage.filePath,
+                      videoId: lightboxImage.id,
+                      startTime: timing.startTime,
+                      endTime: timing.endTime,
+                      caption: lightboxImage.caption || "",
+                    });
+                    setLightboxImage(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 font-bold text-xs font-thai flex items-center gap-2 shadow transition-all"
+                >
+                  <Scissors className="w-4 h-4 text-amber-400" />
+                  <span>เลือกช่วงคลิปวิดีโอ (Trim)</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setCropModalData({
+                      isOpen: true,
+                      imageSrc: lightboxImage.filePath,
+                      imageId: lightboxImage.id,
+                      defaultAspect: lightboxImage.kind === "cover" ? "3:4" : "16:9",
+                    });
+                    setLightboxImage(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 font-bold text-xs font-thai flex items-center gap-2 shadow transition-all"
+                >
+                  <Crop className="w-4 h-4 text-amber-400" />
+                  <span>ครอปรูปภาพนี้</span>
+                </button>
+              )}
 
               <button
                 onClick={() => {
@@ -1056,6 +1246,21 @@ export default function ImageStudioPage({
           projectId={projectId}
           defaultAspect={cropModalData.defaultAspect || "16:9"}
           onCropSuccess={handleCropSuccess}
+        />
+      )}
+
+      {/* Video Trim Modal */}
+      {videoTrimData && (
+        <VideoTrimModal
+          isOpen={videoTrimData.isOpen}
+          onClose={() => setVideoTrimData(null)}
+          videoSrc={videoTrimData.videoSrc}
+          videoId={videoTrimData.videoId}
+          projectId={projectId}
+          initialStartTime={videoTrimData.startTime || 0}
+          initialEndTime={videoTrimData.endTime || null}
+          initialCaption={videoTrimData.caption}
+          onTrimSuccess={handleTrimSuccess}
         />
       )}
     </div>

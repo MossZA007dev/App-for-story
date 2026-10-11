@@ -15,10 +15,22 @@ export async function PUT(
     const current = db.select().from(images).where(eq(images.id, imageId)).get();
     if (!current) return NextResponse.json({ error: "ไม่พบรูปภาพ" }, { status: 404 });
 
+    let mergedMetadata = current.metadata;
+    if (body.metadata !== undefined) {
+      try {
+        const currentParsed = current.metadata ? JSON.parse(current.metadata) : {};
+        const newParsed = typeof body.metadata === "string" ? JSON.parse(body.metadata) : body.metadata;
+        mergedMetadata = JSON.stringify({ ...currentParsed, ...newParsed });
+      } catch {
+        mergedMetadata = typeof body.metadata === "string" ? body.metadata : JSON.stringify(body.metadata);
+      }
+    }
+
     db.update(images)
       .set({
         approved: body.approved !== undefined ? (body.approved ? 1 : 0) : current.approved,
         caption: body.caption !== undefined ? body.caption : current.caption,
+        metadata: mergedMetadata,
       })
       .where(eq(images.id, imageId))
       .run();

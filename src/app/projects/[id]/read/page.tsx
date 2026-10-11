@@ -43,7 +43,39 @@ interface SceneImage {
   kind: "portrait" | "scene" | "cover" | "movie_still" | "reference";
   approved: number;
   caption?: string;
+  metadata?: string | null;
+  provider?: string;
 }
+
+// Helper to check if media is video
+const isVideoMedia = (img?: { filePath?: string; metadata?: string | null; provider?: string } | null) => {
+  if (!img || !img.filePath) return false;
+  const fp = img.filePath.toLowerCase();
+  if (fp.endsWith(".mp4") || fp.endsWith(".webm") || fp.endsWith(".mov") || fp.endsWith(".mkv")) return true;
+  if (img.provider === "video") return true;
+  if (img.metadata) {
+    try {
+      const parsed = typeof img.metadata === "string" ? JSON.parse(img.metadata) : img.metadata;
+      if (parsed.isVideo || parsed.mediaType === "video") return true;
+    } catch {}
+  }
+  return false;
+};
+
+// Helper to get video trim timings
+const getVideoTiming = (img?: { metadata?: string | null }) => {
+  if (!img?.metadata) return { startTime: 0, endTime: null, isMuted: true };
+  try {
+    const parsed = typeof img.metadata === "string" ? JSON.parse(img.metadata) : img.metadata;
+    return {
+      startTime: typeof parsed.startTime === "number" ? parsed.startTime : 0,
+      endTime: typeof parsed.endTime === "number" ? parsed.endTime : null,
+      isMuted: parsed.muted !== undefined ? parsed.muted : true,
+    };
+  } catch {
+    return { startTime: 0, endTime: null, isMuted: true };
+  }
+};
 
 interface SceneItem {
   id: string;
@@ -893,19 +925,51 @@ export default function NovelReaderPage({
           <div className="relative w-full flex-1 min-h-0 rounded-[13px] overflow-hidden bg-[#1e232d] group border border-black/20 mb-3">
             {currentFeaturedImage ? (
               <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={currentFeaturedImage.filePath}
-                  alt={currentFeaturedImage.caption || currentFeaturedImage.prompt}
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-102"
-                />
+                {isVideoMedia(currentFeaturedImage) ? (
+                  <video
+                    src={currentFeaturedImage.filePath}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    onLoadedMetadata={(e) => {
+                      const timing = getVideoTiming(currentFeaturedImage);
+                      if (timing.startTime > 0) e.currentTarget.currentTime = timing.startTime;
+                    }}
+                    onTimeUpdate={(e) => {
+                      const timing = getVideoTiming(currentFeaturedImage);
+                      if (timing.endTime && e.currentTarget.currentTime >= timing.endTime) {
+                        e.currentTarget.currentTime = timing.startTime || 0;
+                        e.currentTarget.play().catch(() => {});
+                      }
+                    }}
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-102"
+                  />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={currentFeaturedImage.filePath}
+                    alt={currentFeaturedImage.caption || currentFeaturedImage.prompt}
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-102"
+                  />
+                )}
 
                 {/* Gradient overlay for readability */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
 
                 {/* Image Type Tag Badge */}
-                <div className="absolute top-3.5 left-3.5 flex items-center gap-2">
-                  {currentFeaturedImage.kind === "movie_still" || currentFeaturedImage.kind === "reference" ? (
+                <div className="absolute top-3.5 left-3.5 flex items-center gap-2 flex-wrap">
+                  {isVideoMedia(currentFeaturedImage) ? (
+                    <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-purple-950/90 text-purple-200 border border-purple-500/80 font-thai flex items-center gap-1.5 backdrop-blur-md shadow">
+                      <Film className="w-3.5 h-3.5 text-purple-400" />
+                      <span>🎬 วิดีโอคลิปวนลูป</span>
+                      {getVideoTiming(currentFeaturedImage).endTime ? (
+                        <span className="font-mono text-[10px] text-purple-300">
+                          ({getVideoTiming(currentFeaturedImage).startTime.toFixed(1)}s - {getVideoTiming(currentFeaturedImage).endTime?.toFixed(1)}s)
+                        </span>
+                      ) : null}
+                    </span>
+                  ) : currentFeaturedImage.kind === "movie_still" || currentFeaturedImage.kind === "reference" ? (
                     <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-950/90 text-red-200 border border-red-700/80 font-thai flex items-center gap-1.5 backdrop-blur-md shadow">
                       <Film className="w-3.5 h-3.5 text-red-400" />
                       <span>ภาพจริงจากหนัง / CANON STILL</span>
@@ -965,14 +1029,23 @@ export default function NovelReaderPage({
                           : "border-slate-700 opacity-60 hover:opacity-100 hover:border-slate-500"
                       }`}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={img.filePath}
-                        alt={img.caption || ""}
-                        className="w-full h-full object-cover"
-                      />
+                      {isVideoMedia(img) ? (
+                        <video
+                          src={img.filePath}
+                          muted
+                          playsInline
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={img.filePath}
+                          alt={img.caption || ""}
+                          className="w-full h-full object-cover"
+                        />
+                      )}
                       <span className="absolute bottom-1 right-1 px-1 py-0.2 rounded text-[9px] font-bold bg-black/80 text-white font-mono">
-                        {isMovie ? "MOVIE" : "AI"}
+                        {isVideoMedia(img) ? "🎬 VDO" : isMovie ? "MOVIE" : "AI"}
                       </span>
                     </div>
                   );
@@ -1393,12 +1466,24 @@ export default function NovelReaderPage({
           onClick={() => setLightboxImage(null)}
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-md cursor-pointer animate-fadeIn"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={lightboxImage}
-            alt="Fullscreen Preview"
-            className="max-w-full max-h-[92vh] object-contain rounded-2xl shadow-2xl"
-          />
+          {/\.(mp4|webm|mov|mkv)$/i.test(lightboxImage) ? (
+            <video
+              src={lightboxImage}
+              controls
+              autoPlay
+              loop
+              playsInline
+              className="max-w-full max-h-[92vh] object-contain rounded-2xl shadow-2xl bg-black"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={lightboxImage}
+              alt="Fullscreen Preview"
+              className="max-w-full max-h-[92vh] object-contain rounded-2xl shadow-2xl"
+            />
+          )}
         </div>
       )}
     </div>

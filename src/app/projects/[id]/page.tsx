@@ -35,13 +35,16 @@ import {
   SlidersHorizontal,
   FileText,
   User,
-  Users,
   Crop,
   Crown,
+  Scissors,
+  Video,
+  VolumeX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
 import { ImageCropModal, AspectRatioType } from "@/components/images/ImageCropModal";
+import { VideoTrimModal } from "@/components/media/VideoTrimModal";
 import {
   parseSceneToDialogueBlocks,
   blocksToMarkdown,
@@ -151,6 +154,15 @@ export default function StoryWorkspacePage({
     imageId?: string;
     defaultAspect?: AspectRatioType;
   } | null>(null);
+  const [videoTrimData, setVideoTrimData] = useState<{
+    isOpen: boolean;
+    videoSrc: string;
+    videoId?: string;
+    startTime?: number;
+    endTime?: number | null;
+    caption?: string;
+  } | null>(null);
+  const [isVideoMuted, setIsVideoMuted] = useState<boolean>(true);
 
   // Audio / Music State
   const studioAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
@@ -471,13 +483,27 @@ export default function StoryWorkspacePage({
         const nextBindings = { ...localDialogueBindings, [String(bindToBlockIdx)]: newImg.id };
         setLocalDialogueBindings(nextBindings);
         setHasUnsavedChanges(true);
-        toast.success(`อัปโหลดและผูกภาพ "${newImg.caption || file.name}" กับประโยค #${bindToBlockIdx + 1} สำเร็จ!`);
+        toast.success(`อัปโหลดและผูกกับประโยค #${bindToBlockIdx + 1} สำเร็จ!`);
       } else {
-        toast.success(`อัปโหลดภาพ "${newImg.caption || file.name}" เข้าคลังของฉากนี้สำเร็จ!`);
+        toast.success(`อัปโหลด "${newImg.caption || file.name}" สำเร็จ!`);
+      }
+
+      // If uploaded a video file, open the VideoTrimModal automatically!
+      const isVideo = file.type.startsWith("video/") || /\.(mp4|webm|mov|mkv)$/i.test(file.name);
+      if (isVideo) {
+        toast.info("คุณสามารถเลือกช่วงเวลาของวิดีโอนี้ได้ทันที");
+        setVideoTrimData({
+          isOpen: true,
+          videoSrc: newImg.filePath,
+          videoId: newImg.id,
+          startTime: 0,
+          endTime: null,
+          caption: newImg.caption || file.name,
+        });
       }
     } catch (err: any) {
       console.error(err);
-      toast.error(err.message || "อัปโหลดภาพไม่สำเร็จ");
+      toast.error(err.message || "อัปโหลดไม่สำเร็จ");
     } finally {
       setIsUploadingImage(false);
       if (imageFileInputRef.current) imageFileInputRef.current.value = "";
@@ -486,7 +512,65 @@ export default function StoryWorkspacePage({
     }
   };
 
-  // Delete Scene Image
+  // Helper to check if a media item is a video
+  const isVideoMedia = (img?: { filePath?: string; metadata?: string | null; provider?: string } | null) => {
+    if (!img || !img.filePath) return false;
+    const fp = img.filePath.toLowerCase();
+    if (fp.endsWith(".mp4") || fp.endsWith(".webm") || fp.endsWith(".mov") || fp.endsWith(".mkv")) return true;
+    if (img.provider === "video") return true;
+    if (img.metadata) {
+      try {
+        const parsed = typeof img.metadata === "string" ? JSON.parse(img.metadata) : img.metadata;
+        if (parsed.isVideo || parsed.mediaType === "video") return true;
+      } catch {}
+    }
+    return false;
+  };
+
+  // Helper to extract video range timings
+  const getVideoTiming = (img?: { metadata?: string | null }) => {
+    if (!img?.metadata) return { startTime: 0, endTime: null, isMuted: true };
+    try {
+      const parsed = typeof img.metadata === "string" ? JSON.parse(img.metadata) : img.metadata;
+      return {
+        startTime: typeof parsed.startTime === "number" ? parsed.startTime : 0,
+        endTime: typeof parsed.endTime === "number" ? parsed.endTime : null,
+        isMuted: parsed.muted !== undefined ? parsed.muted : true,
+      };
+    } catch {
+      return { startTime: 0, endTime: null, isMuted: true };
+    }
+  };
+
+  // Video trim success handler
+  const handleTrimSuccess = (updatedMedia: any) => {
+    setSceneImages((prev) => {
+      const idx = prev.findIndex((img) => img.id === updatedMedia.id);
+      if (idx !== -1) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...updatedMedia };
+        return next;
+      }
+      return [updatedMedia, ...prev];
+    });
+  };
+
+  // Crop success handler
+  const handleCropSuccess = (savedImage: any, isCover?: boolean) => {
+    setSceneImages((prev) => {
+      const exists = prev.findIndex((img) => img.id === savedImage.id);
+      if (exists !== -1) {
+        const next = [...prev];
+        next[exists] = savedImage;
+        return next;
+      }
+      return [savedImage, ...prev];
+    });
+    setSelectedImageIndex(0);
+    if (isCover) {
+      setProject((prev: any) => (prev ? { ...prev, coverImage: savedImage.filePath } : prev));
+    }
+  };
   const handleDeleteImage = async (imageId: string) => {
     if (!confirm("คุณต้องการลบภาพนี้ออกจากคลังฉากนี้ใช่หรือไม่?")) return;
     try {
@@ -531,23 +615,6 @@ export default function StoryWorkspacePage({
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "เกิดข้อผิดพลาดในการตั้งหน้าปก");
-    }
-  };
-
-  // Crop success handler
-  const handleCropSuccess = (savedImage: any, isCover?: boolean) => {
-    setSceneImages((prev) => {
-      const exists = prev.findIndex((img) => img.id === savedImage.id);
-      if (exists !== -1) {
-        const next = [...prev];
-        next[exists] = savedImage;
-        return next;
-      }
-      return [savedImage, ...prev];
-    });
-    setSelectedImageIndex(0);
-    if (isCover) {
-      setProject((prev: any) => (prev ? { ...prev, coverImage: savedImage.filePath } : prev));
     }
   };
 
@@ -1171,13 +1238,36 @@ export default function StoryWorkspacePage({
           <div className="relative w-full flex-1 min-h-0 rounded-[13px] overflow-hidden bg-[#1e232d] group border border-black/20 mb-3">
             {currentFeaturedImage ? (
               <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  key={currentFeaturedImage.id}
-                  src={currentFeaturedImage.filePath}
-                  alt={currentFeaturedImage.caption || currentFeaturedImage.prompt}
-                  className="w-full h-full object-cover transition-all duration-700 group-hover:scale-102 animate-fadeIn"
-                />
+                {isVideoMedia(currentFeaturedImage) ? (
+                  <video
+                    key={currentFeaturedImage.id}
+                    src={currentFeaturedImage.filePath}
+                    autoPlay
+                    loop
+                    muted={isVideoMuted}
+                    playsInline
+                    onLoadedMetadata={(e) => {
+                      const timing = getVideoTiming(currentFeaturedImage);
+                      if (timing.startTime > 0) e.currentTarget.currentTime = timing.startTime;
+                    }}
+                    onTimeUpdate={(e) => {
+                      const timing = getVideoTiming(currentFeaturedImage);
+                      if (timing.endTime && e.currentTarget.currentTime >= timing.endTime) {
+                        e.currentTarget.currentTime = timing.startTime || 0;
+                        e.currentTarget.play().catch(() => {});
+                      }
+                    }}
+                    className="w-full h-full object-cover transition-all duration-700 animate-fadeIn"
+                  />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    key={currentFeaturedImage.id}
+                    src={currentFeaturedImage.filePath}
+                    alt={currentFeaturedImage.caption || currentFeaturedImage.prompt}
+                    className="w-full h-full object-cover transition-all duration-700 group-hover:scale-102 animate-fadeIn"
+                  />
+                )}
 
                 {/* Gradient overlay for readability */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
@@ -1185,9 +1275,17 @@ export default function StoryWorkspacePage({
                 {/* Top Floating Controls */}
                 <div className="absolute top-3.5 left-3.5 flex items-center gap-2 flex-wrap max-w-[85%]">
                   <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/95 text-slate-950 font-thai flex items-center gap-1.5 backdrop-blur-md shadow">
-                    <Sparkles className="w-3.5 h-3.5" />
+                    {isVideoMedia(currentFeaturedImage) ? (
+                      <Video className="w-3.5 h-3.5" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5" />
+                    )}
                     <span>
-                      {currentFeaturedImage.kind === "movie_still" ? "CANON MOVIE STILL" : "CINEMATIC SCENE"}
+                      {isVideoMedia(currentFeaturedImage)
+                        ? "🎬 VIDEO CLIP"
+                        : currentFeaturedImage.kind === "movie_still"
+                        ? "CANON MOVIE STILL"
+                        : "CINEMATIC SCENE"}
                     </span>
                   </span>
 
@@ -1204,24 +1302,45 @@ export default function StoryWorkspacePage({
                     className="px-2.5 py-1 rounded-full text-xs font-bold bg-black/80 hover:bg-black text-white font-thai flex items-center gap-1.5 backdrop-blur-md border border-slate-700 shadow transition-all active:scale-95"
                   >
                     <Upload className="w-3 h-3 text-amber-400" />
-                    <span>{isUploadingImage ? "กำลังอัปโหลด..." : "+ อัปโหลด"}</span>
+                    <span>{isUploadingImage ? "กำลังอัปโหลด..." : "+ อัปโหลดภาพ/วิดีโอ"}</span>
                   </button>
 
-                  <button
-                    onClick={() =>
-                      setCropModalData({
-                        isOpen: true,
-                        imageSrc: currentFeaturedImage.filePath,
-                        imageId: currentFeaturedImage.id,
-                        defaultAspect: "16:9",
-                      })
-                    }
-                    className="px-2.5 py-1 rounded-full text-xs font-bold bg-black/80 hover:bg-black text-amber-300 font-thai flex items-center gap-1.5 backdrop-blur-md border border-slate-700 hover:border-amber-500/50 shadow transition-all active:scale-95"
-                    title="ครอบตัดรูปภาพนี้ (Crop)"
-                  >
-                    <Crop className="w-3 h-3 text-amber-400" />
-                    <span>ครอปรูป</span>
-                  </button>
+                  {isVideoMedia(currentFeaturedImage) ? (
+                    <button
+                      onClick={() => {
+                        const timing = getVideoTiming(currentFeaturedImage);
+                        setVideoTrimData({
+                          isOpen: true,
+                          videoSrc: currentFeaturedImage.filePath,
+                          videoId: currentFeaturedImage.id,
+                          startTime: timing.startTime,
+                          endTime: timing.endTime,
+                          caption: currentFeaturedImage.caption || "",
+                        });
+                      }}
+                      className="px-2.5 py-1 rounded-full text-xs font-bold bg-black/80 hover:bg-black text-amber-300 font-thai flex items-center gap-1.5 backdrop-blur-md border border-amber-500/50 shadow transition-all active:scale-95"
+                      title="เลือกช่วงเวลาของวิดีโอที่จะเล่นวนลูป"
+                    >
+                      <Scissors className="w-3 h-3 text-amber-400" />
+                      <span>เลือกช่วงคลิป</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() =>
+                        setCropModalData({
+                          isOpen: true,
+                          imageSrc: currentFeaturedImage.filePath,
+                          imageId: currentFeaturedImage.id,
+                          defaultAspect: "16:9",
+                        })
+                      }
+                      className="px-2.5 py-1 rounded-full text-xs font-bold bg-black/80 hover:bg-black text-amber-300 font-thai flex items-center gap-1.5 backdrop-blur-md border border-slate-700 hover:border-amber-500/50 shadow transition-all active:scale-95"
+                      title="ครอบตัดรูปภาพนี้ (Crop)"
+                    >
+                      <Crop className="w-3 h-3 text-amber-400" />
+                      <span>ครอปรูป</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => handleSetAsCover(currentFeaturedImage)}
@@ -1230,7 +1349,7 @@ export default function StoryWorkspacePage({
                         ? "bg-amber-400 text-slate-950 border-amber-300"
                         : "bg-black/80 hover:bg-black text-amber-400 border-amber-500/40 hover:border-amber-400"
                     }`}
-                    title="ตั้งรูปนี้เป็นภาพหน้าปกของนิยายเรื่องนี้"
+                    title="ตั้งรูปหรือคลิปนี้เป็นภาพหน้าปกของนิยายเรื่องนี้"
                   >
                     <Crown className="w-3 h-3" />
                     <span>{project?.coverImage === currentFeaturedImage.filePath ? "หน้าปกปัจจุบัน" : "ตั้งเป็นหน้าปก"}</span>
@@ -1250,14 +1369,30 @@ export default function StoryWorkspacePage({
                   </button>
                 </div>
 
-                {/* Zoom Lightbox Trigger */}
-                <button
-                  onClick={() => setLightboxImage(currentFeaturedImage.filePath)}
-                  className="absolute top-3.5 right-3.5 p-2 rounded-xl bg-black/70 hover:bg-black text-white backdrop-blur-md transition-all shadow"
-                  title="ขยายภาพเต็มจอ"
-                >
-                  <ZoomIn className="w-4 h-4" />
-                </button>
+                {/* Top Right Controls: Mute toggle & Zoom Lightbox */}
+                <div className="absolute top-3.5 right-3.5 flex items-center gap-2">
+                  {isVideoMedia(currentFeaturedImage) && (
+                    <button
+                      onClick={() => setIsVideoMuted(!isVideoMuted)}
+                      className="p-2 rounded-xl bg-black/70 hover:bg-black text-white backdrop-blur-md transition-all shadow"
+                      title={isVideoMuted ? "เปิดเสียงวิดีโอ" : "ปิดเสียงวิดีโอ (Mute)"}
+                    >
+                      {isVideoMuted ? (
+                        <VolumeX className="w-4 h-4 text-slate-400" />
+                      ) : (
+                        <Volume2 className="w-4 h-4 text-emerald-400" />
+                      )}
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => setLightboxImage(currentFeaturedImage.filePath)}
+                    className="p-2 rounded-xl bg-black/70 hover:bg-black text-white backdrop-blur-md transition-all shadow"
+                    title="ขยายภาพ/วิดีโอเต็มจอ"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                </div>
               </>
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-slate-400">
@@ -1321,11 +1456,25 @@ export default function StoryWorkspacePage({
                     }`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={img.filePath}
-                      alt={img.caption || ""}
-                      className="w-full h-full object-cover"
-                    />
+                    {isVideoMedia(img) ? (
+                      <div className="w-full h-full relative bg-black flex items-center justify-center">
+                        <video
+                          src={img.filePath}
+                          muted
+                          playsInline
+                          className="w-full h-full object-cover pointer-events-none"
+                        />
+                        <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
+                          <Play className="w-4 h-4 text-white/80 fill-current" />
+                        </div>
+                      </div>
+                    ) : (
+                      <img
+                        src={img.filePath}
+                        alt={img.caption || ""}
+                        className="w-full h-full object-cover"
+                      />
+                    )}
 
                     {/* Cover indicator */}
                     {project?.coverImage === img.filePath && (
@@ -1335,30 +1484,59 @@ export default function StoryWorkspacePage({
                       </div>
                     )}
 
+                    {/* Video badge */}
+                    {isVideoMedia(img) && (
+                      <div className="absolute bottom-1 left-1 px-1 py-0.5 rounded bg-black/80 text-amber-300 text-[9px] font-bold flex items-center gap-0.5 backdrop-blur-sm z-10">
+                        <Video className="w-2.5 h-2.5" />
+                        <span>VDO</span>
+                      </div>
+                    )}
+
                     {/* Hover actions */}
                     <div className="absolute top-1 right-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCropModalData({
-                            isOpen: true,
-                            imageSrc: img.filePath,
-                            imageId: img.id,
-                            defaultAspect: "16:9",
-                          });
-                        }}
-                        className="p-1 rounded bg-black/80 hover:bg-amber-950 text-slate-300 hover:text-amber-300"
-                        title="ครอปรูปนี้"
-                      >
-                        <Crop className="w-2.5 h-2.5" />
-                      </button>
+                      {isVideoMedia(img) ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const timing = getVideoTiming(img);
+                            setVideoTrimData({
+                              isOpen: true,
+                              videoSrc: img.filePath,
+                              videoId: img.id,
+                              startTime: timing.startTime,
+                              endTime: timing.endTime,
+                              caption: img.caption || "",
+                            });
+                          }}
+                          className="p-1 rounded bg-black/80 hover:bg-amber-950 text-slate-300 hover:text-amber-300"
+                          title="เลือกช่วงเวลาของวิดีโอนี้ (Trim)"
+                        >
+                          <Scissors className="w-2.5 h-2.5 text-amber-400" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCropModalData({
+                              isOpen: true,
+                              imageSrc: img.filePath,
+                              imageId: img.id,
+                              defaultAspect: "16:9",
+                            });
+                          }}
+                          className="p-1 rounded bg-black/80 hover:bg-amber-950 text-slate-300 hover:text-amber-300"
+                          title="ครอปรูปนี้"
+                        >
+                          <Crop className="w-2.5 h-2.5" />
+                        </button>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleSetAsCover(img);
                         }}
                         className="p-1 rounded bg-black/80 hover:bg-amber-950 text-slate-300 hover:text-amber-400"
-                        title="ตั้งรูปนี้เป็นหน้าปก"
+                        title="ตั้งรูปหรือคลิปนี้เป็นหน้าปก"
                       >
                         <Crown className="w-2.5 h-2.5" />
                       </button>
@@ -1914,7 +2092,7 @@ export default function StoryWorkspacePage({
       <input
         ref={imageFileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,video/*,.gif,.mp4,.webm,.mov"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -1924,7 +2102,7 @@ export default function StoryWorkspacePage({
       <input
         ref={blockImageUploadRef}
         type="file"
-        accept="image/*"
+        accept="image/*,video/*,.gif,.mp4,.webm,.mov"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -2179,31 +2357,64 @@ export default function StoryWorkspacePage({
             className="relative max-w-full max-h-[85vh] flex flex-col items-center"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={lightboxImage}
-              alt="Fullscreen Preview"
-              className="max-w-full max-h-[80vh] object-contain rounded-2xl shadow-2xl"
-            />
+            {isVideoMedia({ filePath: lightboxImage }) ? (
+              <video
+                src={lightboxImage}
+                controls
+                autoPlay
+                loop
+                playsInline
+                className="max-w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl border border-slate-800"
+              />
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={lightboxImage}
+                alt="Fullscreen Preview"
+                className="max-w-full max-h-[80vh] object-contain rounded-2xl shadow-2xl"
+              />
+            )}
 
             {/* Lightbox Action Controls */}
             <div className="flex items-center gap-3 mt-4 flex-wrap justify-center">
-              <button
-                onClick={() => {
-                  const targetImg = sceneImages.find((img) => img.filePath === lightboxImage);
-                  setCropModalData({
-                    isOpen: true,
-                    imageSrc: lightboxImage,
-                    imageId: targetImg?.id,
-                    defaultAspect: "16:9",
-                  });
-                  setLightboxImage(null);
-                }}
-                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 font-bold text-xs font-thai flex items-center gap-2 shadow transition-all"
-              >
-                <Crop className="w-4 h-4 text-amber-400" />
-                <span>ครอปรูปภาพนี้</span>
-              </button>
+              {isVideoMedia({ filePath: lightboxImage }) ? (
+                <button
+                  onClick={() => {
+                    const targetImg = sceneImages.find((img) => img.filePath === lightboxImage);
+                    const timing = getVideoTiming(targetImg);
+                    setVideoTrimData({
+                      isOpen: true,
+                      videoSrc: lightboxImage,
+                      videoId: targetImg?.id,
+                      startTime: timing.startTime,
+                      endTime: timing.endTime,
+                      caption: targetImg?.caption || "",
+                    });
+                    setLightboxImage(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 font-bold text-xs font-thai flex items-center gap-2 shadow transition-all"
+                >
+                  <Scissors className="w-4 h-4 text-amber-400" />
+                  <span>เลือกช่วงวิดีโอ (Trim)</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    const targetImg = sceneImages.find((img) => img.filePath === lightboxImage);
+                    setCropModalData({
+                      isOpen: true,
+                      imageSrc: lightboxImage,
+                      imageId: targetImg?.id,
+                      defaultAspect: "16:9",
+                    });
+                    setLightboxImage(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 font-bold text-xs font-thai flex items-center gap-2 shadow transition-all"
+                >
+                  <Crop className="w-4 h-4 text-amber-400" />
+                  <span>ครอปรูปภาพนี้</span>
+                </button>
+              )}
 
               <button
                 onClick={() => {
@@ -2241,6 +2452,22 @@ export default function StoryWorkspacePage({
           projectId={projectId}
           defaultAspect={cropModalData.defaultAspect || "16:9"}
           onCropSuccess={handleCropSuccess}
+        />
+      )}
+
+      {/* Video Trim Modal */}
+      {videoTrimData && (
+        <VideoTrimModal
+          isOpen={videoTrimData.isOpen}
+          onClose={() => setVideoTrimData(null)}
+          videoSrc={videoTrimData.videoSrc}
+          videoId={videoTrimData.videoId}
+          sceneId={activeSceneId}
+          projectId={projectId}
+          initialStartTime={videoTrimData.startTime || 0}
+          initialEndTime={videoTrimData.endTime || null}
+          initialCaption={videoTrimData.caption || ""}
+          onTrimSuccess={handleTrimSuccess}
         />
       )}
     </div>

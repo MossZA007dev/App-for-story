@@ -53,6 +53,7 @@ export function Navbar() {
   const isDashboardActive = pathname === "/sagas" || pathname === "/";
   const isStudioActive =
     pathname === "/studio" ||
+    pathname === "/characters" ||
     (pathname.startsWith("/projects/") && pathname !== "/projects/new");
   const isNewActive = pathname === "/projects/new";
   const isSettingsActive = pathname === "/settings";
@@ -159,43 +160,23 @@ export function Navbar() {
                     </div>
                   </Link>
 
-                  {/* 2. Create Your Character (Me Profile) */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCharModalType("self");
-                      setCharModalOpen(true);
-                      setStudioDropdownOpen(false);
-                    }}
-                    className="w-full text-left flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 transition-colors font-thai border border-amber-500/20"
+                  {/* 2. Consolidated Character Dashboard (Me Profile & Squad Friends) */}
+                  <Link
+                    href="/characters"
+                    onClick={() => setStudioDropdownOpen(false)}
+                    className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 transition-colors font-thai border border-amber-500/30 bg-gradient-to-r from-amber-500/5 to-sky-500/5"
                   >
-                    <User className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                    <div className="flex -space-x-1 flex-shrink-0 text-base">
+                      <span>👑</span>
+                      <span>🧑‍🤝‍🧑</span>
+                    </div>
                     <div>
-                      <span className="font-bold block">👑 สร้าง/แก้ไขตัวละครของคุณ (ตัวฉันเอง)</span>
+                      <span className="font-bold block text-white">แดชบอร์ดตัวละคร (ตัวฉันเอง & เพื่อน)</span>
                       <span className="text-[10px] text-slate-400 block">
-                        กรอกชื่อเล่น MBTI และอัปโหลดรูปตัวเอง
+                        สร้าง/แก้ไขตัวละครของคุณ (Me) และกลุ่มเพื่อน (Squad)
                       </span>
                     </div>
-                  </button>
-
-                  {/* 3. Create Squad Friend */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCharModalType("friend");
-                      setCharModalOpen(true);
-                      setStudioDropdownOpen(false);
-                    }}
-                    className="w-full text-left flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-sky-300 hover:text-sky-200 hover:bg-sky-500/10 transition-colors font-thai border border-sky-500/20"
-                  >
-                    <Users className="w-4 h-4 text-sky-400 flex-shrink-0" />
-                    <div>
-                      <span className="font-bold block">🧑‍🤝‍🧑 สร้าง/เพิ่มกลุ่มเพื่อนของคุณ (Squad)</span>
-                      <span className="text-[10px] text-slate-400 block">
-                        กรอกชื่อเพื่อน MBTI และใส่รูปเพื่อน
-                      </span>
-                    </div>
-                  </button>
+                  </Link>
 
                   {/* 4. Active Story Workspace */}
                   <div className="pt-1 border-t border-slate-800/80 mt-1">

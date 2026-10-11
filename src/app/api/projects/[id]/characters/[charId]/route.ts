@@ -17,6 +17,7 @@ const UpdateCharacterSchema = z.object({
   background: z.string().optional(),
   characterType: z.enum(["self", "friend", "canon"]).optional(),
   realNickname: z.string().optional(),
+  avatarUrl: z.string().optional(),
   status: z.enum(["alive", "dead", "missing", "captive"]).optional(),
   locationNow: z.string().optional(),
   visualSheet: z.record(z.unknown()).optional(),

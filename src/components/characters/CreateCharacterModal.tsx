@@ -11,13 +11,31 @@ import {
   Check,
   Shield,
   Flame,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+
+interface CharacterData {
+  id?: string;
+  name?: string;
+  realNickname?: string;
+  characterType?: "self" | "friend" | "canon";
+  startMbti?: string;
+  currentMbti?: string;
+  gender?: string;
+  faction?: string;
+  chosenRole?: string;
+  background?: string;
+  avatarUrl?: string;
+  projectId?: string;
+}
 
 interface CreateCharacterModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialType?: "self" | "friend";
+  initialProjectId?: string;
+  editCharacter?: CharacterData | null;
   onSuccess?: () => void;
 }
 
@@ -31,30 +49,61 @@ export function CreateCharacterModal({
   isOpen,
   onClose,
   initialType = "self",
+  initialProjectId,
+  editCharacter,
   onSuccess,
 }: CreateCharacterModalProps) {
-  const [characterType, setCharacterType] = useState<"self" | "friend">(initialType);
-  const [realNickname, setRealNickname] = useState("");
-  const [name, setName] = useState("");
-  const [startMbti, setStartMbti] = useState("INTJ");
-  const [gender, setGender] = useState("ชาย");
-  const [faction, setFaction] = useState("");
-  const [roleWish, setRoleWish] = useState("");
-  const [background, setBackground] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState("");
+  const [characterType, setCharacterType] = useState<"self" | "friend">(
+    (editCharacter?.characterType as "self" | "friend") || initialType
+  );
+  const [realNickname, setRealNickname] = useState(editCharacter?.realNickname || "");
+  const [name, setName] = useState(editCharacter?.name || "");
+  const [startMbti, setStartMbti] = useState(
+    editCharacter?.currentMbti || editCharacter?.startMbti || "INTJ"
+  );
+  const [gender, setGender] = useState(editCharacter?.gender || "ชาย");
+  const [faction, setFaction] = useState(editCharacter?.faction || "");
+  const [roleWish, setRoleWish] = useState(editCharacter?.chosenRole || "");
+  const [background, setBackground] = useState(editCharacter?.background || "");
+  const [avatarUrl, setAvatarUrl] = useState(editCharacter?.avatarUrl || "");
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Projects list for selecting target project
   const [projectsList, setProjectsList] = useState<ProjectOption[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(
+    editCharacter?.projectId || initialProjectId || ""
+  );
 
   useEffect(() => {
     if (isOpen) {
-      setCharacterType(initialType);
+      if (editCharacter) {
+        setCharacterType((editCharacter.characterType as "self" | "friend") || "self");
+        setRealNickname(editCharacter.realNickname || "");
+        setName(editCharacter.name || "");
+        setStartMbti(editCharacter.currentMbti || editCharacter.startMbti || "INTJ");
+        setGender(editCharacter.gender || "ชาย");
+        setFaction(editCharacter.faction || "");
+        setRoleWish(editCharacter.chosenRole || "");
+        setBackground(editCharacter.background || "");
+        setAvatarUrl(editCharacter.avatarUrl || "");
+        if (editCharacter.projectId) {
+          setSelectedProjectId(editCharacter.projectId);
+        }
+      } else {
+        setCharacterType(initialType);
+        setRealNickname("");
+        setName("");
+        setStartMbti("INTJ");
+        setGender("ชาย");
+        setFaction("");
+        setRoleWish("");
+        setBackground("");
+        setAvatarUrl("");
+      }
       fetchProjects();
     }
-  }, [isOpen, initialType]);
+  }, [isOpen, initialType, editCharacter, initialProjectId]);
 
   const fetchProjects = async () => {
     try {
@@ -63,7 +112,7 @@ export function CreateCharacterModal({
         const data = await res.json();
         setProjectsList(data);
         if (data.length > 0 && !selectedProjectId) {
-          setSelectedProjectId(data[0].id);
+          setSelectedProjectId(initialProjectId || data[0].id);
         }
       }
     } catch (err) {
@@ -117,39 +166,61 @@ export function CreateCharacterModal({
 
     try {
       setIsSubmitting(true);
-      const res = await fetch(`/api/projects/${selectedProjectId}/characters`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: resolvedName,
-          realNickname: effectiveNickname,
-          characterType,
-          startMbti,
-          currentMbti: startMbti,
-          gender,
-          faction: faction.trim() || "กลุ่มอิสระ",
-          chosenRole: roleWish.trim() || (characterType === "self" ? "ตัวเอกผู้ข้ามมิติ" : "สหายร่วมชะตากรรม"),
-          background: background.trim() || "คนจากโลกปัจจุบันที่หลุดเข้ามาในโลกนี้พร้อมความทรงจำเดิม",
-          avatarUrl: avatarUrl.trim() || "",
-        }),
-      });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "บันทึกตัวละครไม่สำเร็จ");
+      if (editCharacter && editCharacter.id) {
+        // UPDATE existing character
+        const res = await fetch(
+          `/api/projects/${selectedProjectId}/characters/${editCharacter.id}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: resolvedName,
+              realNickname: effectiveNickname,
+              characterType,
+              currentMbti: startMbti,
+              startMbti,
+              gender,
+              faction: faction.trim() || "กลุ่มอิสระ",
+              chosenRole: roleWish.trim() || (characterType === "self" ? "ตัวเอกผู้ข้ามมิติ" : "สหายร่วมชะตากรรม"),
+              background: background.trim() || "คนจากโลกปัจจุบันที่หลุดเข้ามาในโลกนี้พร้อมความทรงจำเดิม",
+              avatarUrl: avatarUrl.trim() || "",
+            }),
+          }
+        );
 
-      toast.success(
-        characterType === "self"
-          ? `👑 บันทึกตัวละครของคุณ "${effectiveNickname}" เรียบร้อยแล้ว!`
-          : `🧑‍🤝‍🧑 เพิ่มเพื่อน "${effectiveNickname}" เข้ากลุ่มเรียบร้อยแล้ว!`
-      );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "อัปเดตตัวละครไม่สำเร็จ");
 
-      // Reset form
-      setRealNickname("");
-      setName("");
-      setAvatarUrl("");
-      setFaction("");
-      setRoleWish("");
-      setBackground("");
+        toast.success(`บันทึกการแก้ไข "${effectiveNickname}" เรียบร้อยแล้ว!`);
+      } else {
+        // CREATE new character
+        const res = await fetch(`/api/projects/${selectedProjectId}/characters`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: resolvedName,
+            realNickname: effectiveNickname,
+            characterType,
+            startMbti,
+            currentMbti: startMbti,
+            gender,
+            faction: faction.trim() || "กลุ่มอิสระ",
+            chosenRole: roleWish.trim() || (characterType === "self" ? "ตัวเอกผู้ข้ามมิติ" : "สหายร่วมชะตากรรม"),
+            background: background.trim() || "คนจากโลกปัจจุบันที่หลุดเข้ามาในโลกนี้พร้อมความทรงจำเดิม",
+            avatarUrl: avatarUrl.trim() || "",
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "บันทึกตัวละครไม่สำเร็จ");
+
+        toast.success(
+          characterType === "self"
+            ? `👑 บันทึกตัวละครของคุณ "${effectiveNickname}" เรียบร้อยแล้ว!`
+            : `🧑‍🤝‍🧑 เพิ่มเพื่อน "${effectiveNickname}" เข้ากลุ่มเรียบร้อยแล้ว!`
+        );
+      }
 
       if (onSuccess) onSuccess();
       onClose();
@@ -163,6 +234,8 @@ export function CreateCharacterModal({
   };
 
   if (!isOpen) return null;
+
+  const isEditing = Boolean(editCharacter && editCharacter.id);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
@@ -180,13 +253,17 @@ export function CreateCharacterModal({
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
             <h2 className="text-lg font-bold text-white font-heading tracking-wide">
-              {characterType === "self"
-                ? "👑 สร้าง / ปรับแต่งตัวละครของคุณ (ตัวฉันเอง - ME)"
-                : "🧑‍🤝‍🧑 สร้าง / เพิ่มเพื่อนในกลุ่มของคุณ (SQUAD FRIEND)"}
+              {isEditing
+                ? `✏️ แก้ไขข้อมูลตัวละคร: ${realNickname || editCharacter?.name}`
+                : characterType === "self"
+                ? "👑 สร้างตัวละครของคุณ (ตัวฉันเอง - ME)"
+                : "🧑‍🤝‍🧑 เพิ่มเพื่อนในกลุ่มของคุณ (SQUAD FRIEND)"}
             </h2>
           </div>
           <p className="text-xs text-slate-400 font-thai">
-            กรอกชื่อจริงของคุณ MBTI และอัปโหลดรูปตัวเอง เพื่อให้ AI พาคุณและเพื่อนๆ ข้ามมิติไปโลดแล่นในมหากาพย์
+            {isEditing
+              ? "ปรับแต่งชื่อเล่น ชื่อในเรื่อง MBTI และรูปถ่ายโปรไฟล์ตัวละคร"
+              : "กรอกชื่อจริงของคุณ MBTI และอัปโหลดรูปตัวเอง เพื่อให้ AI นำคุณและเพื่อนๆ ข้ามมิติไปโลดแล่นในมหากาพย์"}
           </p>
         </div>
 
@@ -221,7 +298,7 @@ export function CreateCharacterModal({
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-amber-300 font-thai flex items-center gap-1.5">
               <Flame className="w-3.5 h-3.5" />
-              <span>เลือกเรื่องที่ต้องการเพิ่มตัวละครนี้เข้าไป</span>
+              <span>เลือกเรื่องที่ต้องการให้ตัวละครนี้สังกัด</span>
             </label>
             <select
               value={selectedProjectId}
@@ -241,6 +318,7 @@ export function CreateCharacterModal({
             {/* Avatar Preview */}
             <div className="relative w-20 h-20 rounded-full overflow-hidden bg-slate-900 border-2 border-amber-500/50 flex items-center justify-center flex-shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
               {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={avatarUrl}
                   alt="Avatar Preview"
@@ -264,7 +342,7 @@ export function CreateCharacterModal({
                   รูปถ่ายของคุณ (Avatar Photo)
                 </span>
                 <span className="text-[11px] text-slate-400 font-thai">
-                  อัปโหลดรูปหน้าตรงหรือรูปถ่ายจริงของคุณ ระบบจะใช้เป็นภาพอ้างอิงของตัวละคร
+                  อัปโหลดรูปหน้าตรงหรือรูปถ่ายจริงของคุณเพื่อใช้เป็นโปรไฟล์และภาพอ้างอิง
                 </span>
               </div>
 
@@ -312,7 +390,7 @@ export function CreateCharacterModal({
 
             <div className="space-y-1">
               <label className="text-xs font-semibold text-slate-300 font-thai">
-                ชื่อ/ฉายาในเรื่อง (In-universe Name)
+                ชื่อ/ฉายาในจักรวาลเรื่อง (In-universe Name)
               </label>
               <input
                 type="text"
@@ -422,6 +500,8 @@ export function CreateCharacterModal({
               <span>
                 {isSubmitting
                   ? "กำลังบันทึก..."
+                  : isEditing
+                  ? "บันทึกการแก้ไข"
                   : characterType === "self"
                   ? "บันทึกตัวละครของคุณ"
                   : "บันทึกตัวละครเพื่อน"}

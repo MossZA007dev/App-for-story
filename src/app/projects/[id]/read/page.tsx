@@ -1840,10 +1840,26 @@ export default function NovelReaderPage({
           )}
           <iframe
             ref={youtubeIframeRef}
-            src={`https://www.youtube-nocookie.com/embed/${extractYouTubeVideoId(activeScene.bgmUrl)}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${extractYouTubeVideoId(activeScene.bgmUrl)}`}
+            src={`https://www.youtube-nocookie.com/embed/${extractYouTubeVideoId(activeScene.bgmUrl)}?enablejsapi=1&autoplay=${isCustomAudioPlaying ? "1" : "0"}&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${extractYouTubeVideoId(activeScene.bgmUrl)}`}
             title="Reader YouTube Audio Player"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            className={showMiniVideoPlayer ? "w-full aspect-video" : "w-1 h-1"}
+            className={showMiniVideoPlayer ? "w-full aspect-video" : "w-[1px] h-[1px] opacity-1 pointer-events-none"}
+            onLoad={() => {
+              if (isCustomAudioPlaying) {
+                youtubeIframeRef.current?.contentWindow?.postMessage(
+                  JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+                  "*"
+                );
+                youtubeIframeRef.current?.contentWindow?.postMessage(
+                  JSON.stringify({
+                    event: "command",
+                    func: "setVolume",
+                    args: [Math.round((isMuted ? 0 : volume) * 100)],
+                  }),
+                  "*"
+                );
+              }
+            }}
           />
         </div>
       )}

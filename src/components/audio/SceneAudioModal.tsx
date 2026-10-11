@@ -39,6 +39,7 @@ export function SceneAudioModal({
   const [titleInput, setTitleInput] = useState(currentTitle || "");
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isFetchingTitle, setIsFetchingTitle] = useState(false);
 
   // Test playback inside modal
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
@@ -47,11 +48,49 @@ export function SceneAudioModal({
   const testAudioRef = useRef<HTMLAudioElement | null>(null);
   const testYtIframeRef = useRef<HTMLIFrameElement | null>(null);
 
+  const fetchAudioTitle = async (url: string, overwrite = false) => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    const ytId = extractYouTubeVideoId(trimmed);
+    if (ytId) {
+      try {
+        setIsFetchingTitle(true);
+        const res = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(trimmed)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.title) {
+            if (overwrite || !titleInput || titleInput.includes("เพลงประกอบ")) {
+              setTitleInput(data.title);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch YouTube title:", err);
+      } finally {
+        setIsFetchingTitle(false);
+      }
+    } else {
+      try {
+        const urlObj = new URL(trimmed);
+        const filename = urlObj.pathname.split("/").pop();
+        if (filename && filename.includes(".")) {
+          const cleanName = decodeURIComponent(filename.replace(/\.[^/.]+$/, ""));
+          if (cleanName && (overwrite || !titleInput || titleInput.includes("เพลงประกอบ"))) {
+            setTitleInput(cleanName);
+          }
+        }
+      } catch {}
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       setUrlInput(currentUrl || "");
       setTitleInput(currentTitle || "");
       setIsPreviewPlaying(false);
+      if (currentUrl && (!currentTitle || currentTitle.includes("เพลงประกอบจากลิงก์"))) {
+        fetchAudioTitle(currentUrl);
+      }
     } else {
       stopPreview();
     }
@@ -59,6 +98,14 @@ export function SceneAudioModal({
 
   const sourceType = getAudioSourceType(urlInput);
   const ytVideoId = extractYouTubeVideoId(urlInput);
+
+  const handleUrlInputChange = (val: string) => {
+    setUrlInput(val);
+    if (isPreviewPlaying) stopPreview();
+    if (val.trim()) {
+      fetchAudioTitle(val);
+    }
+  };
 
   const stopPreview = () => {
     if (testAudioRef.current) {
@@ -202,10 +249,7 @@ export function SceneAudioModal({
             <input
               type="text"
               value={urlInput}
-              onChange={(e) => {
-                setUrlInput(e.target.value);
-                if (isPreviewPlaying) stopPreview();
-              }}
+              onChange={(e) => handleUrlInputChange(e.target.value)}
               placeholder="วางลิงก์ เช่น https://www.youtube.com/watch?v=... หรือ https://domain.com/song.mp3"
               className="w-full bg-slate-950 border border-slate-700 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all font-mono"
               autoFocus
@@ -217,22 +261,25 @@ export function SceneAudioModal({
                 {sourceType === "youtube" ? (
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-950/40 border border-red-500/40 text-red-300 text-xs">
                     <Youtube className="w-4 h-4 text-red-400 flex-shrink-0" />
-                    <span>
-                      <strong>ตรวจพบคลิป YouTube:</strong> จะเล่นเสียงเพลงเบื้องหลังอัตโนมัติ (Video ID: <code className="font-mono">{ytVideoId}</code>)
+                    <span className="flex-1">
+                      <strong>ตรวจพบคลิป YouTube:</strong> เล่นเพลงและวิดีโอ (Video ID: <code className="font-mono text-white">{ytVideoId}</code>)
                     </span>
+                    {isFetchingTitle && (
+                      <span className="text-[11px] text-amber-300 animate-pulse font-sans">กำลังดึงชื่อเพลง...</span>
+                    )}
                   </div>
                 ) : sourceType === "direct" ? (
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                     <span>
-                      <strong>Direct Audio File:</strong> เล่นไฟล์เพลงผ่านระบบเสียง HTML5 ในเบราว์เซอร์
+                      <strong>Direct Audio File:</strong> เล่นไฟล์เพลงตรงผ่านเบราว์เซอร์
                     </span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-950/40 border border-amber-500/40 text-amber-300 text-xs">
                     <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
                     <span>
-                      ลิงก์ออนไลน์ทั่วไป (หากไม่มีเสียง ให้ใช้ลิงก์คลิป YouTube หรือไฟล์ตรง .mp3)
+                      ลิงก์ออนไลน์ทั่วไป (หากไม่ได้ยินเสียง ให้ใช้คลิป YouTube หรือไฟล์ตรง .mp3)
                     </span>
                   </div>
                 )}
@@ -242,10 +289,22 @@ export function SceneAudioModal({
 
           {/* Title Input */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-              <FileAudio className="w-3.5 h-3.5 text-emerald-400" />
-              <span>ชื่อเพลง (แสดงในเครื่องเล่น):</span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                <FileAudio className="w-3.5 h-3.5 text-emerald-400" />
+                <span>ชื่อเพลง (แสดงในเครื่องเล่น):</span>
+              </label>
+              {ytVideoId && (
+                <button
+                  type="button"
+                  onClick={() => fetchAudioTitle(urlInput, true)}
+                  disabled={isFetchingTitle}
+                  className="text-[11px] text-sky-400 hover:text-sky-300 hover:underline font-medium flex items-center gap-1"
+                >
+                  <span>{isFetchingTitle ? "กำลังค้นหา..." : "🔄 ดึงชื่อจาก YouTube"}</span>
+                </button>
+              )}
+            </div>
             <input
               type="text"
               value={titleInput}
@@ -263,7 +322,8 @@ export function SceneAudioModal({
                 type="button"
                 onClick={() => {
                   setUrlInput("https://www.youtube.com/watch?v=s7L2PVdrb_8");
-                  setTitleInput("Game of Thrones Theme Song");
+                  setTitleInput("Official Opening Credits: Game of Thrones (HBO)");
+                  if (isPreviewPlaying) stopPreview();
                 }}
                 className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-slate-300 hover:text-white transition-colors"
               >
@@ -274,6 +334,7 @@ export function SceneAudioModal({
                 onClick={() => {
                   setUrlInput("https://www.youtube.com/watch?v=hV63DbQ_qSc");
                   setTitleInput("Epic Dark Fantasy Music");
+                  if (isPreviewPlaying) stopPreview();
                 }}
                 className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-slate-300 hover:text-white transition-colors"
               >
@@ -284,23 +345,68 @@ export function SceneAudioModal({
 
           {/* Test Play & Volume Adjustment Box */}
           {urlInput.trim() && (
-            <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2.5">
+            <div className="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 space-y-3">
               <div className="flex items-center justify-between text-xs text-slate-300 font-bold">
                 <span className="flex items-center gap-1.5">
                   <Radio className={`w-3.5 h-3.5 ${isPreviewPlaying ? "text-emerald-400 animate-pulse" : "text-slate-500"}`} />
                   <span>ทดสอบฟังเสียงและปรับความดัง:</span>
                 </span>
-                <span className="font-mono text-emerald-400">
+                <span className="font-mono text-emerald-400 text-xs">
                   {Math.round((isMuted ? 0 : previewVolume) * 100)}%
                 </span>
               </div>
 
-              <div className="flex items-center gap-3">
+              {/* YouTube Live Preview Video Player */}
+              {ytVideoId && (
+                <div className="space-y-1.5">
+                  <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black border border-slate-800 shadow-lg">
+                    <iframe
+                      ref={testYtIframeRef}
+                      src={`https://www.youtube-nocookie.com/embed/${ytVideoId}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}`}
+                      title="Test YouTube Player"
+                      className="w-full h-full"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      onLoad={() => {
+                        if (isPreviewPlaying) {
+                          testYtIframeRef.current?.contentWindow?.postMessage(
+                            JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+                            "*"
+                          );
+                          testYtIframeRef.current?.contentWindow?.postMessage(
+                            JSON.stringify({
+                              event: "command",
+                              func: "setVolume",
+                              args: [Math.round((isMuted ? 0 : previewVolume) * 100)],
+                            }),
+                            "*"
+                          );
+                        }
+                      }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400 text-center font-thai">
+                    🎬 สามารถกดเล่น/หยุดบนตัววิดีโอ หรือใช้ปุ่ม &quot;ทดสอบฟัง&quot; ด้านล่างเพื่อปรับระดับเสียง
+                  </p>
+                </div>
+              )}
+
+              {/* Direct HTML5 Audio Player */}
+              {!ytVideoId && (
+                <audio
+                  ref={testAudioRef}
+                  controls
+                  className="w-full h-9 rounded-lg"
+                  onEnded={() => setIsPreviewPlaying(false)}
+                  onError={() => setIsPreviewPlaying(false)}
+                />
+              )}
+
+              <div className="flex items-center gap-3 pt-1">
                 {/* Play/Pause Button */}
                 <button
                   type="button"
                   onClick={handleTogglePreview}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     isPreviewPlaying
                       ? "bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20"
                       : "bg-slate-800 text-slate-200 hover:text-white hover:bg-slate-700"
@@ -340,23 +446,6 @@ export function SceneAudioModal({
                   className="flex-1 accent-emerald-400 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer"
                 />
               </div>
-
-              {/* Hidden Test Players */}
-              <audio
-                ref={testAudioRef}
-                className="hidden"
-                onEnded={() => setIsPreviewPlaying(false)}
-                onError={() => setIsPreviewPlaying(false)}
-              />
-              {ytVideoId && (
-                <iframe
-                  ref={testYtIframeRef}
-                  src={`https://www.youtube-nocookie.com/embed/${ytVideoId}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}`}
-                  title="Test YouTube Player"
-                  className="hidden"
-                  allow="autoplay"
-                />
-              )}
             </div>
           )}
 

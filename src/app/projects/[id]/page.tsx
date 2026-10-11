@@ -290,6 +290,11 @@ export default function StoryWorkspacePage({
       const data = await res.json();
 
       setActiveScene(data.scene);
+      if (data.scene?.bgmUrl) {
+        setCurrentAudioTrack("custom");
+      } else {
+        setCurrentAudioTrack("none");
+      }
       setSceneImages(data.images || []);
       setSelectedImageIndex(0);
       setActiveBlockIndex(0);
@@ -1874,16 +1879,25 @@ export default function StoryWorkspacePage({
             {/* Audio Track Dropdown */}
             <select
               value={currentAudioTrack}
-              onChange={(e) => handleSelectAudioTrack(e.target.value as AudioTrack)}
-              className="bg-transparent text-xs font-bold text-white focus:outline-none font-thai cursor-pointer max-w-[140px] sm:max-w-[180px] truncate"
+              onChange={(e) => {
+                if (e.target.value === "modal_open") {
+                  setShowAudioModal(true);
+                  return;
+                }
+                handleSelectAudioTrack(e.target.value as AudioTrack);
+              }}
+              className="bg-transparent text-xs font-bold text-white focus:outline-none font-thai cursor-pointer max-w-[150px] sm:max-w-[200px] truncate"
             >
               <option value="none" className="bg-slate-900">⚪ ไม่มีเพลงประกอบ</option>
               {activeScene?.bgmUrl && (
-                <option value="custom" className="bg-slate-900">
+                <option value="custom" className="bg-slate-900 text-emerald-300 font-bold">
                   {extractYouTubeVideoId(activeScene.bgmUrl) ? "🎬 " : "🎶 "}
                   {activeScene.bgmTitle || "เพลงประจำฉาก"}
                 </option>
               )}
+              <option value="modal_open" className="bg-slate-900 text-sky-400 font-bold">
+                ➕ ใส่ลิงก์ / เปลี่ยนเพลง...
+              </option>
               <option value="wildfire" className="bg-slate-900">🔥 เพลิงป่า (Wildfire Drone)</option>
               <option value="winter" className="bg-slate-900">❄️ ลมเหมันต์ (Winter Winds)</option>
               <option value="war" className="bg-slate-900">⚔️ มหากาพย์ศึก (War Drums)</option>
@@ -3282,10 +3296,26 @@ export default function StoryWorkspacePage({
           )}
           <iframe
             ref={youtubeIframeRef}
-            src={`https://www.youtube-nocookie.com/embed/${extractYouTubeVideoId(activeScene.bgmUrl)}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${extractYouTubeVideoId(activeScene.bgmUrl)}`}
+            src={`https://www.youtube-nocookie.com/embed/${extractYouTubeVideoId(activeScene.bgmUrl)}?enablejsapi=1&autoplay=${isAudioPlaying ? "1" : "0"}&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${extractYouTubeVideoId(activeScene.bgmUrl)}`}
             title="Scene YouTube Audio Player"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            className={showMiniVideoPlayer ? "w-full aspect-video" : "w-1 h-1"}
+            className={showMiniVideoPlayer ? "w-full aspect-video" : "w-[1px] h-[1px] opacity-1 pointer-events-none"}
+            onLoad={() => {
+              if (isAudioPlaying) {
+                youtubeIframeRef.current?.contentWindow?.postMessage(
+                  JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+                  "*"
+                );
+                youtubeIframeRef.current?.contentWindow?.postMessage(
+                  JSON.stringify({
+                    event: "command",
+                    func: "setVolume",
+                    args: [Math.round((isAudioMuted ? 0 : audioVolume) * 100)],
+                  }),
+                  "*"
+                );
+              }
+            }}
           />
         </div>
       )}

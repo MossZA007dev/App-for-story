@@ -19,6 +19,7 @@ import {
   History,
   Shield,
   Upload,
+  Link2,
   Layers,
   MapPin,
   Clock,
@@ -421,10 +422,73 @@ export default function StoryWorkspacePage({
     }
   };
 
+  // Set Audio via Direct URL (MP3 / Audio stream - No file size limit!)
+  const handleSetAudioUrl = async (url: string, title?: string) => {
+    if (!activeSceneId || !url.trim()) return;
+
+    try {
+      setIsUploadingAudio(true);
+      const res = await fetch(`/api/projects/${projectId}/scenes/${activeSceneId}/audio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bgmUrl: url.trim(),
+          bgmTitle: title?.trim() || "เพลงประกอบจากลิงก์",
+        }),
+      });
+
+      const resText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(resText);
+      } catch {}
+
+      if (!res.ok) throw new Error(data?.error || `บันทึกเพลงไม่สำเร็จ (HTTP ${res.status})`);
+
+      const updated = { ...activeScene!, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle };
+      setActiveScene(updated);
+      setParts((prevParts) =>
+        prevParts.map((part) => ({
+          ...part,
+          scenes: part.scenes.map((s) => (s.id === activeSceneId ? updated : s)),
+        }))
+      );
+
+      setCurrentAudioTrack("custom");
+      if (studioAudioPlayerRef.current) {
+        studioAudioPlayerRef.current.src = data.bgmUrl;
+        studioAudioPlayerRef.current.volume = audioVolume;
+        studioAudioPlayerRef.current.play().catch((e) => console.warn(e));
+        setIsAudioPlaying(true);
+      }
+      ambientSound.stop();
+
+      toast.success(`ตั้งค่าเพลง "${data.bgmTitle}" สำเร็จและเริ่มเล่นทันที!`);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "เกิดข้อผิดพลาดในการบันทึกเพลง");
+    } finally {
+      setIsUploadingAudio(false);
+    }
+  };
+
   // Upload Scene Audio (MP3/WAV)
   const handleUploadAudioFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !activeSceneId) return;
+
+    const fileSizeMB = file.size / (1024 * 1024);
+    const isVercelHost = typeof window !== "undefined" && window.location.hostname.includes("vercel.app");
+
+    // Vercel Serverless Function has hard payload limit of 4.5MB
+    if (isVercelHost && fileSizeMB > 4.5) {
+      toast.error(
+        `ไฟล์นี้มีขนาด ${fileSizeMB.toFixed(1)} MB (Vercel จำกัดขนาดอัปโหลดไว้ไม่เกิน 4.5 MB) — กรุณาใช้งานผ่าน Cloudflare Tunnel หรือใส่ลิงก์เพลงแทน`,
+        { duration: 8000 }
+      );
+      if (audioFileInputRef.current) audioFileInputRef.current.value = "";
+      return;
+    }
 
     try {
       setIsUploadingAudio(true);
@@ -436,8 +500,25 @@ export default function StoryWorkspacePage({
         method: "POST",
         body: formData,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "อัปโหลดเพลงไม่สำเร็จ");
+
+      const resText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(resText);
+      } catch {}
+
+      if (!res.ok) {
+        if (
+          res.status === 413 ||
+          resText.includes("PAYLOAD_TOO_LARGE") ||
+          resText.includes("Request Entity Too Large")
+        ) {
+          throw new Error(
+            `ไฟล์มีขนาดใหญ่เกินกว่าที่ Vercel รองรับ (${fileSizeMB.toFixed(1)} MB > 4.5 MB) — แนะนำให้ใช้งานผ่าน Cloudflare Tunnel หรือใส่ลิงก์เพลงแทน`
+          );
+        }
+        throw new Error(data?.error || `อัปโหลดเพลงไม่สำเร็จ (HTTP ${res.status})`);
+      }
 
       const updated = { ...activeScene!, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle };
       setActiveScene(updated);
@@ -513,8 +594,21 @@ export default function StoryWorkspacePage({
         method: "POST",
         body: formData,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "อัปโหลดภาพไม่สำเร็จ");
+
+      const resText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(resText);
+      } catch {}
+
+      if (!res.ok) {
+        if (res.status === 413 || resText.includes("PAYLOAD_TOO_LARGE") || resText.includes("Request Entity Too Large")) {
+          throw new Error(
+            `ไฟล์มีขนาดใหญ่เกินกว่าที่ Vercel รองรับ (${(file.size / (1024 * 1024)).toFixed(1)} MB > 4.5 MB) — กรุณาใช้งานผ่าน Cloudflare Tunnel ซึ่งรองรับไฟล์ใหญ่ได้ถึง 100 MB`
+          );
+        }
+        throw new Error(data?.error || "อัปโหลดภาพไม่สำเร็จ");
+      }
 
       const newImg = data.image;
       const updatedImages = [newImg, ...sceneImages];
@@ -1494,10 +1588,30 @@ export default function StoryWorkspacePage({
             onClick={() => audioFileInputRef.current?.click()}
             disabled={isUploadingAudio}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-thai font-semibold transition-all shadow-sm active:scale-95"
-            title="อัปโหลดไฟล์เพลง MP3 หรือ WAV สำหรับฉากนี้"
+            title="อัปโหลดไฟล์เพลง MP3 หรือ WAV สำหรับฉากนี้ (ไม่เกิน 4.5 MB บน Vercel หรือไม่จำกัดบน Tunnel)"
           >
             <Upload className="w-3.5 h-3.5 text-emerald-400" />
             <span>{isUploadingAudio ? "กำลังอัปโหลด..." : "อัปโหลดเพลง"}</span>
+          </button>
+
+          {/* Direct Audio URL Button */}
+          <button
+            onClick={() => {
+              const url = prompt(
+                "ระบุลิงก์เพลงประกอบ (Direct MP3 URL / ลิงก์เสียงออนไลน์ - ไม่มีจำกัดขนาดไฟล์):",
+                activeScene?.bgmUrl || ""
+              );
+              if (url && url.trim()) {
+                const title = prompt("ระบุชื่อเพลง:", activeScene?.bgmTitle || "เพลงประกอบจากลิงก์");
+                handleSetAudioUrl(url.trim(), title || undefined);
+              }
+            }}
+            disabled={isUploadingAudio}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-sky-300 border border-slate-700 text-xs font-thai font-semibold transition-all shadow-sm active:scale-95"
+            title="ใส่ลิงก์ URL เพลงจากอินเทอร์เน็ต (ไม่มีข้อจำกัดเรื่องขนาดไฟล์)"
+          >
+            <Link2 className="w-3.5 h-3.5 text-sky-400" />
+            <span>ใส่ลิงก์เพลง</span>
           </button>
 
           {activeScene?.bgmUrl && (

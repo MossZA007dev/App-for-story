@@ -33,6 +33,7 @@ next-env.d.ts
 # SQLite temp journals
 /data/*.db-shm
 /data/*.db-wal
+/data/audio
 
 # local binaries
 /bin

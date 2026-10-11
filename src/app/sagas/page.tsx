@@ -228,8 +228,12 @@ export default function SagasDashboardPage() {
                     </p>
                   </div>
 
-                  {/* Cinematic Cover Image Box (Figma aspect ratio ~ 89/85 with 20px radius) */}
-                  <div className="relative w-full h-[338px] rounded-[20px] overflow-hidden my-2 bg-slate-950">
+                  {/* Cinematic Cover Image Box (Directly links to reader, NO edit overlay on hover) */}
+                  <Link
+                    href={`/projects/${project.id}/read`}
+                    className="relative w-full h-[338px] rounded-[20px] overflow-hidden my-2 bg-slate-950 block cursor-pointer"
+                    title={`คลิกเพื่ออ่าน "${project.title}"`}
+                  >
                     <img
                       src={project.coverImage || "/images/saga-got-cover.jpg"}
                       alt={project.title}
@@ -240,56 +244,20 @@ export default function SagasDashboardPage() {
                       }}
                     />
 
-                    {/* Hover Quick Action Overlay */}
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-[20px] p-5 flex flex-col justify-between items-center text-center">
-                      <div className="space-y-1">
-                        <span className="text-[11px] font-mono text-amber-300 tracking-wider uppercase">
-                          SAGA FORGE
-                        </span>
-                        <p className="text-xs text-slate-200 font-thai line-clamp-2 px-2">
-                          {project.title}
-                        </p>
-                      </div>
+                    {/* Clean Reading Gradient at Bottom */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
 
-                      {/* Main Navigation Actions */}
-                      <div className="w-full space-y-2">
-                        <Link
-                          href={`/projects/${project.id}/read`}
-                          className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai shadow-lg transition-colors"
-                        >
-                          <BookOpen className="w-4 h-4" />
-                          <span>📖 อ่านนิยาย (Split-Screen Reader)</span>
-                        </Link>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <Link
-                            href={`/projects/${project.id}`}
-                            className="inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white text-[11px] font-thai border border-slate-700 transition-colors"
-                          >
-                            <PenTool className="w-3.5 h-3.5 text-amber-400" />
-                            <span>เขียนใน Studio</span>
-                          </Link>
-
-                          <Link
-                            href={`/projects/${project.id}/images`}
-                            className="inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white text-[11px] font-thai border border-slate-700 transition-colors"
-                          >
-                            <ImageIcon className="w-3.5 h-3.5 text-sky-400" />
-                            <span>Image Studio</span>
-                          </Link>
-                        </div>
-                      </div>
-
-                      {/* Stats Pills in Overlay */}
-                      <div className="flex items-center justify-center gap-3 text-[11px] text-slate-400 font-mono">
-                        <span>{project.partCount || 1} ภาค</span>
-                        <span>&bull;</span>
-                        <span>{project.sceneCount || 0} ฉาก</span>
-                        <span>&bull;</span>
-                        <span>{project.characterCount || 0} ตัวละคร</span>
-                      </div>
+                    {/* Discreet Reading Meta Info */}
+                    <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-white/90 text-xs font-thai pointer-events-none">
+                      <span className="px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md text-[11px] font-semibold text-amber-300 border border-amber-500/30 flex items-center gap-1.5 shadow">
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>คลิกเพื่ออ่าน</span>
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md text-[11px] font-mono text-slate-300 border border-slate-700">
+                        {project.partCount || 1} ภาค &bull; {project.sceneCount || 0} ฉาก
+                      </span>
                     </div>
-                  </div>
+                  </Link>
 
                   {/* Card Bottom Bar */}
                   <div className="p-2 pt-1.5 flex items-center justify-between border-t border-slate-800/60 mt-1">

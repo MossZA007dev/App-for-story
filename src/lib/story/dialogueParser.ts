@@ -29,6 +29,312 @@ export interface SceneImageMeta {
   caption?: string;
 }
 
+export interface ParsedScriptResult {
+  partTitle?: string;
+  sceneTitle?: string;
+  location?: string;
+  time?: string;
+  detectedCharacters: string[];
+  blocks: DialogueBlock[];
+  rawCleanMarkdown: string;
+}
+
+/**
+ * Intelligent parser tailored for Claude / LLM scripts and Thai novel screenplay formats.
+ * Automatically extracts scene headers, locations, sound FX, characters, and dialogue lines.
+ */
+export function parseClaudeScript(
+  contentMarkdown: string,
+  characters: CharacterMeta[] = []
+): ParsedScriptResult {
+  if (!contentMarkdown) {
+    return {
+      detectedCharacters: [],
+      blocks: [],
+      rawCleanMarkdown: "",
+    };
+  }
+
+  const lines = contentMarkdown
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  let partTitle = "";
+  let sceneTitle = "";
+  let location = "";
+  let time = "";
+  const detectedCharacters = new Set<string>();
+  const blocks: DialogueBlock[] = [];
+
+  const selfChar = characters.find((c) => c.characterType === "self") || null;
+  const friendChars = characters.filter((c) => c.characterType === "friend");
+
+  let dialogueTurn = 0;
+
+  for (let index = 0; index < lines.length; index++) {
+    const rawLine = lines[index];
+    const line = rawLine.replace(/^[-*•]\s+/, "").trim();
+
+    // 1. Metadata Headers
+    // E.g. "ภาค 1: จุดเริ่มต้นแห่งเงามืด", "Part 1: ...", "# ภาค 1"
+    const partMatch = line.match(/^(?:#+\s*)?(?:ภาค|Part|บทที่|Chapter|ตอนที่)\s*\d*[:：\s-]*(.*)$/i);
+    if (partMatch) {
+      if (partMatch[1]) partTitle = partMatch[1].trim();
+      continue;
+    }
+
+    // E.g. "ฉากที่ 1: คนทรยศแห่งกำแพง", "Scene 1: ..."
+    const sceneMatch = line.match(/^(?:#+\s*)?(?:ฉากที่|ฉาก|Scene)\s*\d*[:：\s-]*(.*)$/i);
+    if (sceneMatch) {
+      if (sceneMatch[1]) sceneTitle = sceneMatch[1].trim();
+      continue;
+    }
+
+    // E.g. "สถานที่: ลานประหาร วินเทอร์เฟลล์", "Location: ..."
+    const locationMatch = line.match(/^(?:\*{0,2})(?:สถานที่|Location|Place)(?:\*{0,2})[:：]\s*(.*)$/i);
+    if (locationMatch) {
+      if (locationMatch[1]) location = locationMatch[1].trim();
+      continue;
+    }
+
+    // E.g. "เวลา: เช้าตรู่", "Time: ..."
+    const timeMatch = line.match(/^(?:\*{0,2})(?:เวลา|Time)(?:\*{0,2})[:：]\s*(.*)$/i);
+    if (timeMatch) {
+      if (timeMatch[1]) time = timeMatch[1].trim();
+      continue;
+    }
+
+    // E.g. "ตัวละคร: เน็ด, มอส", "Characters: ..."
+    const charListMatch = line.match(/^(?:\*{0,2})(?:ตัวละคร|ตัวละครในฉาก|Characters?)(?:\*{0,2})[:：]\s*(.*)$/i);
+    if (charListMatch) {
+      continue;
+    }
+
+    // Markdown horizontal rule: "---", "***", "___"
+    if (/^[-*_]{3,}$/.test(line)) {
+      continue;
+    }
+
+    // 2. Sound Effects / Stage FX
+    const soundMatch = line.match(/^(?:\*{0,2})(?:เสียง|เสียงประกอบ|SFX|Sound)(?:\*{0,2})[:：]\s*(.*)$/i);
+    const isEnclosedSound =
+      (line.startsWith("*") && line.endsWith("*") && !line.slice(1, -1).includes("*")) ||
+      (line.startsWith("(") && line.endsWith(")") && (line.includes("เสียง") || line.includes("SFX") || line.includes("....."))) ||
+      line.includes("..........") ||
+      line.includes(".....");
+
+    if (soundMatch || isEnclosedSound) {
+      const soundText = soundMatch ? soundMatch[1].trim() : line.replace(/^\*+|\*+$/g, "").trim();
+      blocks.push({
+        id: `sound-${index}`,
+        type: "sound",
+        side: "left",
+        text: soundText || line,
+        originalIndex: index,
+      });
+      continue;
+    }
+
+    // 3. Explicit Narration lines: "ผู้บรรยาย: ...", "บรรยาย: ..."
+    const narrMatch = line.match(/^(?:\*{0,2})(?:ผู้บรรยาย|บรรยาย|คำบรรยาย|Narrator)(?:\*{0,2})[:：]\s*(.*)$/i);
+    if (narrMatch) {
+      const narrText = narrMatch[1].trim().replace(/^["“]|["”]$/g, "");
+      blocks.push({
+        id: `narr-${index}`,
+        type: "narration",
+        speaker: selfChar,
+        speakerName: selfChar?.realNickname || selfChar?.name || "ผู้บรรยาย",
+        isNarrator: true,
+        side: "left",
+        text: narrText,
+        originalIndex: index,
+      });
+      continue;
+    }
+
+    // 4. Character Dialogue with speaker prefix: e.g. "เน็ด: ท่านรู้โทษ...", "มอส (พึมพำ): ..."
+    const speakerPrefixMatch = line.match(/^(?:\*{0,2})([^:：\n\r]+?)(?:\*{0,2})\s*[:：]\s*["“]?(.*?)["”]?$/);
+
+    if (speakerPrefixMatch) {
+      const rawSpeaker = speakerPrefixMatch[1].trim();
+      let speechText = speakerPrefixMatch[2] ? speakerPrefixMatch[2].trim() : "";
+
+      // Check if speaker has inline emotion or stage direction like "มอส (พึมพำ)"
+      const stageDirMatch = rawSpeaker.match(/^([^\(\[（]+)(?:[\(\[（](.*?)[\)\]）])?$/);
+      let cleanSpeakerName = rawSpeaker;
+      if (stageDirMatch) {
+        cleanSpeakerName = stageDirMatch[1].trim();
+        if (stageDirMatch[2] && !speechText.startsWith("(") && !speechText.startsWith("（")) {
+          speechText = `(${stageDirMatch[2].trim()}) ${speechText}`;
+        }
+      }
+
+      if (cleanSpeakerName.length > 0 && cleanSpeakerName.length < 50) {
+        dialogueTurn++;
+        const speakerLower = cleanSpeakerName.toLowerCase();
+
+        // Find match in existing characters (by name or realNickname)
+        const speakerObj = characters.find((c) => {
+          const cName = c.name.toLowerCase();
+          const cNick = (c.realNickname || "").toLowerCase();
+          return (
+            cName === speakerLower ||
+            cNick === speakerLower ||
+            (cName.length > 2 && speakerLower.includes(cName)) ||
+            (speakerLower.length > 2 && cName.includes(speakerLower))
+          );
+        }) || null;
+
+        // Is protagonist / self character?
+        const isSelf = speakerObj
+          ? speakerObj.characterType === "self"
+          : /^(ฉัน|ผม|ข้า|เรา|ตัวเอง|me|i)$/i.test(cleanSpeakerName);
+
+        let finalSpeaker: CharacterMeta;
+        if (speakerObj) {
+          finalSpeaker = speakerObj;
+        } else {
+          // Detect as new character
+          detectedCharacters.add(cleanSpeakerName);
+          finalSpeaker = {
+            id: `temp-${encodeURIComponent(cleanSpeakerName)}`,
+            name: cleanSpeakerName,
+            realNickname: cleanSpeakerName,
+            characterType: isSelf ? "self" : "friend",
+          };
+        }
+
+        const side = isSelf ? "left" : "right";
+
+        blocks.push({
+          id: `dialogue-${index}`,
+          type: "dialogue",
+          speaker: finalSpeaker,
+          speakerName: finalSpeaker.realNickname || finalSpeaker.name || cleanSpeakerName,
+          isNarrator: false,
+          side,
+          text: speechText,
+          originalIndex: index,
+        });
+        continue;
+      }
+    }
+
+    // 5. Quoted dialogue without explicit speaker name: e.g. "ระวังตัวด้วย!"
+    const quoteMatch = line.match(/^["“](.+?)["”]$/);
+    if (quoteMatch) {
+      dialogueTurn++;
+      const isOdd = dialogueTurn % 2 !== 0;
+      let speakerObj: CharacterMeta | null = null;
+      let speakerName = "";
+
+      if (isOdd && selfChar) {
+        speakerObj = selfChar;
+        speakerName = selfChar.realNickname || selfChar.name;
+      } else if (!isOdd && friendChars.length > 0) {
+        speakerObj = friendChars[(Math.floor(dialogueTurn / 2) - 1) % friendChars.length];
+        speakerName = speakerObj.realNickname || speakerObj.name;
+      }
+
+      const isSelf = speakerObj?.characterType === "self" || (!speakerObj && isOdd);
+      blocks.push({
+        id: `dialogue-${index}`,
+        type: "dialogue",
+        speaker: speakerObj || (isSelf ? selfChar : friendChars[0] || null),
+        speakerName: speakerName || (isSelf ? selfChar?.realNickname || "ฉัน" : "เพื่อน"),
+        isNarrator: false,
+        side: isSelf ? "left" : "right",
+        text: quoteMatch[1],
+        originalIndex: index,
+      });
+      continue;
+    }
+
+    // 6. Descriptive scene narration (pure descriptive line without colons)
+    const narratorName = selfChar?.realNickname || selfChar?.name || "ผู้บรรยาย";
+    blocks.push({
+      id: `narr-${index}`,
+      type: "narration",
+      speaker: selfChar,
+      speakerName: narratorName,
+      isNarrator: true,
+      side: "left",
+      text: line,
+      originalIndex: index,
+    });
+  }
+
+  return {
+    partTitle,
+    sceneTitle,
+    location,
+    time,
+    detectedCharacters: Array.from(detectedCharacters),
+    blocks,
+    rawCleanMarkdown: blocksToMarkdown(blocks),
+  };
+}
+
+/**
+ * Splits a bulk script that might contain multiple scenes (e.g. "ฉากที่ 1: ...", "ฉากที่ 2: ...")
+ */
+export function splitMultiSceneScript(
+  bulkScript: string
+): { sceneNumber: number; title: string; location: string; content: string }[] {
+  if (!bulkScript) return [];
+
+  const lines = bulkScript.split(/\r?\n/);
+  const sceneRegex = /^(?:#+\s*)?(?:ฉากที่|ฉาก|Scene)\s*(\d+)?[:：\s-]*(.*)$/i;
+
+  const scenes: { sceneNumber: number; title: string; location: string; contentLines: string[] }[] = [];
+  let currentScene: { sceneNumber: number; title: string; location: string; contentLines: string[] } | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const match = trimmed.match(sceneRegex);
+
+    if (match) {
+      const num = match[1] ? parseInt(match[1], 10) : scenes.length + 1;
+      const title = match[2] ? match[2].trim() : `ฉากที่ ${num}`;
+      currentScene = {
+        sceneNumber: num,
+        title,
+        location: "",
+        contentLines: [],
+      };
+      scenes.push(currentScene);
+      continue;
+    }
+
+    if (currentScene) {
+      const locMatch = trimmed.match(/^(?:\*{0,2})(?:สถานที่|Location|Place)(?:\*{0,2})[:：]\s*(.*)$/i);
+      if (locMatch && !currentScene.location) {
+        currentScene.location = locMatch[1].trim();
+      }
+      currentScene.contentLines.push(line);
+    }
+  }
+
+  if (scenes.length === 0) {
+    return [
+      {
+        sceneNumber: 1,
+        title: "ฉากที่ 1",
+        location: "",
+        content: bulkScript,
+      },
+    ];
+  }
+
+  return scenes.map((s) => ({
+    sceneNumber: s.sceneNumber,
+    title: s.title,
+    location: s.location,
+    content: s.contentLines.join("\n").trim(),
+  }));
+}
+
 /**
  * Parses raw scene markdown into structured dialogue beats for the Visual Novel reader.
  */
@@ -36,102 +342,7 @@ export function parseSceneToDialogueBlocks(
   contentMarkdown: string,
   characters: CharacterMeta[] = []
 ): DialogueBlock[] {
-  if (!contentMarkdown) return [];
-
-  const lines = contentMarkdown
-    .split(/\n+/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-  const blocks: DialogueBlock[] = [];
-  const selfChar = characters.find((c) => c.characterType === "self") || null;
-  const friendChars = characters.filter((c) => c.characterType === "friend");
-
-  let dialogueTurn = 0;
-
-  lines.forEach((line, index) => {
-    // 1. Check if line is Sound Effect / Atmospheric stage direction
-    const isSound =
-      line.startsWith("เสียง") ||
-      line.includes("..........") ||
-      line.includes(".....") ||
-      (line.startsWith("*") && line.endsWith("*")) ||
-      (line.startsWith("(") && line.endsWith(")"));
-
-    if (isSound) {
-      blocks.push({
-        id: `sound-${index}`,
-        type: "sound",
-        side: "left",
-        text: line.replace(/^\*+|\*+$/g, ""),
-        originalIndex: index,
-      });
-      return;
-    }
-
-    // 2. Check if line is Dialogue (quoted with "..." or “...”) or Speaker Prefix
-    const quoteMatch = line.match(/^["“](.+?)["”](.*)$/);
-    const speakerPrefixMatch = line.match(/^([^:：]+)[:：]\s*["“]?(.*?)["”]?$/);
-
-    if (quoteMatch || speakerPrefixMatch) {
-      dialogueTurn++;
-      const isOdd = dialogueTurn % 2 !== 0;
-
-      let speakerName = "";
-      let speechText = line;
-      let speakerObj: CharacterMeta | null = null;
-
-      if (speakerPrefixMatch) {
-        speakerName = speakerPrefixMatch[1].trim();
-        speechText = speakerPrefixMatch[2] || line;
-        speakerObj =
-          characters.find(
-            (c) =>
-              c.name.toLowerCase() === speakerName.toLowerCase() ||
-              (c.realNickname && c.realNickname.toLowerCase() === speakerName.toLowerCase())
-          ) || null;
-      } else if (quoteMatch) {
-        speechText = line;
-        if (isOdd && selfChar) {
-          speakerObj = selfChar;
-          speakerName = selfChar.realNickname || selfChar.name;
-        } else if (!isOdd && friendChars.length > 0) {
-          speakerObj = friendChars[(Math.floor(dialogueTurn / 2) - 1) % friendChars.length];
-          speakerName = speakerObj.realNickname || speakerObj.name;
-        }
-      }
-
-      const isSelf = speakerObj?.characterType === "self" || (!speakerObj && isOdd);
-      const side = isSelf ? "left" : "right";
-
-      blocks.push({
-        id: `dialogue-${index}`,
-        type: "dialogue",
-        speaker: speakerObj || (isSelf ? selfChar : friendChars[0] || null),
-        speakerName: speakerName || (isSelf ? selfChar?.realNickname || "ฉัน" : "เพื่อน"),
-        isNarrator: false,
-        side,
-        text: speechText,
-        originalIndex: index,
-      });
-    } else {
-      // 3. Descriptive scene narration: Voiced by User's Character as the Narrator
-      const narratorName = selfChar?.realNickname || selfChar?.name || "ฉัน";
-
-      blocks.push({
-        id: `narr-${index}`,
-        type: "narration",
-        speaker: selfChar,
-        speakerName: narratorName,
-        isNarrator: true,
-        side: "left",
-        text: line,
-        originalIndex: index,
-      });
-    }
-  });
-
-  return blocks;
+  return parseClaudeScript(contentMarkdown, characters).blocks;
 }
 
 /**

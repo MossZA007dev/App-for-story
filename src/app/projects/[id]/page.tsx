@@ -47,8 +47,11 @@ import { ambientSound } from "@/lib/audio/ambientSynth";
 import { ImageCropModal, AspectRatioType } from "@/components/images/ImageCropModal";
 import { VideoTrimModal } from "@/components/media/VideoTrimModal";
 import { CollaboratorModal } from "@/components/collaboration/CollaboratorModal";
+import { ClaudeScriptImportModal } from "@/components/story/ClaudeScriptImportModal";
 import {
   parseSceneToDialogueBlocks,
+  parseClaudeScript,
+  splitMultiSceneScript,
   blocksToMarkdown,
   resolveImageForDialogueIndex,
   autoDistributeDialogueImages,
@@ -193,6 +196,7 @@ export default function StoryWorkspacePage({
   // Collaborators & Author Persona State
   const [collaborators, setCollaborators] = useState<any[]>([]);
   const [showCollabModal, setShowCollabModal] = useState(false);
+  const [showClaudeImportModal, setShowClaudeImportModal] = useState(false);
   const [currentAuthorName, setCurrentAuthorName] = useState("");
 
   // File Inputs
@@ -729,16 +733,26 @@ export default function StoryWorkspacePage({
           speakerName: "เสียงประกอบ",
         };
       } else {
-        const char = characters.find((c) => c.id === targetKey || c.name === targetKey);
-        const isSelf = char?.characterType === "self";
+        const char = characters.find(
+          (c) =>
+            c.id === targetKey ||
+            c.name.toLowerCase() === targetKey.toLowerCase() ||
+            (c.realNickname && c.realNickname.toLowerCase() === targetKey.toLowerCase())
+        );
+        const isSelf = char?.characterType === "self" || /^(ฉัน|ผม|ข้า|เรา)$/i.test(targetKey);
         const side = isSelf ? "left" : "right";
         next[index] = {
           ...cur,
           type: "dialogue",
           isNarrator: false,
           side,
-          speaker: char || null,
-          speakerName: char?.realNickname || char?.name || "ตัวละคร",
+          speaker: char || {
+            id: `temp-${encodeURIComponent(targetKey)}`,
+            name: targetKey,
+            realNickname: targetKey,
+            characterType: isSelf ? "self" : "friend",
+          },
+          speakerName: char?.realNickname || char?.name || targetKey || "ตัวละคร",
         };
       }
       return next;
@@ -909,6 +923,163 @@ export default function StoryWorkspacePage({
     setLocalDialogueBindings(distributed);
     setHasUnsavedChanges(true);
     toast.success(`จับคู่อัตโนมัติ ${Object.keys(distributed).length} ภาพ กระจายตามบทพูดเรียบร้อย!`);
+  };
+
+  // Auto-register new characters discovered from Claude script into the project DB
+  const autoRegisterNewCharacters = async (detectedNames: string[]) => {
+    let currentChars = [...characters];
+    const missingNames = detectedNames.filter(
+      (name) =>
+        !currentChars.some(
+          (c) =>
+            c.name.toLowerCase() === name.toLowerCase() ||
+            (c.realNickname && c.realNickname.toLowerCase() === name.toLowerCase())
+        )
+    );
+
+    if (missingNames.length === 0) return currentChars;
+
+    try {
+      const createdList = await Promise.all(
+        missingNames.map(async (charName) => {
+          try {
+            const res = await fetch(`/api/projects/${projectId}/characters`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: charName,
+                realNickname: charName,
+                characterType: "friend",
+              }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              return data.character;
+            }
+          } catch (err) {
+            console.error("Failed to auto-create character:", charName, err);
+          }
+          return {
+            id: `temp-${encodeURIComponent(charName)}`,
+            name: charName,
+            realNickname: charName,
+            characterType: "friend",
+          };
+        })
+      );
+
+      const validNew = createdList.filter(Boolean);
+      if (validNew.length > 0) {
+        currentChars = [...currentChars, ...validNew];
+        setCharacters(currentChars);
+        toast.info(`เพิ่มตัวละครใหม่เข้าโปรเจกต์: ${validNew.map((c: any) => c.name).join(", ")}`);
+      }
+    } catch (err) {
+      console.error("Error auto registering characters", err);
+    }
+
+    return currentChars;
+  };
+
+  // Convert raw Claude script and apply into current scene
+  const handleConvertAndApplyScript = async (
+    scriptText: string,
+    options: { notify?: boolean } = { notify: true }
+  ) => {
+    if (!scriptText.trim()) {
+      toast.error("ไม่มีข้อความบทสคริปต์สำหรับแปลง");
+      return;
+    }
+
+    // 1. Initial parse
+    const initialParsed = parseClaudeScript(scriptText, characters);
+
+    // 2. Auto-register any new characters found
+    const updatedChars = await autoRegisterNewCharacters(initialParsed.detectedCharacters);
+
+    // 3. Re-parse with updated characters to bind character objects and sides
+    const finalParsed = parseClaudeScript(scriptText, updatedChars);
+
+    // 4. Update scene title if found and appropriate
+    if (finalParsed.sceneTitle) {
+      setSceneTitleInput(finalParsed.sceneTitle);
+    }
+
+    // 5. Update scene location if found
+    if (finalParsed.location) {
+      setSceneLocationInput(finalParsed.location);
+    }
+
+    // 6. Update dialogue blocks and raw markdown
+    setDialogueBlocks(finalParsed.blocks);
+    setEditableMarkdown(finalParsed.rawCleanMarkdown || scriptText);
+    setIsRawMarkdownMode(false);
+    setHasUnsavedChanges(true);
+
+    if (options.notify) {
+      const charSummary =
+        finalParsed.detectedCharacters.length > 0
+          ? ` (พบตัวละคร: ${finalParsed.detectedCharacters.join(", ")})`
+          : "";
+      toast.success(`จัดบทสนทนาเรียบร้อย ${finalParsed.blocks.length} ประโยค${charSummary}`);
+    }
+  };
+
+  // Bulk import multiple scenes into current part
+  const handleImportAllScenes = async (bulkText: string) => {
+    if (!activePartId) {
+      toast.error("กรุณาเลือกภาคก่อนสร้างฉาก");
+      return;
+    }
+
+    const multiScenes = splitMultiSceneScript(bulkText);
+    if (multiScenes.length <= 1) {
+      await handleConvertAndApplyScript(bulkText);
+      return;
+    }
+
+    try {
+      toast.info(`กำลังสร้าง ${multiScenes.length} ฉากลงในภาคนี้...`);
+
+      // 1. Collect all characters across all scenes and register them
+      const allDetectedChars = new Set<string>();
+      for (const sc of multiScenes) {
+        const p = parseClaudeScript(sc.content, characters);
+        p.detectedCharacters.forEach((c) => allDetectedChars.add(c));
+      }
+      const updatedChars = await autoRegisterNewCharacters(Array.from(allDetectedChars));
+
+      // 2. Create scenes
+      let firstCreatedSceneId = "";
+      for (let i = 0; i < multiScenes.length; i++) {
+        const sc = multiScenes[i];
+        const parsed = parseClaudeScript(sc.content, updatedChars);
+        const res = await fetch(`/api/projects/${projectId}/parts/${activePartId}/scenes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: sc.title || parsed.sceneTitle || `ฉากที่ ${i + 1}`,
+            location: sc.location || parsed.location || "",
+            charactersPresent: parsed.detectedCharacters,
+            contentMarkdown: parsed.rawCleanMarkdown || sc.content,
+            directorNote: "",
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (i === 0) firstCreatedSceneId = data.scene.id;
+        }
+      }
+
+      await loadProjectData();
+      if (firstCreatedSceneId) {
+        setActiveSceneId(firstCreatedSceneId);
+      }
+      toast.success(`สร้างฉากใหม่ทั้งหมด ${multiScenes.length} ฉากเรียบร้อยแล้ว!`);
+    } catch (err: any) {
+      console.error(err);
+      toast.error("เกิดข้อผิดพลาดในการสร้างหลายฉาก");
+    }
   };
 
   // 6. Save Scene (Saves Dialogue Markdown, Bindings, Title, Location)
@@ -1810,6 +1981,15 @@ export default function StoryWorkspacePage({
                 </button>
 
                 <button
+                  onClick={() => setShowClaudeImportModal(true)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-xs font-bold font-thai transition-all active:scale-95 shadow-sm"
+                  title="วางบทสคริปต์จาก Claude เพื่อจัดบทและตัวละครอัตโนมัติ"
+                >
+                  <PenTool className="w-3 h-3 text-sky-400" />
+                  <span>วางบท Claude</span>
+                </button>
+
+                <button
                   onClick={handleAutoDistributeImages}
                   disabled={sceneImages.length === 0 || dialogueBlocks.length === 0}
                   className="p-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-amber-300 border border-slate-800 text-xs transition-colors"
@@ -1858,29 +2038,60 @@ export default function StoryWorkspacePage({
             ) : isRawMarkdownMode ? (
               <div className="space-y-3 h-full flex flex-col">
                 <div className="flex items-center justify-between text-xs text-slate-400 font-thai">
-                  <span>แก้ไขเนื้อเรื่องแบบ Markdown ดิบ (Raw Markdown)</span>
+                  <span className="flex items-center gap-1.5 font-bold text-slate-300">
+                    <FileText className="w-3.5 h-3.5 text-amber-400" />
+                    <span>แก้ไขเนื้อเรื่องแบบ Markdown ดิบ (Raw Script)</span>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleConvertAndApplyScript(editableMarkdown)}
+                      className="px-3 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:brightness-110 active:scale-95 transition-all"
+                    >
+                      <Sparkles className="w-3 h-3 stroke-[2.5]" />
+                      <span>⚡ แปลงบท & จัดตัวละครอัตโนมัติ</span>
+                    </button>
+                    <button
+                      onClick={() => setIsRawMarkdownMode(false)}
+                      className="text-slate-400 hover:text-white underline text-xs"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
+                </div>
+
+                {/* Helpful tip banner */}
+                <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 font-thai flex items-center justify-between gap-2">
+                  <span>
+                    💡 <strong>คำแนะนำ:</strong> คุณสามารถวางบทที่คัดลอกจาก Claude ทั้งหมดลงในช่องนี้ได้เลย ระบบจะแยกชื่อตัวละคร บทพูด เสียงประกอบ และคำบรรยายให้อัตโนมัติเมื่อกดปุ่มแปลงบท
+                  </span>
                   <button
-                    onClick={() => {
-                      const parsed = parseSceneToDialogueBlocks(editableMarkdown, characters);
-                      setDialogueBlocks(parsed);
-                      setIsRawMarkdownMode(false);
-                      setHasUnsavedChanges(true);
-                      toast.success("แปลง Markdown เป็นโหมดบทพูดเรียบร้อย!");
-                    }}
-                    className="text-amber-400 underline font-bold"
+                    onClick={() => setShowClaudeImportModal(true)}
+                    className="flex-shrink-0 px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/30 font-bold"
                   >
-                    กลับสู่โหมดจัดบทพูด
+                    เปิดหน้าต่างช่วยนำเข้า
                   </button>
                 </div>
+
                 <textarea
                   value={editableMarkdown}
                   onChange={(e) => {
                     setEditableMarkdown(e.target.value);
                     setHasUnsavedChanges(true);
                   }}
+                  placeholder="วางบทสคริปต์จาก Claude หรือแก้ไข Markdown ได้ที่นี่..."
                   rows={18}
-                  className="w-full flex-1 bg-slate-950 border border-slate-700 rounded-xl p-3.5 text-sm text-slate-100 font-thai leading-relaxed focus:outline-none focus:border-amber-400"
+                  className="w-full flex-1 bg-slate-950 border border-slate-700 rounded-xl p-3.5 text-sm text-slate-100 font-thai leading-relaxed focus:outline-none focus:border-amber-400 shadow-inner"
                 />
+
+                <div className="flex items-center justify-between text-xs font-thai text-slate-400 pt-1">
+                  <span>{editableMarkdown.split(/\r?\n/).filter(Boolean).length} บรรทัด</span>
+                  <button
+                    onClick={() => handleConvertAndApplyScript(editableMarkdown)}
+                    className="text-amber-400 hover:text-amber-300 underline font-bold"
+                  >
+                    → กลับสู่โหมดจัดบทพูด (Visual Mode)
+                  </button>
+                </div>
               </div>
             ) : dialogueBlocks.length > 0 ? (
               dialogueBlocks.map((block, idx) => {
@@ -2028,6 +2239,17 @@ export default function StoryWorkspacePage({
                                 {c.name} {c.realNickname ? `(${c.realNickname})` : ""}
                               </option>
                             ))}
+                            {block.speaker &&
+                              !block.isNarrator &&
+                              !characters.some(
+                                (c) =>
+                                  c.id === block.speaker?.id ||
+                                  c.name.toLowerCase() === (block.speaker?.name || "").toLowerCase()
+                              ) && (
+                                <option value={block.speaker.id || block.speaker.name}>
+                                  🎭 {block.speaker.realNickname || block.speaker.name}
+                                </option>
+                              )}
                           </select>
 
                           {mbti && (
@@ -2628,6 +2850,17 @@ export default function StoryWorkspacePage({
             })
             .catch(() => {});
         }}
+      />
+
+      {/* Claude Script Import Modal */}
+      <ClaudeScriptImportModal
+        isOpen={showClaudeImportModal}
+        onClose={() => setShowClaudeImportModal(false)}
+        characters={characters}
+        activePartTitle={currentPart?.title}
+        currentSceneTitle={sceneTitleInput || activeScene?.title}
+        onApplySingleScene={handleConvertAndApplyScript}
+        onApplyMultiScenes={handleImportAllScenes}
       />
     </div>
   );

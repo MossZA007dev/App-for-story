@@ -7,12 +7,16 @@ import fs from "fs";
 // Ensure data folder and images folder exist
 const dataDir = path.join(process.cwd(), "data");
 const imagesDir = path.join(dataDir, "images");
+const audioDir = path.join(dataDir, "audio");
 
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 if (!fs.existsSync(imagesDir)) {
   fs.mkdirSync(imagesDir, { recursive: true });
+}
+if (!fs.existsSync(audioDir)) {
+  fs.mkdirSync(audioDir, { recursive: true });
 }
 
 const dbPath = path.join(dataDir, "saga_forge.db");
@@ -211,6 +215,12 @@ export function initDatabase() {
   } catch {}
   try {
     sqlite.exec("ALTER TABLE characters ADD COLUMN avatar_url TEXT DEFAULT ''");
+  } catch {}
+  try {
+    sqlite.exec("ALTER TABLE scenes ADD COLUMN bgm_url TEXT DEFAULT ''");
+  } catch {}
+  try {
+    sqlite.exec("ALTER TABLE scenes ADD COLUMN bgm_title TEXT DEFAULT ''");
   } catch {}
 }
 

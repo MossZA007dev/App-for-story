@@ -87,6 +87,8 @@ export const scenes = sqliteTable("scenes", {
   wordCount: integer("word_count").default(0),
   version: integer("version").default(1),
   directorNote: text("director_note").default(""),
+  bgmUrl: text("bgm_url").default(""),
+  bgmTitle: text("bgm_title").default(""),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, useRef, use } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -22,6 +22,8 @@ import {
   PenTool,
   User,
   Users,
+  Upload,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
@@ -48,6 +50,8 @@ interface SceneItem {
   version: number;
   charactersPresentParsed?: string[];
   images?: SceneImage[];
+  bgmUrl?: string | null;
+  bgmTitle?: string | null;
 }
 
 interface PartItem {
@@ -101,18 +105,39 @@ export default function NovelReaderPage({
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Audio BGM State
+  // Audio Engine State
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const [audioMode, setAudioMode] = useState<"ambient" | "custom">("custom");
   const [isPlayingBgm, setIsPlayingBgm] = useState(false);
+  const [isCustomAudioPlaying, setIsCustomAudioPlaying] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<AudioTrack>("wildfire");
   const [volume, setVolume] = useState(0.45);
   const [showAudioControls, setShowAudioControls] = useState(false);
+  const [isUploadingBgm, setIsUploadingBgm] = useState(false);
+  const [isCreatingNextEp, setIsCreatingNextEp] = useState(false);
 
-  // Stop ambient sound when leaving page
-  useEffect(() => {
-    return () => {
-      ambientSound.stop();
-    };
-  }, []);
+  const isAnyPlaying =
+    (audioMode === "custom" && isCustomAudioPlaying) ||
+    (audioMode === "ambient" && isPlayingBgm);
+
+  // Load scene images
+  const loadSceneImages = async (sceneId: string) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/scenes/${sceneId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setActiveSceneImages(data.images || []);
+      setSelectedImageIndex(0);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSelectSceneItem = (scene: SceneItem) => {
+    setActiveScene(scene);
+    loadSceneImages(scene.id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   // Fetch project and scene data
   useEffect(() => {
@@ -159,49 +184,247 @@ export default function NovelReaderPage({
     fetchProject();
   }, [projectId, initialSceneId]);
 
-  const loadSceneImages = async (sceneId: string) => {
-    try {
-      const res = await fetch(`/api/projects/${projectId}/scenes/${sceneId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setActiveSceneImages(data.images || []);
-      setSelectedImageIndex(0);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleSelectSceneItem = (scene: SceneItem) => {
-    setActiveScene(scene);
-    loadSceneImages(scene.id);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  // Toggle BGM Playback
-  const handleToggleBgm = (trackOverride?: AudioTrack) => {
-    const targetTrack = trackOverride || currentTrack;
-    if (isPlayingBgm && !trackOverride) {
+  // Stop sound when leaving page
+  useEffect(() => {
+    return () => {
       ambientSound.stop();
-      setIsPlayingBgm(false);
-      toast.info("ปิดเสียงเพลงบรรยากาศเรียบร้อย");
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+      }
+    };
+  }, []);
+
+  // Sync custom audio when activeScene changes
+  useEffect(() => {
+    if (activeScene?.bgmUrl) {
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.src = activeScene.bgmUrl;
+        audioPlayerRef.current.volume = volume;
+        if (isCustomAudioPlaying) {
+          audioPlayerRef.current.play().catch((e) => console.warn(e));
+        }
+      }
     } else {
-      ambientSound.setVolume(volume);
-      ambientSound.play(targetTrack);
-      setIsPlayingBgm(true);
-      setCurrentTrack(targetTrack);
-      const trackLabels: Record<AudioTrack, string> = {
-        wildfire: "เพลิงป่า (Wildfire Drone)",
-        winter: "ลมเหมันต์ (Winter Winds)",
-        war: "มหากาพย์ศึก (War Drums)",
-        shadows: "เงาทมิฬ (Shadows Ethereal)",
-      };
-      toast.success(`กำลังเล่นเพลง: ${trackLabels[targetTrack]}`);
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+      }
+      setIsCustomAudioPlaying(false);
     }
+  }, [activeScene?.id, activeScene?.bgmUrl]);
+
+  // Master Play/Pause Toggle
+  const handleToggleMasterPlay = () => {
+    // If active scene has custom BGM, default to custom unless user explicitly chose ambient
+    if (activeScene?.bgmUrl && audioMode === "custom") {
+      if (isCustomAudioPlaying) {
+        if (audioPlayerRef.current) audioPlayerRef.current.pause();
+        setIsCustomAudioPlaying(false);
+        toast.info("หยุดเล่นเพลงประจำฉาก");
+      } else {
+        ambientSound.stop();
+        setIsPlayingBgm(false);
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.volume = volume;
+          audioPlayerRef.current.play().catch((e) => console.warn(e));
+        }
+        setIsCustomAudioPlaying(true);
+        toast.success(`กำลังเล่นเพลง: ${activeScene.bgmTitle || "เพลงประจำฉาก"}`);
+      }
+    } else {
+      // Ambient Synth Drone
+      if (isPlayingBgm) {
+        ambientSound.stop();
+        setIsPlayingBgm(false);
+        toast.info("ปิดเสียงเพลงบรรยากาศเรียบร้อย");
+      } else {
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.pause();
+          setIsCustomAudioPlaying(false);
+        }
+        ambientSound.setVolume(volume);
+        ambientSound.play(currentTrack);
+        setIsPlayingBgm(true);
+        setAudioMode("ambient");
+        const trackLabels: Record<AudioTrack, string> = {
+          wildfire: "เพลิงป่า (Wildfire Drone)",
+          winter: "ลมเหมันต์ (Winter Winds)",
+          war: "มหากาพย์ศึก (War Drums)",
+          shadows: "เงาทมิฬ (Shadows Ethereal)",
+        };
+        toast.success(`กำลังเล่นเพลง: ${trackLabels[currentTrack]}`);
+      }
+    }
+  };
+
+  // Play Specific Ambient Track
+  const handleSelectAmbientTrack = (track: AudioTrack) => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      setIsCustomAudioPlaying(false);
+    }
+    ambientSound.setVolume(volume);
+    ambientSound.play(track);
+    setIsPlayingBgm(true);
+    setCurrentTrack(track);
+    setAudioMode("ambient");
+    const trackLabels: Record<AudioTrack, string> = {
+      wildfire: "เพลิงป่า (Wildfire Drone)",
+      winter: "ลมเหมันต์ (Winter Winds)",
+      war: "มหากาพย์ศึก (War Drums)",
+      shadows: "เงาทมิฬ (Shadows Ethereal)",
+    };
+    toast.success(`เล่นเสียงสังเคราะห์: ${trackLabels[track]}`);
+  };
+
+  // Play Custom Scene Track
+  const handlePlayCustomTrack = () => {
+    if (!activeScene?.bgmUrl) return;
+    ambientSound.stop();
+    setIsPlayingBgm(false);
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.volume = volume;
+      audioPlayerRef.current.play().catch((e) => console.warn(e));
+    }
+    setIsCustomAudioPlaying(true);
+    setAudioMode("custom");
+    toast.success(`เล่นเพลงประจำฉาก: ${activeScene.bgmTitle || "เพลงประจำฉาก"}`);
+  };
+
+  const handlePauseCustomTrack = () => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+    }
+    setIsCustomAudioPlaying(false);
+    toast.info("หยุดเพลงประจำฉาก");
   };
 
   const handleVolumeChange = (newVol: number) => {
     setVolume(newVol);
     ambientSound.setVolume(newVol);
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.volume = newVol;
+    }
+  };
+
+  // Upload Scene BGM directly in Reader
+  const handleUploadSceneBgm = async (file: File) => {
+    if (!activeScene) {
+      toast.error("กรุณาเลือกฉากก่อนอัปโหลด");
+      return;
+    }
+    try {
+      setIsUploadingBgm(true);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
+
+      const res = await fetch(`/api/projects/${projectId}/scenes/${activeScene.id}/audio`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "อัปโหลดไม่สำเร็จ");
+
+      const updatedScene = { ...activeScene, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle };
+      setActiveScene(updatedScene);
+      setAllScenesList((prev) =>
+        prev.map((item) =>
+          item.scene.id === activeScene.id ? { ...item, scene: updatedScene } : item
+        )
+      );
+
+      setAudioMode("custom");
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.src = data.bgmUrl;
+        audioPlayerRef.current.volume = volume;
+        audioPlayerRef.current.play().catch((e) => console.warn(e));
+        setIsCustomAudioPlaying(true);
+      }
+      ambientSound.stop();
+      setIsPlayingBgm(false);
+
+      toast.success(`อัปโหลดเพลง "${data.bgmTitle}" สำเร็จและเริ่มเล่นทันที!`);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "อัปโหลดเพลงไม่สำเร็จ");
+    } finally {
+      setIsUploadingBgm(false);
+    }
+  };
+
+  const handleDeleteSceneBgm = async () => {
+    if (!activeScene) return;
+    try {
+      const res = await fetch(`/api/projects/${projectId}/scenes/${activeScene.id}/audio`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("ลบเพลงไม่สำเร็จ");
+
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+      }
+      setIsCustomAudioPlaying(false);
+
+      const updatedScene = { ...activeScene, bgmUrl: null, bgmTitle: null };
+      setActiveScene(updatedScene);
+      setAllScenesList((prev) =>
+        prev.map((item) =>
+          item.scene.id === activeScene.id ? { ...item, scene: updatedScene } : item
+        )
+      );
+
+      toast.success("ลบเพลงประจำฉากเรียบร้อย");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "ลบเพลงไม่สำเร็จ");
+    }
+  };
+
+  // Next EP Creator Handler
+  const handleCreateNextEpisode = async () => {
+    if (!activeScene) return;
+    const targetPartId = activeScene.partId || (parts.length > 0 ? parts[0].id : "");
+    if (!targetPartId) {
+      toast.error("ไม่พบข้อมูลภาคสำหรับสร้างฉากถัดไป");
+      return;
+    }
+
+    try {
+      setIsCreatingNextEp(true);
+      const nextOrder = (activeScene.order || 0) + 1;
+      const res = await fetch(`/api/projects/${projectId}/parts/${targetPartId}/scenes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `ฉากที่ ${nextOrder}: การเผชิญหน้าบทใหม่`,
+          location: activeScene.location || "คิงส์แลนดิง (King's Landing)",
+          charactersPresent: activeScene.charactersPresentParsed || [],
+          contentMarkdown: `เสียงฝีเท้าหนักแน่นดังก้องขึ้นในความมืด...\n\n"พวกเราต้องเตรียมพร้อมสำหรับสิ่งที่จะเกิดขึ้นต่อไป"`,
+          summary: `จุดเริ่มต้นของฉากที่ ${nextOrder}`,
+          directorNote: "สานต่อความเข้มข้นจากฉากก่อนหน้า",
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "สร้าง Next EP ไม่สำเร็จ");
+
+      const createdScene = data.scene;
+      const currentPartObj = parts.find((p) => p.id === targetPartId) || parts[0];
+      const newEntry = { part: currentPartObj, scene: createdScene };
+      setAllScenesList((prev) => [...prev, newEntry]);
+
+      // Select new scene
+      setActiveScene(createdScene);
+      loadSceneImages(createdScene.id);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+
+      toast.success(`สร้างและเปิดอ่าน Next EP (ฉากที่ ${nextOrder}) เรียบร้อย!`);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "สร้างฉากถัดไปไม่สำเร็จ");
+    } finally {
+      setIsCreatingNextEp(false);
+    }
   };
 
   // Find index in flat list for next/prev buttons
@@ -381,12 +604,12 @@ export default function NovelReaderPage({
             </h1>
           </div>
 
-          {/* Right: Ambient BGM Music Player Widget (Figma 182x38px placeholder) */}
+          {/* Right: Ambient & Scene BGM Music Player Widget */}
           <div className="flex items-center gap-2 self-start md:self-auto">
             <div className="relative">
               <div
-                className={`w-[188px] h-[38px] rounded-xl px-2.5 flex items-center justify-between gap-2 border transition-all ${
-                  isPlayingBgm
+                className={`w-[200px] h-[38px] rounded-xl px-2.5 flex items-center justify-between gap-2 border transition-all ${
+                  isAnyPlaying
                     ? "bg-[#161a23] border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.25)] ring-1 ring-amber-400/40"
                     : "bg-[#111622] border-slate-800 hover:border-slate-700"
                 }`}
@@ -394,15 +617,15 @@ export default function NovelReaderPage({
                 {/* Play / Pause Toggle Button */}
                 <button
                   type="button"
-                  onClick={() => handleToggleBgm()}
+                  onClick={handleToggleMasterPlay}
                   className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
-                    isPlayingBgm
+                    isAnyPlaying
                       ? "bg-amber-500 text-slate-950 font-bold"
                       : "bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700"
                   }`}
-                  title={isPlayingBgm ? "หยุดเล่นเพลง" : "เปิดเพลงบรรยากาศ (BGM)"}
+                  title={isAnyPlaying ? "หยุดเล่นเพลง" : "เปิดเพลงบรรยากาศ (BGM)"}
                 >
-                  {isPlayingBgm ? (
+                  {isAnyPlaying ? (
                     <Pause className="w-3.5 h-3.5 fill-current" />
                   ) : (
                     <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
@@ -416,7 +639,7 @@ export default function NovelReaderPage({
                   title="คลิกเพื่อเลือกเพลงหรือปรับระดับเสียง"
                 >
                   <div className="flex items-center gap-1.5">
-                    {isPlayingBgm ? (
+                    {isAnyPlaying ? (
                       <div className="flex items-end gap-[2px] h-3.5 w-3.5 flex-shrink-0">
                         <span className="w-[2px] bg-amber-400 rounded-full animate-bounce [animation-delay:-0.3s] h-3" />
                         <span className="w-[2px] bg-amber-400 rounded-full animate-bounce [animation-delay:-0.1s] h-4" />
@@ -426,14 +649,18 @@ export default function NovelReaderPage({
                       <Music className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                     )}
                     <span className="text-[11px] font-thai font-semibold text-slate-200 truncate">
-                      {isPlayingBgm
-                        ? currentTrack === "wildfire"
+                      {isAnyPlaying
+                        ? audioMode === "custom"
+                          ? `🎵 ${activeScene?.bgmTitle || "เพลงประจำฉาก"}`
+                          : currentTrack === "wildfire"
                           ? "🔥 เพลิงป่า"
                           : currentTrack === "winter"
                           ? "❄️ ลมเหมันต์"
                           : currentTrack === "war"
                           ? "⚔️ กลองศึก"
                           : "🌑 เงาทมิฬ"
+                        : activeScene?.bgmUrl
+                        ? `🎵 ${activeScene.bgmTitle || "เพลงประจำฉาก"}`
                         : "เปิดเพลง BGM"}
                     </span>
                   </div>
@@ -444,7 +671,7 @@ export default function NovelReaderPage({
                   type="button"
                   onClick={() => setShowAudioControls(!showAudioControls)}
                   className="p-1 rounded text-slate-400 hover:text-white"
-                  title="ตัวเลือกเสียงบรรยากาศ"
+                  title="ตัวเลือกเสียงบรรยากาศ & อัปโหลดเพลง"
                 >
                   <SlidersHorizontal className="w-3.5 h-3.5" />
                 </button>
@@ -452,54 +679,133 @@ export default function NovelReaderPage({
 
               {/* BGM Dropdown Settings Panel */}
               {showAudioControls && (
-                <div className="absolute right-0 mt-2 w-64 rounded-xl bg-[#0e131d] border border-slate-700 p-3 shadow-2xl z-50 animate-fadeIn space-y-3 font-thai">
+                <div className="absolute right-0 mt-2 w-72 rounded-xl bg-[#0e131d] border border-slate-700 p-3.5 shadow-2xl z-50 animate-fadeIn space-y-3 font-thai">
                   <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                     <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
                       <Music className="w-3.5 h-3.5" />
-                      <span>เสียงดนตรีบรรยากาศ Dark AU</span>
+                      <span>ระบบเสียง & เพลงประกอบฉาก</span>
                     </span>
-                    <span className="text-[10px] text-slate-400 font-mono">Web Audio Synth</span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {audioMode === "custom" && isCustomAudioPlaying ? "Custom MP3" : "Dark Synth"}
+                    </span>
                   </div>
 
-                  {/* Track Selection Buttons */}
+                  {/* 1. Custom Scene BGM Section */}
+                  <div className="space-y-1.5 bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1">
+                        <span>🎵 เพลงเฉพาะประจำฉากนี้</span>
+                      </span>
+                      {activeScene?.bgmUrl && (
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30">
+                          มีไฟล์เพลง
+                        </span>
+                      )}
+                    </div>
+
+                    {activeScene?.bgmUrl ? (
+                      <div className="space-y-2 pt-1">
+                        <div className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-black/40 border border-slate-700/60">
+                          <div className="flex items-center gap-2 overflow-hidden flex-1">
+                            <button
+                              type="button"
+                              onClick={() => (isCustomAudioPlaying ? handlePauseCustomTrack() : handlePlayCustomTrack())}
+                              className="w-6 h-6 rounded-md bg-amber-500 text-slate-950 flex items-center justify-center flex-shrink-0 hover:bg-amber-400 transition-colors"
+                              title={isCustomAudioPlaying ? "หยุดเพลงนี้" : "เล่นเพลงนี้"}
+                            >
+                              {isCustomAudioPlaying ? (
+                                <Pause className="w-3 h-3 fill-current" />
+                              ) : (
+                                <Play className="w-3 h-3 fill-current ml-0.5" />
+                              )}
+                            </button>
+                            <span className="text-xs text-slate-200 truncate font-medium">
+                              {activeScene.bgmTitle || "เพลงประจำฉาก"}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleDeleteSceneBgm}
+                            className="p-1 rounded text-slate-500 hover:text-red-400 transition-colors"
+                            title="ลบเพลงประจำฉากนี้"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <label className="cursor-pointer block text-center py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium border border-slate-700 transition-colors">
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleUploadSceneBgm(file);
+                            }}
+                          />
+                          {isUploadingBgm ? "กำลังอัปโหลด..." : "เปลี่ยนเพลงประจำฉาก (MP3/WAV)"}
+                        </label>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 pt-1">
+                        <p className="text-[11px] text-slate-400">ยังไม่มีเพลงเฉพาะสำหรับฉากนี้</p>
+                        <label className="cursor-pointer flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors shadow">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>{isUploadingBgm ? "กำลังอัปโหลด..." : "อัปโหลดเพลงประจำฉาก (MP3)"}</span>
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleUploadSceneBgm(file);
+                            }}
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 2. Synthetic Ambient Drones */}
                   <div className="space-y-1">
-                    <p className="text-[11px] text-slate-400 font-medium">เลือกบรรยากาศ:</p>
+                    <p className="text-[11px] text-slate-400 font-medium">เสียงบรรยากาศสังเคราะห์ (Web Audio):</p>
                     <div className="grid grid-cols-2 gap-1.5 text-xs">
                       <button
-                        onClick={() => handleToggleBgm("wildfire")}
+                        onClick={() => handleSelectAmbientTrack("wildfire")}
                         className={`px-2 py-1.5 rounded-lg border text-left transition-colors ${
-                          currentTrack === "wildfire" && isPlayingBgm
-                            ? "bg-amber-500/20 text-amber-300 border-amber-500/50"
+                          audioMode === "ambient" && currentTrack === "wildfire" && isPlayingBgm
+                            ? "bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold"
                             : "bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800"
                         }`}
                       >
                         🔥 เพลิงป่า
                       </button>
                       <button
-                        onClick={() => handleToggleBgm("winter")}
+                        onClick={() => handleSelectAmbientTrack("winter")}
                         className={`px-2 py-1.5 rounded-lg border text-left transition-colors ${
-                          currentTrack === "winter" && isPlayingBgm
-                            ? "bg-sky-500/20 text-sky-300 border-sky-500/50"
+                          audioMode === "ambient" && currentTrack === "winter" && isPlayingBgm
+                            ? "bg-sky-500/20 text-sky-300 border-sky-500/50 font-bold"
                             : "bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800"
                         }`}
                       >
                         ❄️ ลมเหมันต์
                       </button>
                       <button
-                        onClick={() => handleToggleBgm("war")}
+                        onClick={() => handleSelectAmbientTrack("war")}
                         className={`px-2 py-1.5 rounded-lg border text-left transition-colors ${
-                          currentTrack === "war" && isPlayingBgm
-                            ? "bg-red-500/20 text-red-300 border-red-500/50"
+                          audioMode === "ambient" && currentTrack === "war" && isPlayingBgm
+                            ? "bg-red-500/20 text-red-300 border-red-500/50 font-bold"
                             : "bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800"
                         }`}
                       >
                         ⚔️ กลองศึก
                       </button>
                       <button
-                        onClick={() => handleToggleBgm("shadows")}
+                        onClick={() => handleSelectAmbientTrack("shadows")}
                         className={`px-2 py-1.5 rounded-lg border text-left transition-colors ${
-                          currentTrack === "shadows" && isPlayingBgm
-                            ? "bg-purple-500/20 text-purple-300 border-purple-500/50"
+                          audioMode === "ambient" && currentTrack === "shadows" && isPlayingBgm
+                            ? "bg-purple-500/20 text-purple-300 border-purple-500/50 font-bold"
                             : "bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800"
                         }`}
                       >
@@ -508,8 +814,8 @@ export default function NovelReaderPage({
                     </div>
                   </div>
 
-                  {/* Volume Slider */}
-                  <div className="space-y-1.5 pt-1">
+                  {/* 3. Master Volume Slider */}
+                  <div className="space-y-1.5 pt-1 border-t border-slate-800">
                     <div className="flex items-center justify-between text-[11px] text-slate-400">
                       <span className="flex items-center gap-1">
                         <Volume2 className="w-3.5 h-3.5 text-amber-400" />
@@ -874,26 +1180,56 @@ export default function NovelReaderPage({
             {nextSceneItem ? (
               <button
                 onClick={() => handleSelectSceneItem(nextSceneItem.scene)}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs font-thai shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all"
+                className="w-full sm:w-auto inline-flex items-center justify-between sm:justify-start gap-3 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:brightness-110 text-slate-950 font-bold text-xs font-thai shadow-[0_0_20px_rgba(245,158,11,0.35)] transition-all transform active:scale-95 cursor-pointer"
               >
-                <div className="text-right">
-                  <p className="text-[10px] text-slate-900/80">อ่านฉากถัดไป</p>
-                  <p className="truncate max-w-[140px]">{nextSceneItem.scene.title}</p>
+                <div className="text-left">
+                  <p className="text-[10px] uppercase font-black text-slate-950/70 tracking-wider">NEXT EP ⏭️</p>
+                  <p className="truncate max-w-[170px] text-xs font-black">
+                    ฉากที่ {nextSceneItem.scene.order}: {nextSceneItem.scene.title}
+                  </p>
                 </div>
-                <ArrowRight className="w-4 h-4" />
+                <div className="w-7 h-7 rounded-lg bg-black/20 flex items-center justify-center">
+                  <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+                </div>
               </button>
             ) : (
-              <Link
-                href={`/projects/${projectId}`}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-thai font-semibold hover:bg-amber-500/30 transition-colors"
-              >
-                <PenTool className="w-3.5 h-3.5" />
-                <span>จบฉากที่มีอยู่แล้ว • ไปเขียนเพิ่มที่ Studio</span>
-              </Link>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  onClick={handleCreateNextEpisode}
+                  disabled={isCreatingNextEp}
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-between gap-3 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs font-thai shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all transform active:scale-95 disabled:opacity-60 cursor-pointer"
+                >
+                  <div className="text-left">
+                    <p className="text-[10px] uppercase font-black text-slate-950/70 tracking-wider">NEXT EP ⏭️</p>
+                    <p className="text-xs font-black">
+                      {isCreatingNextEp ? "กำลังสร้าง Next EP..." : "✨ สร้าง & อ่านฉากถัดไปทันที (Next EP)"}
+                    </p>
+                  </div>
+                  <div className="w-7 h-7 rounded-lg bg-black/20 flex items-center justify-center">
+                    <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+                  </div>
+                </button>
+
+                <Link
+                  href={`/projects/${projectId}`}
+                  className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-700 text-xs font-thai transition-colors"
+                  title="ไปที่ Studio เพื่อแต่งต่อด้วยตนเอง"
+                >
+                  <PenTool className="w-4 h-4 text-amber-400" />
+                </Link>
+              </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* Hidden Audio Player for Custom Scene BGM */}
+      <audio
+        ref={audioPlayerRef}
+        loop
+        className="hidden"
+        onEnded={() => setIsCustomAudioPlaying(false)}
+      />
 
       {/* Lightbox Modal */}
       {lightboxImage && (

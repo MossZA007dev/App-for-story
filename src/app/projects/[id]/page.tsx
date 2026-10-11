@@ -33,6 +33,10 @@ import {
   Clock,
   ArrowRight,
   Maximize2,
+  Music,
+  Volume2,
+  Play,
+  Pause,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -72,6 +76,8 @@ interface SceneItem {
   updatedAt: string;
   charactersPresentParsed?: string[];
   images?: SceneImage[];
+  bgmUrl?: string | null;
+  bgmTitle?: string | null;
 }
 
 interface PartItem {
@@ -102,8 +108,8 @@ export default function StoryWorkspacePage({
   const [activeScene, setActiveScene] = useState<SceneItem | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Left Panel: Visual Stage State
-  const [visualTab, setVisualTab] = useState<"ai_scenes" | "movie_stills">("ai_scenes");
+  // Left Panel: Visual Stage & Audio State
+  const [visualTab, setVisualTab] = useState<"ai_scenes" | "movie_stills" | "bgm_audio">("ai_scenes");
   const [sceneImages, setSceneImages] = useState<SceneImage[]>([]);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [customImagePrompt, setCustomImagePrompt] = useState("");
@@ -112,6 +118,15 @@ export default function StoryWorkspacePage({
   const [stillCaptionInput, setStillCaptionInput] = useState("");
   const [isUploadingStill, setIsUploadingStill] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+
+  // Scene BGM Audio State in Studio
+  const studioAudioRef = useRef<HTMLAudioElement | null>(null);
+  const studioAudioInputRef = useRef<HTMLInputElement | null>(null);
+  const [isUploadingStudioBgm, setIsUploadingStudioBgm] = useState(false);
+  const [isStudioAudioPlaying, setIsStudioAudioPlaying] = useState(false);
+  const [studioAudioVolume, setStudioAudioVolume] = useState(0.7);
+  const [customAudioUrlInput, setCustomAudioUrlInput] = useState("");
+  const [customAudioTitleInput, setCustomAudioTitleInput] = useState("");
 
   // Right Panel: Story Writing & Streaming State
   const [directorsNote, setDirectorsNote] = useState("");
@@ -579,6 +594,142 @@ export default function StoryWorkspacePage({
     }
   };
 
+  // Studio BGM Handlers
+  const handleUploadStudioBgm = async (file: File) => {
+    if (!activeScene) {
+      toast.error("กรุณาเลือกฉากก่อนอัปโหลดเพลง");
+      return;
+    }
+    try {
+      setIsUploadingStudioBgm(true);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
+
+      const res = await fetch(`/api/projects/${projectId}/scenes/${activeScene.id}/audio`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "อัปโหลดไม่สำเร็จ");
+
+      // Update activeScene
+      const updatedScene = { ...activeScene, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle };
+      setActiveScene(updatedScene);
+      setParts((prevParts) =>
+        prevParts.map((part) => ({
+          ...part,
+          scenes: part.scenes.map((s) =>
+            s.id === activeScene.id ? { ...s, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle } : s
+          ),
+        }))
+      );
+
+      // Play uploaded music in studio preview
+      if (studioAudioRef.current) {
+        studioAudioRef.current.src = data.bgmUrl;
+        studioAudioRef.current.volume = studioAudioVolume;
+        studioAudioRef.current.play().catch((e) => console.warn(e));
+        setIsStudioAudioPlaying(true);
+      }
+
+      toast.success(`อัปโหลดเพลง "${data.bgmTitle}" สำหรับฉากนี้สำเร็จ!`);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "อัปโหลดเพลงไม่สำเร็จ");
+    } finally {
+      setIsUploadingStudioBgm(false);
+    }
+  };
+
+  const handleSaveCustomAudioUrl = async () => {
+    if (!activeScene) return;
+    if (!customAudioUrlInput.trim()) {
+      toast.error("กรุณาระบุ URL ของเพลง");
+      return;
+    }
+
+    try {
+      setIsUploadingStudioBgm(true);
+      const res = await fetch(`/api/projects/${projectId}/scenes/${activeScene.id}/audio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bgmUrl: customAudioUrlInput.trim(),
+          bgmTitle: customAudioTitleInput.trim() || "เพลงประกอบประจำฉาก (Custom URL)",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "บันทึกเพลงไม่สำเร็จ");
+
+      const updatedScene = { ...activeScene, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle };
+      setActiveScene(updatedScene);
+      setParts((prevParts) =>
+        prevParts.map((part) => ({
+          ...part,
+          scenes: part.scenes.map((s) =>
+            s.id === activeScene.id ? { ...s, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle } : s
+          ),
+        }))
+      );
+
+      setCustomAudioUrlInput("");
+      setCustomAudioTitleInput("");
+      toast.success("บันทึกเพลงประกอบประจำฉากเรียบร้อยแล้ว!");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "บันทึกเพลงไม่สำเร็จ");
+    } finally {
+      setIsUploadingStudioBgm(false);
+    }
+  };
+
+  const handleDeleteStudioBgm = async () => {
+    if (!activeScene) return;
+    if (!confirm("คุณแน่ใจหรือไม่ว่าต้องการลบเพลงประกอบของฉากนี้?")) return;
+
+    try {
+      const res = await fetch(`/api/projects/${projectId}/scenes/${activeScene.id}/audio`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "ลบเพลงไม่สำเร็จ");
+
+      if (studioAudioRef.current) {
+        studioAudioRef.current.pause();
+      }
+      setIsStudioAudioPlaying(false);
+
+      const updatedScene = { ...activeScene, bgmUrl: null, bgmTitle: null };
+      setActiveScene(updatedScene);
+      setParts((prevParts) =>
+        prevParts.map((part) => ({
+          ...part,
+          scenes: part.scenes.map((s) =>
+            s.id === activeScene.id ? { ...s, bgmUrl: null, bgmTitle: null } : s
+          ),
+        }))
+      );
+
+      toast.success("ลบเพลงประกอบประจำฉากเรียบร้อย");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "ลบเพลงไม่สำเร็จ");
+    }
+  };
+
+  const handleToggleStudioAudio = () => {
+    if (!studioAudioRef.current) return;
+    if (isStudioAudioPlaying) {
+      studioAudioRef.current.pause();
+      setIsStudioAudioPlaying(false);
+    } else {
+      studioAudioRef.current.volume = studioAudioVolume;
+      studioAudioRef.current.play().catch((e) => console.warn(e));
+      setIsStudioAudioPlaying(true);
+    }
+  };
+
   // Filter images for Left Panel
   const aiImages = sceneImages.filter((img) => img.kind !== "movie_still" && img.kind !== "reference");
   const movieStills = sceneImages.filter((img) => img.kind === "movie_still" || img.kind === "reference");
@@ -677,7 +828,7 @@ export default function StoryWorkspacePage({
         <div className="cinematic-card rounded-2xl p-5 border-slate-800 space-y-4 bg-slate-950/70">
           {/* Visual Panel Header & Tabs */}
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 onClick={() => setVisualTab("ai_scenes")}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold font-thai transition-all ${
@@ -687,7 +838,7 @@ export default function StoryWorkspacePage({
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>ภาพ AI ประจำฉาก ({aiImages.length})</span>
+                <span>ภาพ AI ({aiImages.length})</span>
               </button>
 
               <button
@@ -699,7 +850,19 @@ export default function StoryWorkspacePage({
                 }`}
               >
                 <Film className="w-3.5 h-3.5" />
-                <span>ภาพจริงจากหนัง/ซีรีส์ ({movieStills.length})</span>
+                <span>ภาพหนัง ({movieStills.length})</span>
+              </button>
+
+              <button
+                onClick={() => setVisualTab("bgm_audio")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold font-thai transition-all ${
+                  visualTab === "bgm_audio"
+                    ? "bg-amber-500 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.25)] font-bold"
+                    : "text-slate-400 hover:text-white hover:bg-slate-800"
+                }`}
+              >
+                <Music className="w-3.5 h-3.5" />
+                <span>🎵 เพลงประกอบฉาก ({activeScene?.bgmUrl ? 1 : 0})</span>
               </button>
             </div>
 
@@ -906,6 +1069,200 @@ export default function StoryWorkspacePage({
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: Scene Background Music (เพลงประกอบฉาก) */}
+          {visualTab === "bgm_audio" && (
+            <div className="space-y-4">
+              <div className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800/80 flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-white font-heading flex items-center gap-1.5">
+                    <Music className="w-3.5 h-3.5 text-amber-400" />
+                    <span>SCENE BACKGROUND MUSIC (เพลงประจำฉาก)</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400 font-thai">
+                    อัปโหลดเพลงเฉพาะสำหรับฉากนี้ เพื่อให้เล่นเป็นเพลงพื้นหลังเวลาเปิดอ่านในโหมด Reader
+                  </p>
+                </div>
+              </div>
+
+              {/* If active scene has BGM */}
+              {activeScene?.bgmUrl ? (
+                <div className="rounded-xl border border-amber-500/40 bg-gradient-to-b from-amber-500/10 via-slate-900 to-slate-900 p-4 space-y-4 shadow-xl">
+                  {/* Track Info Header */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
+                        <Music className="w-6 h-6 animate-pulse" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded">
+                            CURRENT BGM TRACK
+                          </span>
+                        </div>
+                        <h3 className="text-sm font-bold text-white font-thai mt-1">
+                          {activeScene.bgmTitle || "เพลงประกอบประจำฉาก"}
+                        </h3>
+                        <p className="text-[11px] text-slate-400 font-mono truncate max-w-xs mt-0.5">
+                          {activeScene.bgmUrl}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleDeleteStudioBgm}
+                      className="p-2 rounded-lg bg-red-950/40 border border-red-800/40 text-red-400 hover:bg-red-900/50 hover:text-white transition-colors"
+                      title="ลบเพลงประกอบประจำฉากนี้"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Playback Controls & Progress */}
+                  <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <button
+                        onClick={handleToggleStudioAudio}
+                        className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold transition-all shadow ${
+                          isStudioAudioPlaying
+                            ? "bg-amber-500 text-slate-950"
+                            : "bg-slate-800 text-white hover:bg-amber-500 hover:text-slate-950"
+                        }`}
+                      >
+                        {isStudioAudioPlaying ? (
+                          <Pause className="w-4 h-4 fill-current" />
+                        ) : (
+                          <Play className="w-4 h-4 fill-current ml-0.5" />
+                        )}
+                      </button>
+
+                      <div className="flex-1 flex items-center gap-2">
+                        {isStudioAudioPlaying && (
+                          <div className="flex items-end gap-1 h-4">
+                            <span className="w-1 bg-amber-400 rounded-full animate-bounce h-3" />
+                            <span className="w-1 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.1s] h-4" />
+                            <span className="w-1 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.2s] h-2" />
+                            <span className="w-1 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.3s] h-3.5" />
+                          </div>
+                        )}
+                        <span className="text-xs font-thai text-slate-300">
+                          {isStudioAudioPlaying ? "กำลังเล่นตัวอย่างเสียง..." : "กดเพื่อทดลองฟังเพลง"}
+                        </span>
+                      </div>
+
+                      {/* Volume Slider */}
+                      <div className="flex items-center gap-2">
+                        <Volume2 className="w-4 h-4 text-amber-400" />
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={studioAudioVolume}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setStudioAudioVolume(val);
+                            if (studioAudioRef.current) {
+                              studioAudioRef.current.volume = val;
+                            }
+                          }}
+                          className="w-20 accent-amber-400 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer"
+                        />
+                      </div>
+                    </div>
+
+                    <audio
+                      ref={studioAudioRef}
+                      src={activeScene.bgmUrl}
+                      loop
+                      onEnded={() => setIsStudioAudioPlaying(false)}
+                    />
+                  </div>
+
+                  {/* Replace track button */}
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-800 text-xs font-thai">
+                    <span className="text-slate-400">ต้องการเปลี่ยนเพลงใหม่?</span>
+                    <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-semibold border border-slate-700 transition-colors">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{isUploadingStudioBgm ? "กำลังอัปโหลด..." : "อัปโหลดไฟล์เพลงใหม่ (MP3/WAV)"}</span>
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleUploadStudioBgm(file);
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                /* No BGM: Upload Section */
+                <div className="space-y-4">
+                  <div className="text-center py-10 px-4 rounded-xl border border-dashed border-slate-700 bg-slate-900/30 space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-slate-800 text-amber-400 flex items-center justify-center mx-auto">
+                      <Music className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-200 font-thai">
+                        ยังไม่มีเพลงประกอบสำหรับฉากนี้
+                      </h4>
+                      <p className="text-[11px] text-slate-400 font-thai mt-0.5">
+                        รองรับไฟล์เสียง MP3, WAV, M4A, OGG, AAC เพื่อเล่นเป็นเพลงประจำฉากในโหมด Reader
+                      </p>
+                    </div>
+
+                    <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all">
+                      <Upload className="w-4 h-4" />
+                      <span>{isUploadingStudioBgm ? "กำลังอัปโหลด..." : "เลือกไฟล์เพลงจากเครื่อง (MP3/WAV)"}</span>
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleUploadStudioBgm(file);
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  {/* Or Enter Direct Audio URL */}
+                  <div className="bg-slate-900/40 p-3 rounded-xl border border-slate-800 space-y-2">
+                    <span className="text-xs font-semibold text-slate-300 font-thai">
+                      หรือระบุ URL เพลงโดยตรง (Audio Stream URL):
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        placeholder="ชื่อเพลง (เช่น ธีมสงครามอ่าวแบล็กวอเตอร์)"
+                        value={customAudioTitleInput}
+                        onChange={(e) => setCustomAudioTitleInput(e.target.value)}
+                        className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 font-thai"
+                      />
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          placeholder="https://example.com/soundtrack.mp3"
+                          value={customAudioUrlInput}
+                          onChange={(e) => setCustomAudioUrlInput(e.target.value)}
+                          className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 font-mono"
+                        />
+                        <button
+                          onClick={handleSaveCustomAudioUrl}
+                          disabled={isUploadingStudioBgm || !customAudioUrlInput.trim()}
+                          className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-thai font-semibold border border-slate-700 transition-colors disabled:opacity-50"
+                        >
+                          บันทึก
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

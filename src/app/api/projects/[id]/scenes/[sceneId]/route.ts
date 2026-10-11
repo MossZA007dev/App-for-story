@@ -12,6 +12,8 @@ const UpdateSceneSchema = z.object({
   contentMarkdown: z.string().optional(),
   summary: z.string().optional(),
   directorNote: z.string().optional(),
+  bgmUrl: z.string().optional(),
+  bgmTitle: z.string().optional(),
 });
 
 export async function GET(
@@ -107,6 +109,8 @@ export async function PUT(
         contentMarkdown: validated.contentMarkdown ?? currentScene.contentMarkdown,
         summary: validated.summary ?? currentScene.summary,
         directorNote: validated.directorNote ?? currentScene.directorNote,
+        bgmUrl: validated.bgmUrl ?? currentScene.bgmUrl,
+        bgmTitle: validated.bgmTitle ?? currentScene.bgmTitle,
         wordCount,
         version: newVersion,
         updatedAt: now,

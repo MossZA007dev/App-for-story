@@ -404,7 +404,7 @@ export default function NewProjectPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
+    <div className="max-w-5xl mx-auto w-full px-4 sm:px-8 py-6 space-y-8 pb-24">
       {/* Wizard Step Bar */}
       <div className="flex items-center justify-between border-b border-slate-800 pb-4">
         <div>

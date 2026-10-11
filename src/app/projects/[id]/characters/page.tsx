@@ -270,7 +270,7 @@ export default function CharacterBiblePage({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-[1720px] mx-auto w-full px-4 sm:px-8 py-6 space-y-6 pb-24">
       {project && (
         <ProjectHeader
           projectId={project.id}

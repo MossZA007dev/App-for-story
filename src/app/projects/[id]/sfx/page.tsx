@@ -345,7 +345,7 @@ export default function SoundEffectsVaultPage({
   });
 
   return (
-    <div className="space-y-6 pb-20 font-thai">
+    <div className="max-w-[1720px] mx-auto w-full px-4 sm:px-8 py-6 space-y-6 pb-24 font-thai">
       {/* Hidden audio player for active card playback */}
       <audio
         ref={activeAudioPlayerRef}

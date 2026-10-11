@@ -509,7 +509,7 @@ export default function ImageStudioPage({
   const currentScene = scenesList.find((s) => s.id === selectedSceneId);
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-20">
+    <div className="max-w-[1720px] mx-auto w-full px-4 sm:px-8 py-6 space-y-6 pb-24">
       <ProjectHeader
         projectId={projectId}
         title={project?.title || "Image Studio"}

@@ -19,8 +19,8 @@ export async function POST(req: NextRequest) {
       const ext = file.name.split(".").pop() || "png";
       const filename = `avatar-${crypto.randomUUID()}.${ext}`;
 
-      const savedUrl = await storage.saveImage(buffer, filename);
-      return NextResponse.json({ success: true, url: savedUrl });
+      const saved = await storage.saveImage(buffer, filename);
+      return NextResponse.json({ success: true, url: saved.url, filePath: saved.filePath });
     } else {
       const body = await req.json();
       const imageUrl = body.imageUrl;
@@ -37,8 +37,8 @@ export async function POST(req: NextRequest) {
       const buffer = Buffer.from(arrayBuffer);
       const filename = `avatar-${crypto.randomUUID()}.jpg`;
 
-      const savedUrl = await storage.saveImage(buffer, filename);
-      return NextResponse.json({ success: true, url: savedUrl });
+      const saved = await storage.saveImage(buffer, filename);
+      return NextResponse.json({ success: true, url: saved.url, filePath: saved.filePath });
     }
   } catch (error: unknown) {
     console.error("Avatar upload failed:", error);

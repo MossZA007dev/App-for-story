@@ -249,7 +249,7 @@ export default function CharactersDashboardPage() {
                   {char.avatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={char.avatarUrl}
+                      src={typeof char.avatarUrl === "string" ? char.avatarUrl : (char.avatarUrl as any)?.url || ""}
                       alt={char.realNickname || char.name}
                       className="w-full h-full object-cover"
                     />

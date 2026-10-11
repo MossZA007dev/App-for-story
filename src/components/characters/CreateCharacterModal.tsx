@@ -86,7 +86,13 @@ export function CreateCharacterModal({
         setFaction(editCharacter.faction || "");
         setRoleWish(editCharacter.chosenRole || "");
         setBackground(editCharacter.background || "");
-        setAvatarUrl(editCharacter.avatarUrl || "");
+        setAvatarUrl(
+          typeof editCharacter.avatarUrl === "string"
+            ? editCharacter.avatarUrl
+            : typeof (editCharacter.avatarUrl as any)?.url === "string"
+            ? (editCharacter.avatarUrl as any).url
+            : ""
+        );
         if (editCharacter.projectId) {
           setSelectedProjectId(editCharacter.projectId);
         }
@@ -137,7 +143,14 @@ export function CreateCharacterModal({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "อัปโหลดรูปภาพไม่สำเร็จ");
 
-      setAvatarUrl(data.url);
+      const finalUrl =
+        typeof data.url === "string"
+          ? data.url
+          : typeof data.url === "object" && data.url !== null
+          ? data.url.url || data.url.filePath || ""
+          : "";
+
+      setAvatarUrl(finalUrl);
       toast.success("อัปโหลดรูปโปรไฟล์ของคุณเรียบร้อยแล้ว!");
     } catch (err: unknown) {
       console.error(err);
@@ -151,7 +164,7 @@ export function CreateCharacterModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const effectiveNickname = realNickname.trim();
+    const effectiveNickname = String(realNickname || "").trim();
     if (!effectiveNickname) {
       toast.error("กรุณาระบุชื่อเล่นจริงของคุณหรือเพื่อน");
       return;
@@ -162,7 +175,20 @@ export function CreateCharacterModal({
       return;
     }
 
-    const resolvedName = name.trim() || effectiveNickname;
+    const resolvedName = String(name || "").trim() || effectiveNickname;
+    const safeAvatarUrl =
+      typeof avatarUrl === "string"
+        ? avatarUrl.trim()
+        : typeof (avatarUrl as any)?.url === "string"
+        ? (avatarUrl as any).url.trim()
+        : "";
+    const safeFaction = String(faction || "").trim() || "กลุ่มอิสระ";
+    const safeRole =
+      String(roleWish || "").trim() ||
+      (characterType === "self" ? "ตัวเอกผู้ข้ามมิติ" : "สหายร่วมชะตากรรม");
+    const safeBackground =
+      String(background || "").trim() ||
+      "คนจากโลกปัจจุบันที่หลุดเข้ามาในโลกนี้พร้อมความทรงจำเดิม";
 
     try {
       setIsSubmitting(true);
@@ -181,10 +207,10 @@ export function CreateCharacterModal({
               currentMbti: startMbti,
               startMbti,
               gender,
-              faction: faction.trim() || "กลุ่มอิสระ",
-              chosenRole: roleWish.trim() || (characterType === "self" ? "ตัวเอกผู้ข้ามมิติ" : "สหายร่วมชะตากรรม"),
-              background: background.trim() || "คนจากโลกปัจจุบันที่หลุดเข้ามาในโลกนี้พร้อมความทรงจำเดิม",
-              avatarUrl: avatarUrl.trim() || "",
+              faction: safeFaction,
+              chosenRole: safeRole,
+              background: safeBackground,
+              avatarUrl: safeAvatarUrl,
             }),
           }
         );
@@ -205,10 +231,10 @@ export function CreateCharacterModal({
             startMbti,
             currentMbti: startMbti,
             gender,
-            faction: faction.trim() || "กลุ่มอิสระ",
-            chosenRole: roleWish.trim() || (characterType === "self" ? "ตัวเอกผู้ข้ามมิติ" : "สหายร่วมชะตากรรม"),
-            background: background.trim() || "คนจากโลกปัจจุบันที่หลุดเข้ามาในโลกนี้พร้อมความทรงจำเดิม",
-            avatarUrl: avatarUrl.trim() || "",
+            faction: safeFaction,
+            chosenRole: safeRole,
+            background: safeBackground,
+            avatarUrl: safeAvatarUrl,
           }),
         });
 
@@ -320,7 +346,7 @@ export function CreateCharacterModal({
               {avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={avatarUrl}
+                  src={typeof avatarUrl === "string" ? avatarUrl : (avatarUrl as any)?.url || ""}
                   alt="Avatar Preview"
                   className="w-full h-full object-cover"
                 />

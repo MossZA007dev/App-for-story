@@ -211,3 +211,32 @@ export function autoDistributeDialogueImages(
 
   return result;
 }
+
+/**
+ * Converts an array of DialogueBlock items back into clean markdown text.
+ */
+export function blocksToMarkdown(blocks: DialogueBlock[]): string {
+  return blocks
+    .map((b) => {
+      const text = b.text.trim();
+      if (!text) return "";
+
+      if (b.type === "sound") {
+        return text.startsWith("*") && text.endsWith("*") ? text : `*${text}*`;
+      }
+
+      if (b.type === "narration" || b.isNarrator) {
+        return text;
+      }
+
+      // Dialogue line
+      const cleanText = text.replace(/^["“]|["”]$/g, "").trim();
+      const speakerName = b.speaker?.realNickname || b.speaker?.name || b.speakerName;
+      if (speakerName) {
+        return `${speakerName}: "${cleanText}"`;
+      }
+      return `"${cleanText}"`;
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}

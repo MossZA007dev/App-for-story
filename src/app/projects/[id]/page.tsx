@@ -11,38 +11,41 @@ import {
   RefreshCw,
   Edit3,
   BookOpen,
-  CheckCircle2,
-  AlertTriangle,
-  Image as ImageIcon,
   Film,
   Plus,
   Trash2,
-  Eye,
   Check,
   X,
   History,
   Shield,
   Upload,
-  Link as LinkIcon,
-  ChevronDown,
   Layers,
   MapPin,
-  Users,
-  Compass,
-  FileText,
   Clock,
   ArrowRight,
-  Maximize2,
+  ArrowUp,
+  ArrowDown,
   Music,
   Volume2,
   Play,
   Pause,
+  ZoomIn,
+  AlertTriangle,
+  RotateCcw,
+  SlidersHorizontal,
+  FileText,
+  User,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ambientSound } from "@/lib/audio/ambientSynth";
 import {
   parseSceneToDialogueBlocks,
+  blocksToMarkdown,
+  resolveImageForDialogueIndex,
   autoDistributeDialogueImages,
   DialogueBlock,
+  CharacterMeta,
 } from "@/lib/story/dialogueParser";
 
 interface CharacterSummary {
@@ -52,6 +55,7 @@ interface CharacterSummary {
   realNickname?: string;
   chosenRole?: string;
   currentMbti?: string;
+  avatarUrl?: string;
 }
 
 interface SceneImage {
@@ -97,6 +101,8 @@ interface PartItem {
   scenes: SceneItem[];
 }
 
+type AudioTrack = "none" | "custom" | "wildfire" | "winter" | "war" | "shadows";
+
 export default function StoryWorkspacePage({
   params,
 }: {
@@ -114,60 +120,64 @@ export default function StoryWorkspacePage({
   const [activeScene, setActiveScene] = useState<SceneItem | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Left Panel: Visual Stage & Audio State
-  const [visualTab, setVisualTab] = useState<"ai_scenes" | "movie_stills" | "bgm_audio">("ai_scenes");
-  const [sceneImages, setSceneImages] = useState<SceneImage[]>([]);
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [customImagePrompt, setCustomImagePrompt] = useState("");
-  const [showAddStillModal, setShowAddStillModal] = useState(false);
-  const [stillUrlInput, setStillUrlInput] = useState("");
-  const [stillCaptionInput, setStillCaptionInput] = useState("");
-  const [isUploadingStill, setIsUploadingStill] = useState(false);
-  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
-
-  // Scene BGM Audio State in Studio
-  const studioAudioRef = useRef<HTMLAudioElement | null>(null);
-  const studioAudioInputRef = useRef<HTMLInputElement | null>(null);
-  const [isUploadingStudioBgm, setIsUploadingStudioBgm] = useState(false);
-  const [isStudioAudioPlaying, setIsStudioAudioPlaying] = useState(false);
-  const [studioAudioVolume, setStudioAudioVolume] = useState(0.7);
-  const [customAudioUrlInput, setCustomAudioUrlInput] = useState("");
-  const [customAudioTitleInput, setCustomAudioTitleInput] = useState("");
-
-  // Right Panel: Story Writing & Streaming State
-  const [directorsNote, setDirectorsNote] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingText, setStreamingText] = useState("");
-  const [studioViewMode, setStudioViewMode] = useState<"preview" | "edit" | "dialogue_bindings">("preview");
+  // Editable Dialogue Beats State
+  const [dialogueBlocks, setDialogueBlocks] = useState<DialogueBlock[]>([]);
+  const [activeBlockIndex, setActiveBlockIndex] = useState<number>(0);
   const [localDialogueBindings, setLocalDialogueBindings] = useState<Record<string, string>>({});
-  const [isSavingBindings, setIsSavingBindings] = useState(false);
+  const [directorsNote, setDirectorsNote] = useState("");
+  const [sceneTitleInput, setSceneTitleInput] = useState("");
+  const [sceneLocationInput, setSceneLocationInput] = useState("");
+  const [sceneCaptionInput, setSceneCaptionInput] = useState("");
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [isRawMarkdownMode, setIsRawMarkdownMode] = useState(false);
   const [editableMarkdown, setEditableMarkdown] = useState("");
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSavingScene, setIsSavingScene] = useState(false);
 
-  // New Scene Modal
+  // Images State
+  const [sceneImages, setSceneImages] = useState<SceneImage[]>([]);
+  const [selectedImageIndex, setSelectedImageIndex] = useState<number>(0);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [showAiImageModal, setShowAiImageModal] = useState(false);
+  const [aiImagePromptInput, setAiImagePromptInput] = useState("");
+  const [isGeneratingAiImage, setIsGeneratingAiImage] = useState(false);
+
+  // Audio / Music State
+  const studioAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const [currentAudioTrack, setCurrentAudioTrack] = useState<AudioTrack>("none");
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [audioVolume, setAudioVolume] = useState<number>(0.6);
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+
+  // Streaming State (Anthropic Claude)
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
+
+  // Modals
   const [showNewSceneModal, setShowNewSceneModal] = useState(false);
   const [newSceneTitle, setNewSceneTitle] = useState("");
   const [newSceneLocation, setNewSceneLocation] = useState("");
   const [newSceneSelectedChars, setNewSceneSelectedChars] = useState<string[]>([]);
-
-  // Version History Modal
   const [showVersionModal, setShowVersionModal] = useState(false);
   const [sceneVersions, setSceneVersions] = useState<any[]>([]);
-
-  // Continuity Analysis & Moments Modal
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [isApplyingLedger, setIsApplyingLedger] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // File Inputs
+  const imageFileInputRef = useRef<HTMLInputElement | null>(null);
+  const blockImageUploadRef = useRef<HTMLInputElement | null>(null);
+  const targetUploadBlockIdxRef = useRef<number | null>(null);
+  const audioFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // 1. Load Project Data
   const loadProjectData = async () => {
     try {
       setLoading(true);
       const res = await fetch(`/api/projects/${projectId}`);
-      if (!res.ok) throw new Error("โหลดข้อมูลไม่สำเร็จ");
+      if (!res.ok) throw new Error("โหลดข้อมูลโปรเจกต์ไม่สำเร็จ");
       const data = await res.json();
 
       setProject(data.project);
@@ -177,21 +187,14 @@ export default function StoryWorkspacePage({
       if (data.parts && data.parts.length > 0) {
         const firstPart = data.parts[0];
         setActivePartId(firstPart.id);
-
         if (firstPart.scenes && firstPart.scenes.length > 0) {
           const firstScene = firstPart.scenes[0];
           setActiveSceneId(firstScene.id);
-          setActiveScene(firstScene);
-          setDirectorsNote(firstScene.directorNote || "");
-          setEditableMarkdown(firstScene.contentMarkdown || "");
-        } else {
-          setActiveSceneId("");
-          setActiveScene(null);
         }
       }
     } catch (err) {
       console.error(err);
-      toast.error("ไม่สามารถโหลดโปรเจกต์ได้");
+      toast.error("เกิดข้อผิดพลาดในการโหลดโปรเจกต์");
     } finally {
       setLoading(false);
     }
@@ -201,30 +204,54 @@ export default function StoryWorkspacePage({
     loadProjectData();
   }, [projectId]);
 
-  // 2. Load Active Scene Details & Images
+  // 2. Load Active Scene Details
   const loadSceneDetails = async (sceneId: string) => {
     if (!sceneId) return;
     try {
       const res = await fetch(`/api/projects/${projectId}/scenes/${sceneId}`);
       if (!res.ok) throw new Error("โหลดรายละเอียดฉากไม่สำเร็จ");
       const data = await res.json();
+
       setActiveScene(data.scene);
       setSceneImages(data.images || []);
+      setSelectedImageIndex(0);
+      setActiveBlockIndex(0);
       setDirectorsNote(data.scene.directorNote || "");
+      setSceneTitleInput(data.scene.title || "");
+      setSceneLocationInput(data.scene.location || "");
       setEditableMarkdown(data.scene.contentMarkdown || "");
       setSceneVersions(data.versions || []);
+      setHasUnsavedChanges(false);
+
+      // Parse Dialogue Blocks
+      const parsed = parseSceneToDialogueBlocks(data.scene.contentMarkdown || "", characters);
+      setDialogueBlocks(parsed);
+
+      // Parse Dialogue-to-Image Bindings
       if (data.scene.dialogueBindings) {
         try {
-          const parsed =
+          const parsedBindings =
             typeof data.scene.dialogueBindings === "string"
               ? JSON.parse(data.scene.dialogueBindings)
               : data.scene.dialogueBindings;
-          setLocalDialogueBindings(parsed || {});
+          setLocalDialogueBindings(parsedBindings || {});
         } catch {
           setLocalDialogueBindings({});
         }
       } else {
         setLocalDialogueBindings({});
+      }
+
+      // Configure BGM
+      if (data.scene.bgmUrl) {
+        setCurrentAudioTrack("custom");
+      } else {
+        setCurrentAudioTrack("none");
+      }
+      setIsAudioPlaying(false);
+      ambientSound.stop();
+      if (studioAudioPlayerRef.current) {
+        studioAudioPlayerRef.current.pause();
       }
     } catch (err) {
       console.error(err);
@@ -247,102 +274,598 @@ export default function StoryWorkspacePage({
       setActiveSceneId("");
       setActiveScene(null);
       setSceneImages([]);
+      setDialogueBlocks([]);
     }
   };
 
   // Switch Active Scene
   const handleSelectScene = (sceneId: string) => {
     setActiveSceneId(sceneId);
-    setStudioViewMode("preview");
+    setIsRawMarkdownMode(false);
     setStreamingText("");
   };
 
-  // Dialogue-to-Image Binding Handlers
-  const handleAssignImageToBlock = async (blockIndex: number, imageId: string) => {
-    const updated = { ...localDialogueBindings };
-    if (!imageId) {
-      delete updated[String(blockIndex)];
-    } else {
-      updated[String(blockIndex)] = imageId;
-    }
-    setLocalDialogueBindings(updated);
+  // 3. Audio Controller
+  const handleSelectAudioTrack = (track: AudioTrack) => {
+    setCurrentAudioTrack(track);
 
-    // Auto-save the binding to server
-    try {
-      await fetch(`/api/projects/${projectId}/scenes/${activeSceneId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dialogueBindings: JSON.stringify(updated),
-        }),
-      });
-      if (activeScene) {
-        setActiveScene({ ...activeScene, dialogueBindings: JSON.stringify(updated) });
+    if (studioAudioPlayerRef.current) {
+      studioAudioPlayerRef.current.pause();
+    }
+    ambientSound.stop();
+    setIsAudioPlaying(false);
+
+    if (track === "none") {
+      toast.info("ปิดเพลงประกอบประจำฉาก");
+      return;
+    }
+
+    if (track === "custom") {
+      if (activeScene?.bgmUrl && studioAudioPlayerRef.current) {
+        studioAudioPlayerRef.current.src = activeScene.bgmUrl;
+        studioAudioPlayerRef.current.volume = audioVolume;
+        studioAudioPlayerRef.current.play().catch((e) => console.warn(e));
+        setIsAudioPlaying(true);
+        toast.success(`เล่นเพลง: ${activeScene.bgmTitle || "เพลงประจำฉาก"}`);
+      } else {
+        toast.error("ฉากนี้ยังไม่ได้อัปโหลดไฟล์เพลง");
       }
-      toast.success(
-        imageId
-          ? `ผูกภาพกับประโยค #${blockIndex + 1} สำเร็จ`
-          : `ยกเลิกการผูกภาพประโยค #${blockIndex + 1}`
-      );
-    } catch (err) {
-      console.error(err);
+      return;
+    }
+
+    // Ambient Synth Tracks
+    ambientSound.setVolume(audioVolume);
+    ambientSound.play(track);
+    setIsAudioPlaying(true);
+    const trackNames: Record<string, string> = {
+      wildfire: "เพลิงป่า (Wildfire Drone)",
+      winter: "ลมเหมันต์ (Winter Winds)",
+      war: "มหากาพย์ศึก (War Drums)",
+      shadows: "เงาทมิฬ (Shadows Ethereal)",
+    };
+    toast.success(`เล่นเสียงสังเคราะห์: ${trackNames[track]}`);
+  };
+
+  const handleToggleAudioPlay = () => {
+    if (isAudioPlaying) {
+      if (studioAudioPlayerRef.current) studioAudioPlayerRef.current.pause();
+      ambientSound.stop();
+      setIsAudioPlaying(false);
+      toast.info("หยุดเพลง");
+    } else {
+      if (currentAudioTrack === "custom" && activeScene?.bgmUrl && studioAudioPlayerRef.current) {
+        studioAudioPlayerRef.current.volume = audioVolume;
+        studioAudioPlayerRef.current.play().catch((e) => console.warn(e));
+        setIsAudioPlaying(true);
+      } else if (currentAudioTrack !== "none" && currentAudioTrack !== "custom") {
+        ambientSound.setVolume(audioVolume);
+        ambientSound.play(currentAudioTrack);
+        setIsAudioPlaying(true);
+      } else if (activeScene?.bgmUrl) {
+        handleSelectAudioTrack("custom");
+      } else {
+        handleSelectAudioTrack("wildfire");
+      }
     }
   };
 
-  const handleSaveDialogueBindings = async (bindingsToSave?: Record<string, string>) => {
-    if (!activeSceneId) return;
+  const handleVolumeChange = (vol: number) => {
+    setAudioVolume(vol);
+    ambientSound.setVolume(vol);
+    if (studioAudioPlayerRef.current) {
+      studioAudioPlayerRef.current.volume = vol;
+    }
+  };
+
+  // Upload Scene Audio (MP3/WAV)
+  const handleUploadAudioFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeSceneId) return;
+
     try {
-      setIsSavingBindings(true);
-      const dataToSend = bindingsToSave ?? localDialogueBindings;
+      setIsUploadingAudio(true);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
+
+      const res = await fetch(`/api/projects/${projectId}/scenes/${activeSceneId}/audio`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "อัปโหลดเพลงไม่สำเร็จ");
+
+      const updated = { ...activeScene!, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle };
+      setActiveScene(updated);
+      setParts((prevParts) =>
+        prevParts.map((part) => ({
+          ...part,
+          scenes: part.scenes.map((s) => (s.id === activeSceneId ? updated : s)),
+        }))
+      );
+
+      setCurrentAudioTrack("custom");
+      if (studioAudioPlayerRef.current) {
+        studioAudioPlayerRef.current.src = data.bgmUrl;
+        studioAudioPlayerRef.current.volume = audioVolume;
+        studioAudioPlayerRef.current.play().catch((e) => console.warn(e));
+        setIsAudioPlaying(true);
+      }
+      ambientSound.stop();
+
+      toast.success(`อัปโหลดเพลง "${data.bgmTitle}" สำเร็จและเริ่มเล่นทันที!`);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "เกิดข้อผิดพลาดในการอัปโหลดเพลง");
+    } finally {
+      setIsUploadingAudio(false);
+      if (audioFileInputRef.current) audioFileInputRef.current.value = "";
+    }
+  };
+
+  // Delete Scene Audio
+  const handleDeleteAudio = async () => {
+    if (!activeSceneId) return;
+    if (!confirm("คุณต้องการลบเพลงประกอบประจำฉากนี้ใช่หรือไม่?")) return;
+
+    try {
+      const res = await fetch(`/api/projects/${projectId}/scenes/${activeSceneId}/audio`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("ลบเพลงไม่สำเร็จ");
+
+      if (studioAudioPlayerRef.current) studioAudioPlayerRef.current.pause();
+      setIsAudioPlaying(false);
+      setCurrentAudioTrack("none");
+
+      const updated = { ...activeScene!, bgmUrl: null, bgmTitle: null };
+      setActiveScene(updated);
+      setParts((prevParts) =>
+        prevParts.map((part) => ({
+          ...part,
+          scenes: part.scenes.map((s) => (s.id === activeSceneId ? updated : s)),
+        }))
+      );
+
+      toast.success("ลบเพลงประกอบประจำฉากเรียบร้อย");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "ลบเพลงไม่สำเร็จ");
+    }
+  };
+
+  // 4. Image Upload & Management
+  const handleUploadSceneImage = async (file: File, bindToBlockIdx?: number) => {
+    if (!activeSceneId) return;
+
+    try {
+      setIsUploadingImage(true);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("sceneId", activeSceneId);
+      formData.append("caption", file.name.replace(/\.[^/.]+$/, ""));
+
+      const res = await fetch(`/api/projects/${projectId}/images/reference`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "อัปโหลดภาพไม่สำเร็จ");
+
+      const newImg = data.image;
+      const updatedImages = [newImg, ...sceneImages];
+      setSceneImages(updatedImages);
+      setSelectedImageIndex(0);
+
+      // If user uploaded directly from a dialogue line, bind it immediately!
+      if (bindToBlockIdx !== undefined && bindToBlockIdx >= 0) {
+        const nextBindings = { ...localDialogueBindings, [String(bindToBlockIdx)]: newImg.id };
+        setLocalDialogueBindings(nextBindings);
+        setHasUnsavedChanges(true);
+        toast.success(`อัปโหลดและผูกภาพ "${newImg.caption || file.name}" กับประโยค #${bindToBlockIdx + 1} สำเร็จ!`);
+      } else {
+        toast.success(`อัปโหลดภาพ "${newImg.caption || file.name}" เข้าคลังของฉากนี้สำเร็จ!`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "อัปโหลดภาพไม่สำเร็จ");
+    } finally {
+      setIsUploadingImage(false);
+      if (imageFileInputRef.current) imageFileInputRef.current.value = "";
+      if (blockImageUploadRef.current) blockImageUploadRef.current.value = "";
+      targetUploadBlockIdxRef.current = null;
+    }
+  };
+
+  // Delete Scene Image
+  const handleDeleteImage = async (imageId: string) => {
+    if (!confirm("คุณต้องการลบภาพนี้ออกจากคลังฉากนี้ใช่หรือไม่?")) return;
+    try {
+      const res = await fetch(`/api/projects/${projectId}/images/${imageId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("ลบภาพไม่สำเร็จ");
+
+      const filtered = sceneImages.filter((img) => img.id !== imageId);
+      setSceneImages(filtered);
+      setSelectedImageIndex(0);
+
+      // Remove bindings referencing this image
+      const updatedBindings = { ...localDialogueBindings };
+      Object.keys(updatedBindings).forEach((key) => {
+        if (updatedBindings[key] === imageId) delete updatedBindings[key];
+      });
+      setLocalDialogueBindings(updatedBindings);
+      setHasUnsavedChanges(true);
+
+      toast.success("ลบภาพเรียบร้อยแล้ว");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "ลบภาพไม่สำเร็จ");
+    }
+  };
+
+  // AI Image Generator
+  const handleGenerateAiImage = async () => {
+    if (!aiImagePromptInput.trim()) {
+      toast.error("กรุณาระบุ Prompt คำอธิบายภาพ");
+      return;
+    }
+
+    try {
+      setIsGeneratingAiImage(true);
+      const res = await fetch(`/api/projects/${projectId}/images/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sceneId: activeSceneId,
+          prompt: aiImagePromptInput,
+          kind: "scene",
+          size: "1024x1024",
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "สร้างภาพ AI ไม่สำเร็จ");
+
+      toast.success("สร้างภาพ AI สำเร็จและเพิ่มเข้าคลังภาพของฉากนี้แล้ว!");
+      setShowAiImageModal(false);
+      setAiImagePromptInput("");
+      if (activeSceneId) loadSceneDetails(activeSceneId);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "เกิดข้อผิดพลาดในการสร้างภาพ");
+    } finally {
+      setIsGeneratingAiImage(false);
+    }
+  };
+
+  // 5. Dialogue Blocks Manipulation (Interactive Visual Novel Editor)
+  const handleUpdateBlockText = (index: number, newText: string) => {
+    setDialogueBlocks((prev) => {
+      const next = [...prev];
+      if (next[index]) {
+        next[index] = { ...next[index], text: newText };
+      }
+      return next;
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  const handleUpdateBlockSpeaker = (index: number, targetKey: string) => {
+    setDialogueBlocks((prev) => {
+      const next = [...prev];
+      const cur = next[index];
+      if (!cur) return prev;
+
+      if (targetKey === "narrator") {
+        next[index] = {
+          ...cur,
+          type: "narration",
+          isNarrator: true,
+          side: "left",
+          speaker: characters.find((c) => c.characterType === "self") || null,
+          speakerName: characters.find((c) => c.characterType === "self")?.realNickname || "ผู้บรรยาย",
+        };
+      } else if (targetKey === "sound") {
+        next[index] = {
+          ...cur,
+          type: "sound",
+          isNarrator: false,
+          side: "left",
+          speaker: null,
+          speakerName: "เสียงประกอบ",
+        };
+      } else {
+        const char = characters.find((c) => c.id === targetKey || c.name === targetKey);
+        const isSelf = char?.characterType === "self";
+        const side = isSelf ? "left" : "right";
+        next[index] = {
+          ...cur,
+          type: "dialogue",
+          isNarrator: false,
+          side,
+          speaker: char || null,
+          speakerName: char?.realNickname || char?.name || "ตัวละคร",
+        };
+      }
+      return next;
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  const handleToggleBlockSide = (index: number) => {
+    setDialogueBlocks((prev) => {
+      const next = [...prev];
+      if (next[index]) {
+        next[index] = {
+          ...next[index],
+          side: next[index].side === "left" ? "right" : "left",
+        };
+      }
+      return next;
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  const handleAssignBlockImage = (index: number, imageId: string) => {
+    const updated = { ...localDialogueBindings };
+    if (!imageId) {
+      delete updated[String(index)];
+    } else {
+      updated[String(index)] = imageId;
+      // Immediately preview this image on the left card!
+      const imgIdx = sceneImages.findIndex((img) => img.id === imageId);
+      if (imgIdx !== -1) setSelectedImageIndex(imgIdx);
+    }
+    setLocalDialogueBindings(updated);
+    setHasUnsavedChanges(true);
+
+    toast.success(imageId ? `ผูกภาพกับประโยค #${index + 1} เรียบร้อย` : `ยกเลิกการผูกภาพประโยค #${index + 1}`);
+  };
+
+  const handleAddBlock = (
+    type: "self" | "friend" | "narration" | "sound",
+    insertAtIdx?: number
+  ) => {
+    const selfChar = characters.find((c) => c.characterType === "self") || null;
+    const friendChar = characters.find((c) => c.characterType === "friend") || null;
+
+    let newBlock: DialogueBlock;
+    const newId = `block-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    if (type === "self") {
+      newBlock = {
+        id: newId,
+        type: "dialogue",
+        isNarrator: false,
+        side: "left",
+        speaker: selfChar,
+        speakerName: selfChar?.realNickname || selfChar?.name || "ฉัน",
+        text: "บทพูดใหม่ของฉัน...",
+        originalIndex: 0,
+      };
+    } else if (type === "friend") {
+      newBlock = {
+        id: newId,
+        type: "dialogue",
+        isNarrator: false,
+        side: "right",
+        speaker: friendChar,
+        speakerName: friendChar?.realNickname || friendChar?.name || "เพื่อน",
+        text: "บทพูดใหม่ของเพื่อน...",
+        originalIndex: 0,
+      };
+    } else if (type === "sound") {
+      newBlock = {
+        id: newId,
+        type: "sound",
+        side: "left",
+        speaker: null,
+        speakerName: "เสียงประกอบ",
+        text: "เสียงลมพัดผ่านแผ่วเบา..........",
+        originalIndex: 0,
+      };
+    } else {
+      newBlock = {
+        id: newId,
+        type: "narration",
+        isNarrator: true,
+        side: "left",
+        speaker: selfChar,
+        speakerName: selfChar?.realNickname || "ผู้บรรยาย",
+        text: "คำบรรยายฉากและบรรยากาศ...",
+        originalIndex: 0,
+      };
+    }
+
+    setDialogueBlocks((prev) => {
+      const next = [...prev];
+      if (insertAtIdx !== undefined && insertAtIdx >= 0) {
+        next.splice(insertAtIdx + 1, 0, newBlock);
+      } else {
+        next.push(newBlock);
+      }
+      return next;
+    });
+
+    setHasUnsavedChanges(true);
+    toast.success("เพิ่มประโยคใหม่เรียบร้อย");
+  };
+
+  const handleDeleteBlock = (index: number) => {
+    if (!confirm(`คุณต้องการลบประโยคที่ #${index + 1} ใช่หรือไม่?`)) return;
+
+    setDialogueBlocks((prev) => {
+      const next = [...prev];
+      next.splice(index, 1);
+      return next;
+    });
+
+    // Re-index bindings
+    const updatedBindings: Record<string, string> = {};
+    Object.keys(localDialogueBindings).forEach((key) => {
+      const numKey = parseInt(key, 10);
+      if (numKey < index) {
+        updatedBindings[key] = localDialogueBindings[key];
+      } else if (numKey > index) {
+        updatedBindings[String(numKey - 1)] = localDialogueBindings[key];
+      }
+    });
+    setLocalDialogueBindings(updatedBindings);
+    setHasUnsavedChanges(true);
+    toast.info("ลบประโยคเรียบร้อย");
+  };
+
+  const handleMoveBlock = (index: number, direction: "up" | "down") => {
+    const targetIdx = direction === "up" ? index - 1 : index + 1;
+    if (targetIdx < 0 || targetIdx >= dialogueBlocks.length) return;
+
+    setDialogueBlocks((prev) => {
+      const next = [...prev];
+      const temp = next[index];
+      next[index] = next[targetIdx];
+      next[targetIdx] = temp;
+      return next;
+    });
+
+    // Swap bindings
+    const updatedBindings = { ...localDialogueBindings };
+    const curVal = updatedBindings[String(index)];
+    const targetVal = updatedBindings[String(targetIdx)];
+    if (curVal) updatedBindings[String(targetIdx)] = curVal;
+    else delete updatedBindings[String(targetIdx)];
+    if (targetVal) updatedBindings[String(index)] = targetVal;
+    else delete updatedBindings[String(index)];
+    setLocalDialogueBindings(updatedBindings);
+
+    setHasUnsavedChanges(true);
+  };
+
+  // Auto-distribute images across dialogue beats
+  const handleAutoDistributeImages = () => {
+    if (sceneImages.length === 0) {
+      toast.error("ไม่มีภาพประกอบในฉากนี้สำหรับจับคู่อัตโนมัติ");
+      return;
+    }
+    if (dialogueBlocks.length === 0) {
+      toast.error("ไม่มีบทพูดในฉากนี้");
+      return;
+    }
+
+    const distributed = autoDistributeDialogueImages(dialogueBlocks.length, sceneImages);
+    setLocalDialogueBindings(distributed);
+    setHasUnsavedChanges(true);
+    toast.success(`จับคู่อัตโนมัติ ${Object.keys(distributed).length} ภาพ กระจายตามบทพูดเรียบร้อย!`);
+  };
+
+  // 6. Save Scene (Saves Dialogue Markdown, Bindings, Title, Location)
+  const handleSaveAll = async () => {
+    if (!activeSceneId) return;
+
+    try {
+      setIsSavingScene(true);
+      const markdownToSave = isRawMarkdownMode
+        ? editableMarkdown
+        : blocksToMarkdown(dialogueBlocks);
+
       const res = await fetch(`/api/projects/${projectId}/scenes/${activeSceneId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          dialogueBindings: JSON.stringify(dataToSend),
+          title: sceneTitleInput.trim() || activeScene?.title,
+          location: sceneLocationInput.trim() || activeScene?.location,
+          contentMarkdown: markdownToSave,
+          dialogueBindings: JSON.stringify(localDialogueBindings),
+          directorNote: directorsNote,
         }),
       });
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "บันทึกไม่สำเร็จ");
+
       setActiveScene(data.scene);
-      toast.success("บันทึกการตั้งค่าภาพตามบทพูดเรียบร้อยแล้ว!");
+      setEditableMarkdown(markdownToSave);
+      setHasUnsavedChanges(false);
+      setIsEditingTitle(false);
+
+      // Update parts list in memory
+      setParts((prevParts) =>
+        prevParts.map((part) => ({
+          ...part,
+          scenes: part.scenes.map((s) => (s.id === activeSceneId ? data.scene : s)),
+        }))
+      );
+
+      toast.success("บันทึกการแก้ไขฉากและบทพูดเรียบร้อยแล้ว!");
     } catch (err: any) {
       console.error(err);
-      toast.error(err.message || "บันทึกการผูกภาพไม่สำเร็จ");
+      toast.error(err.message || "เกิดข้อผิดพลาดในการบันทึก");
     } finally {
-      setIsSavingBindings(false);
+      setIsSavingScene(false);
     }
   };
 
-  const handleAutoDistributeImages = () => {
-    if (!activeScene || sceneImages.length === 0) {
-      toast.error("ไม่มีภาพประกอบในฉากนี้สำหรับจับคู่อัตโนมัติ");
-      return;
+  // 7. AI Story Streaming (Claude 3.5 Sonnet)
+  const handleStartStream = async (actionType: "write_next" | "regenerate" = "write_next") => {
+    if (!activeScene) return;
+
+    try {
+      setIsStreaming(true);
+      setStreamingText("");
+
+      const charsPresent = activeScene.charactersPresentParsed || [];
+
+      const res = await fetch(`/api/projects/${projectId}/scenes/generate-stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          partId: activePartId,
+          sceneId: activeScene.id,
+          sceneTitle: sceneTitleInput || activeScene.title,
+          location: sceneLocationInput || activeScene.location,
+          charactersPresent: charsPresent,
+          directorNote: directorsNote,
+          existingContent: actionType === "write_next" ? blocksToMarkdown(dialogueBlocks) : "",
+          action: actionType,
+        }),
+      });
+
+      if (!res.ok) throw new Error("เริ่มการสร้างเนื้อเรื่องไม่สำเร็จ");
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let fullStory = "";
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          fullStory += chunk;
+          setStreamingText(fullStory);
+        }
+      }
+
+      // Convert streamed story into editable dialogue blocks!
+      const parsedBlocks = parseSceneToDialogueBlocks(fullStory, characters);
+      setDialogueBlocks(parsedBlocks);
+      setEditableMarkdown(fullStory);
+      setHasUnsavedChanges(true);
+
+      toast.success("AI ประพันธ์เนื้อเรื่องเสร็จสิ้น! คุณสามารถแก้ไขบทพูดได้ทันที");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "เกิดข้อผิดพลาดในการเขียนเนื้อเรื่อง");
+    } finally {
+      setIsStreaming(false);
     }
-    const blocks = parseSceneToDialogueBlocks(activeScene.contentMarkdown || "", characters);
-    if (blocks.length === 0) {
-      toast.error("ไม่มีบทพูดหรือเนื้อเรื่องในฉากนี้");
-      return;
-    }
-    const distributed = autoDistributeDialogueImages(blocks.length, sceneImages);
-    setLocalDialogueBindings(distributed);
-    handleSaveDialogueBindings(distributed);
-    toast.success(`จับคู่อัตโนมัติ ${Object.keys(distributed).length} ภาพ กระจายตามบทพูดเรียบร้อย!`);
   };
 
-  const handleClearAllBindings = () => {
-    setLocalDialogueBindings({});
-    handleSaveDialogueBindings({});
-    toast.info("ล้างการผูกภาพทั้งหมดเรียบร้อย");
-  };
-
-  // 3. Create New Scene
+  // 8. Create New Scene Handler
   const handleCreateScene = async () => {
-    if (!newSceneTitle.trim()) {
-      toast.error("กรุณาระบุชื่อฉาก");
-      return;
-    }
-    if (!activePartId) {
-      toast.error("กรุณาเลือกภาคก่อน");
+    if (!newSceneTitle.trim() || !activePartId) {
+      toast.error("กรุณาระบุชื่อฉากและเลือกภาค");
       return;
     }
 
@@ -354,7 +877,7 @@ export default function StoryWorkspacePage({
           title: newSceneTitle,
           location: newSceneLocation,
           charactersPresent: newSceneSelectedChars,
-          contentMarkdown: "",
+          contentMarkdown: `"พวกเราต้องรีบไปจากที่นี่ก่อนที่ทหารจะมาถึง"`,
           directorNote: "",
         }),
       });
@@ -368,7 +891,6 @@ export default function StoryWorkspacePage({
       setNewSceneLocation("");
       setNewSceneSelectedChars([]);
 
-      // Reload project and set new scene as active
       await loadProjectData();
       setActiveSceneId(data.scene.id);
     } catch (err: any) {
@@ -377,144 +899,9 @@ export default function StoryWorkspacePage({
     }
   };
 
-  // 4. Save Edited Scene Markdown
-  const handleSaveContent = async () => {
-    if (!activeSceneId) return;
-    try {
-      setIsSavingScene(true);
-      const res = await fetch(`/api/projects/${projectId}/scenes/${activeSceneId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contentMarkdown: editableMarkdown,
-          directorNote: directorsNote,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "บันทึกไม่สำเร็จ");
-
-      setActiveScene(data.scene);
-      setStudioViewMode("preview");
-      toast.success("บันทึกเนื้อหาฉากเรียบร้อยแล้ว");
-      loadSceneDetails(activeSceneId);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "เกิดข้อผิดพลาดในการบันทึก");
-    } finally {
-      setIsSavingScene(false);
-    }
-  };
-
-  // 5. Stream Story Generation (Anthropic Claude)
-  const handleStartStream = async (actionType: "write_next" | "regenerate" | "expand" = "write_next") => {
-    if (!activeScene) {
-      toast.error("กรุณาสร้างหรือเลือกฉากก่อนเริ่มเขียน");
-      return;
-    }
-
-    try {
-      setIsStreaming(true);
-      setStudioViewMode("preview");
-      setStreamingText("");
-
-      const charsPresent = activeScene.charactersPresentParsed || [];
-
-      const res = await fetch(`/api/projects/${projectId}/scenes/generate-stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          partId: activePartId,
-          sceneId: activeScene.id,
-          sceneTitle: activeScene.title,
-          location: activeScene.location,
-          charactersPresent: charsPresent,
-          directorsNote,
-          targetWords: project?.targetSceneWords || 1200,
-          actionType,
-          existingContent: activeScene.contentMarkdown || "",
-        }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "ไม่สามารถเริ่มการสตรีมเนื้อเรื่องได้");
-      }
-
-      if (!res.body) throw new Error("ไม่สามารถอ่านสตรีมได้");
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let fullContent = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n\n");
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const dataStr = line.replace("data: ", "").trim();
-            if (dataStr === "[DONE]") {
-              break;
-            }
-
-            try {
-              const parsed = JSON.parse(dataStr);
-              if (parsed.error) {
-                toast.error(parsed.error);
-                break;
-              }
-              if (parsed.text) {
-                fullContent += parsed.text;
-                setStreamingText(fullContent);
-              }
-            } catch (jsonErr) {
-              // ignore parse errors for partial chunks
-            }
-          }
-        }
-      }
-
-      // Auto save after stream completion
-      if (fullContent.trim()) {
-        const saveRes = await fetch(`/api/projects/${projectId}/scenes/${activeScene.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contentMarkdown: fullContent,
-            directorNote: directorsNote,
-          }),
-        });
-
-        const savedData = await saveRes.json();
-        setActiveScene(savedData.scene);
-        setEditableMarkdown(fullContent);
-        setStreamingText("");
-        toast.success("AI เขียนฉากเสร็จสมบูรณ์และบันทึกประวัติเวอร์ชันแล้ว!");
-
-        // Automatically prompt to run continuity check
-        setTimeout(() => {
-          handleRunAnalysis();
-        }, 1200);
-      }
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "เกิดข้อผิดพลาดในการเขียนเนื้อเรื่อง");
-    } finally {
-      setIsStreaming(false);
-    }
-  };
-
-  // 6. Analyze Scene & Continuity Check
+  // 9. Continuity Analysis
   const handleRunAnalysis = async () => {
-    if (!activeSceneId || !activeScene?.contentMarkdown) {
-      toast.error("ยังไม่มีเนื้อหาในฉากนี้สำหรับวิเคราะห์");
-      return;
-    }
-
+    if (!activeSceneId) return;
     try {
       setIsAnalyzing(true);
       const res = await fetch(`/api/projects/${projectId}/scenes/${activeSceneId}/analyze`, {
@@ -522,10 +909,8 @@ export default function StoryWorkspacePage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ applyDirectly: false }),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "การวิเคราะห์ล้มเหลว");
-
       setAnalysisResult(data.analysis);
       setShowAnalysisModal(true);
     } catch (err: any) {
@@ -536,7 +921,6 @@ export default function StoryWorkspacePage({
     }
   };
 
-  // Apply Analysis & Update Ledger
   const handleConfirmLedgerUpdate = async () => {
     if (!activeSceneId) return;
     try {
@@ -546,10 +930,8 @@ export default function StoryWorkspacePage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ applyDirectly: true }),
       });
-
       if (!res.ok) throw new Error("อัปเดต Ledger ไม่สำเร็จ");
-
-      toast.success("อัปเดตสถานะลง Continuity Ledger และประวัติพัฒนาการตัวละครเรียบร้อยแล้ว!");
+      toast.success("อัปเดตสถานะลง Continuity Ledger เรียบร้อยแล้ว!");
       setShowAnalysisModal(false);
       loadSceneDetails(activeSceneId);
     } catch (err: any) {
@@ -560,288 +942,32 @@ export default function StoryWorkspacePage({
     }
   };
 
-  // 7. Generate AI Image for Moment or Custom Prompt
-  const handleGenerateImage = async (promptOverride?: string) => {
-    const promptToUse = promptOverride || customImagePrompt;
-    if (!promptToUse.trim()) {
-      toast.error("กรุณาระบุ Prompt สำหรับสร้างภาพ");
-      return;
-    }
-
-    try {
-      setIsGeneratingImage(true);
-      const res = await fetch(`/api/projects/${projectId}/images/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sceneId: activeSceneId,
-          prompt: promptToUse,
-          kind: "scene",
-          size: "1024x1024",
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "สร้างภาพไม่สำเร็จ");
-
-      toast.success("สร้างภาพ AI ประจำฉากสำเร็จ!");
-      setCustomImagePrompt("");
-      if (activeSceneId) loadSceneDetails(activeSceneId);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "เกิดข้อผิดพลาดในการสร้างภาพ");
-    } finally {
-      setIsGeneratingImage(false);
+  // Click dialogue row to preview its bound image
+  const handleSelectDialogueRow = (index: number) => {
+    setActiveBlockIndex(index);
+    const resolved = resolveImageForDialogueIndex(index, localDialogueBindings, sceneImages);
+    if (resolved.imageIndex >= 0) {
+      setSelectedImageIndex(resolved.imageIndex);
     }
   };
 
-  // 8. Add Movie Still (Upload or URL)
-  const handleAddMovieStill = async () => {
-    if (!stillUrlInput.trim()) {
-      toast.error("กรุณาใส่ Image URL หรืออัปโหลดไฟล์ภาพ");
-      return;
-    }
-
-    try {
-      setIsUploadingStill(true);
-      const res = await fetch(`/api/projects/${projectId}/images/reference`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sceneId: activeSceneId,
-          imageUrl: stillUrlInput,
-          caption: stillCaptionInput || "ภาพประกอบจริงจากหนัง/ซีรีส์",
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "เพิ่มภาพไม่สำเร็จ");
-
-      toast.success("เพิ่มภาพจริงจากหนังเข้าสู่ฉากเรียบร้อยแล้ว!");
-      setShowAddStillModal(false);
-      setStillUrlInput("");
-      setStillCaptionInput("");
-      if (activeSceneId) loadSceneDetails(activeSceneId);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "เกิดข้อผิดพลาดในการบันทึกภาพ");
-    } finally {
-      setIsUploadingStill(false);
-    }
-  };
-
-  // Handle local file upload
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setIsUploadingStill(true);
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("sceneId", activeSceneId);
-      formData.append("caption", stillCaptionInput || file.name);
-
-      const res = await fetch(`/api/projects/${projectId}/images/reference`, {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "อัปโหลดไม่สำเร็จ");
-
-      toast.success("อัปโหลดภาพจริงจากหนังเรียบร้อยแล้ว!");
-      setShowAddStillModal(false);
-      setStillCaptionInput("");
-      if (activeSceneId) loadSceneDetails(activeSceneId);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "เกิดข้อผิดพลาดในการอัปโหลด");
-    } finally {
-      setIsUploadingStill(false);
-    }
-  };
-
-  // Toggle Image Approval
-  const handleToggleApproveImage = async (imageId: string, currentApproved: number) => {
-    try {
-      const res = await fetch(`/api/projects/${projectId}/images/${imageId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approved: currentApproved === 1 ? 0 : 1 }),
-      });
-      if (!res.ok) throw new Error("อัปเดตไม่สำเร็จ");
-      toast.success(currentApproved === 1 ? "ยกเลิกการ Approve ภาพ" : "Approve ภาพเป็นภาพทางการแล้ว!");
-      if (activeSceneId) loadSceneDetails(activeSceneId);
-    } catch (err) {
-      toast.error("เกิดข้อผิดพลาดในการบันทึก");
-    }
-  };
-
-  // Delete Image
-  const handleDeleteImage = async (imageId: string) => {
-    if (!confirm("คุณแน่ใจว่าต้องการลบภาพนี้?")) return;
-    try {
-      const res = await fetch(`/api/projects/${projectId}/images/${imageId}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("ลบไม่สำเร็จ");
-      toast.success("ลบรูปภาพเรียบร้อย");
-      if (activeSceneId) loadSceneDetails(activeSceneId);
-    } catch (err) {
-      toast.error("เกิดข้อผิดพลาดในการลบ");
-    }
-  };
-
-  // Studio BGM Handlers
-  const handleUploadStudioBgm = async (file: File) => {
-    if (!activeScene) {
-      toast.error("กรุณาเลือกฉากก่อนอัปโหลดเพลง");
-      return;
-    }
-    try {
-      setIsUploadingStudioBgm(true);
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
-
-      const res = await fetch(`/api/projects/${projectId}/scenes/${activeScene.id}/audio`, {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "อัปโหลดไม่สำเร็จ");
-
-      // Update activeScene
-      const updatedScene = { ...activeScene, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle };
-      setActiveScene(updatedScene);
-      setParts((prevParts) =>
-        prevParts.map((part) => ({
-          ...part,
-          scenes: part.scenes.map((s) =>
-            s.id === activeScene.id ? { ...s, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle } : s
-          ),
-        }))
-      );
-
-      // Play uploaded music in studio preview
-      if (studioAudioRef.current) {
-        studioAudioRef.current.src = data.bgmUrl;
-        studioAudioRef.current.volume = studioAudioVolume;
-        studioAudioRef.current.play().catch((e) => console.warn(e));
-        setIsStudioAudioPlaying(true);
-      }
-
-      toast.success(`อัปโหลดเพลง "${data.bgmTitle}" สำหรับฉากนี้สำเร็จ!`);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "อัปโหลดเพลงไม่สำเร็จ");
-    } finally {
-      setIsUploadingStudioBgm(false);
-    }
-  };
-
-  const handleSaveCustomAudioUrl = async () => {
-    if (!activeScene) return;
-    if (!customAudioUrlInput.trim()) {
-      toast.error("กรุณาระบุ URL ของเพลง");
-      return;
-    }
-
-    try {
-      setIsUploadingStudioBgm(true);
-      const res = await fetch(`/api/projects/${projectId}/scenes/${activeScene.id}/audio`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bgmUrl: customAudioUrlInput.trim(),
-          bgmTitle: customAudioTitleInput.trim() || "เพลงประกอบประจำฉาก (Custom URL)",
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "บันทึกเพลงไม่สำเร็จ");
-
-      const updatedScene = { ...activeScene, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle };
-      setActiveScene(updatedScene);
-      setParts((prevParts) =>
-        prevParts.map((part) => ({
-          ...part,
-          scenes: part.scenes.map((s) =>
-            s.id === activeScene.id ? { ...s, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle } : s
-          ),
-        }))
-      );
-
-      setCustomAudioUrlInput("");
-      setCustomAudioTitleInput("");
-      toast.success("บันทึกเพลงประกอบประจำฉากเรียบร้อยแล้ว!");
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "บันทึกเพลงไม่สำเร็จ");
-    } finally {
-      setIsUploadingStudioBgm(false);
-    }
-  };
-
-  const handleDeleteStudioBgm = async () => {
-    if (!activeScene) return;
-    if (!confirm("คุณแน่ใจหรือไม่ว่าต้องการลบเพลงประกอบของฉากนี้?")) return;
-
-    try {
-      const res = await fetch(`/api/projects/${projectId}/scenes/${activeScene.id}/audio`, {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "ลบเพลงไม่สำเร็จ");
-
-      if (studioAudioRef.current) {
-        studioAudioRef.current.pause();
-      }
-      setIsStudioAudioPlaying(false);
-
-      const updatedScene = { ...activeScene, bgmUrl: null, bgmTitle: null };
-      setActiveScene(updatedScene);
-      setParts((prevParts) =>
-        prevParts.map((part) => ({
-          ...part,
-          scenes: part.scenes.map((s) =>
-            s.id === activeScene.id ? { ...s, bgmUrl: null, bgmTitle: null } : s
-          ),
-        }))
-      );
-
-      toast.success("ลบเพลงประกอบประจำฉากเรียบร้อย");
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "ลบเพลงไม่สำเร็จ");
-    }
-  };
-
-  const handleToggleStudioAudio = () => {
-    if (!studioAudioRef.current) return;
-    if (isStudioAudioPlaying) {
-      studioAudioRef.current.pause();
-      setIsStudioAudioPlaying(false);
-    } else {
-      studioAudioRef.current.volume = studioAudioVolume;
-      studioAudioRef.current.play().catch((e) => console.warn(e));
-      setIsStudioAudioPlaying(true);
-    }
-  };
-
-  // Filter images for Left Panel
-  const aiImages = sceneImages.filter((img) => img.kind !== "movie_still" && img.kind !== "reference");
-  const movieStills = sceneImages.filter((img) => img.kind === "movie_still" || img.kind === "reference");
-
+  // Compute Active Images & Captions
   const currentPart = parts.find((p) => p.id === activePartId);
+  const currentFeaturedImage =
+    sceneImages.length > 0
+      ? sceneImages[selectedImageIndex] || sceneImages[0]
+      : null;
 
-  const studioDialogueBlocks = activeScene
-    ? parseSceneToDialogueBlocks(activeScene.contentMarkdown || "", characters)
-    : [];
-  const boundDialogueCount = Object.keys(localDialogueBindings).length;
+  const activeBlock = dialogueBlocks[activeBlockIndex];
+  const leftCardCaption =
+    sceneCaptionInput ||
+    currentFeaturedImage?.caption ||
+    (activeBlock ? activeBlock.text : dialogueBlocks[0]?.text) ||
+    "กลิ่นของไฟป่า (Wildfire) ยังคงติดแน่นอยู่ในชั้นบรรยากาศ มันไม่ได้มีกลิ่นเหมือนฟืนไหม้ทั่วไป แต่เป็นกลิ่นฉุนแสบจมูกของสารเคมีโบราณที่เผาผลาญทั้งไม้ เหล็ก และเนื้อมนุษย์จนกลายเป็นเถ้าสีมรกต";
 
   return (
     <div className="space-y-4">
+      {/* Project Header */}
       {project && (
         <ProjectHeader
           projectId={project.id}
@@ -851,16 +977,19 @@ export default function StoryWorkspacePage({
         />
       )}
 
-      {/* Top Part & Scene Navigation Ribbon */}
-      <div className="cinematic-card rounded-xl p-3 border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-950/80">
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Part Selector */}
-          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1">
-            <Layers className="w-3.5 h-3.5 text-amber-400" />
+      {/* ========================================================================= */}
+      {/* 1. SCENE & AUDIO CONTROL RIBBON (Sleek, unified, easy-to-use)             */}
+      {/* ========================================================================= */}
+      <div className="cinematic-card rounded-2xl p-3 sm:p-4 border-slate-700/60 flex flex-wrap items-center justify-between gap-3 bg-slate-950/80 shadow-xl">
+        {/* Left: Part & Scene Selectors */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Part Dropdown */}
+          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-sm">
+            <Layers className="w-4 h-4 text-amber-400" />
             <select
               value={activePartId}
               onChange={(e) => handleSelectPart(e.target.value)}
-              className="bg-transparent text-xs font-semibold text-white focus:outline-none font-thai"
+              className="bg-transparent text-xs font-bold text-white focus:outline-none font-thai cursor-pointer"
             >
               {parts.map((p) => (
                 <option key={p.id} value={p.id} className="bg-slate-900">
@@ -870,14 +999,14 @@ export default function StoryWorkspacePage({
             </select>
           </div>
 
-          {/* Scene Selector */}
+          {/* Scene / Episode Dropdown */}
           {currentPart && currentPart.scenes.length > 0 && (
-            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1">
-              <FileText className="w-3.5 h-3.5 text-amber-400" />
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-sm">
+              <FileText className="w-4 h-4 text-amber-400" />
               <select
                 value={activeSceneId}
                 onChange={(e) => handleSelectScene(e.target.value)}
-                className="bg-transparent text-xs font-semibold text-white focus:outline-none font-thai max-w-[200px] truncate"
+                className="bg-transparent text-xs font-bold text-white focus:outline-none font-thai max-w-[220px] truncate cursor-pointer"
               >
                 {currentPart.scenes.map((s) => (
                   <option key={s.id} value={s.id} className="bg-slate-900">
@@ -888,935 +1017,871 @@ export default function StoryWorkspacePage({
             </div>
           )}
 
+          {/* New Scene Button */}
           <button
             onClick={() => setShowNewSceneModal(true)}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-thai font-semibold transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-thai font-bold transition-all shadow-sm active:scale-95"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>เพิ่มฉากใหม่</span>
+            <span>+ เพิ่มฉากใหม่</span>
           </button>
         </div>
 
-        {/* Scene Meta Badges */}
-        {activeScene && (
-          <div className="flex items-center gap-3 text-xs text-slate-400 font-thai">
-            {activeScene.location && (
-              <span className="flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-amber-400" />
-                <span>{activeScene.location}</span>
-              </span>
-            )}
-            <span className="flex items-center gap-1 font-mono text-slate-300">
-              <Clock className="w-3.5 h-3.5 text-slate-500" />
-              <span>v{activeScene.version}</span>
-            </span>
-            <span className="px-2 py-0.5 rounded bg-slate-800 text-amber-400 font-mono text-[11px] font-semibold">
-              {(activeScene.wordCount || 0).toLocaleString()} คำ
-            </span>
-            <Link
-              href={`/projects/${projectId}/read${activeScene ? `?sceneId=${activeScene.id}` : ""}`}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-bold hover:from-amber-400 hover:to-amber-500 font-thai text-xs shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all"
+        {/* Center / Right: Scene BGM Audio Controls */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Audio Track Dropdown */}
+          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-sm">
+            <Music className="w-4 h-4 text-emerald-400" />
+            <select
+              value={currentAudioTrack}
+              onChange={(e) => handleSelectAudioTrack(e.target.value as AudioTrack)}
+              className="bg-transparent text-xs font-bold text-white focus:outline-none font-thai cursor-pointer max-w-[180px] truncate"
             >
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>เปิดโหมดอ่านนิยาย (Reader View) →</span>
-            </Link>
+              <option value="none" className="bg-slate-900">⚪ ไม่มีเพลงประกอบ</option>
+              {activeScene?.bgmUrl && (
+                <option value="custom" className="bg-slate-900">
+                  🎶 {activeScene.bgmTitle || "เพลงที่อัปโหลด"}
+                </option>
+              )}
+              <option value="wildfire" className="bg-slate-900">🔥 เพลิงป่า (Wildfire Drone)</option>
+              <option value="winter" className="bg-slate-900">❄️ ลมเหมันต์ (Winter Winds)</option>
+              <option value="war" className="bg-slate-900">⚔️ มหากาพย์ศึก (War Drums)</option>
+              <option value="shadows" className="bg-slate-900">🌑 เงาทมิฬ (Shadows Ethereal)</option>
+            </select>
+
+            {/* Play/Pause Button */}
+            <button
+              onClick={handleToggleAudioPlay}
+              className={`p-1 rounded-lg transition-colors ${
+                isAudioPlaying
+                  ? "bg-emerald-500 text-slate-950"
+                  : "bg-slate-800 text-slate-300 hover:text-white"
+              }`}
+              title={isAudioPlaying ? "หยุดเพลง" : "เล่นเพลง"}
+            >
+              {isAudioPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+            </button>
           </div>
-        )}
+
+          {/* Upload Custom Audio Button */}
+          <button
+            onClick={() => audioFileInputRef.current?.click()}
+            disabled={isUploadingAudio}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-thai font-semibold transition-all shadow-sm active:scale-95"
+            title="อัปโหลดไฟล์เพลง MP3 หรือ WAV สำหรับฉากนี้"
+          >
+            <Upload className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{isUploadingAudio ? "กำลังอัปโหลด..." : "อัปโหลดเพลง"}</span>
+          </button>
+
+          {activeScene?.bgmUrl && (
+            <button
+              onClick={handleDeleteAudio}
+              className="p-1.5 rounded-xl bg-slate-900 hover:bg-red-950/60 text-slate-400 hover:text-red-300 border border-slate-800 transition-colors"
+              title="ลบเพลงประกอบประจำฉากนี้"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-red-400" />
+            </button>
+          )}
+
+          {/* Save All Changes Button */}
+          <button
+            onClick={handleSaveAll}
+            disabled={isSavingScene}
+            className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl font-bold text-xs font-thai transition-all shadow-md active:scale-95 ${
+              hasUnsavedChanges
+                ? "bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.35)] animate-pulse"
+                : "bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700"
+            }`}
+          >
+            {isSavingScene ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Check className="w-3.5 h-3.5 stroke-[3]" />
+            )}
+            <span>{isSavingScene ? "กำลังบันทึก..." : hasUnsavedChanges ? "บันทึกการแก้ไข *" : "บันทึกแล้ว"}</span>
+          </button>
+
+          {/* Reader View Link */}
+          <Link
+            href={`/projects/${projectId}/read${activeScene ? `?sceneId=${activeScene.id}` : ""}`}
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-slate-950 font-bold hover:brightness-110 font-thai text-xs shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all active:scale-95"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>เปิดโหมดอ่านนิยาย (Reader View) →</span>
+          </Link>
+        </div>
       </div>
 
-      {/* Main Split Screen Workspace */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-        {/* ========================================================= */}
-        {/* LEFT COLUMN: Visual Stage & Movie Stills (ตามที่ผู้ใช้สั่ง) */}
-        {/* ========================================================= */}
-        <div className="cinematic-card rounded-2xl p-5 border-slate-800 space-y-4 bg-slate-950/70">
-          {/* Visual Panel Header & Tabs */}
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => setVisualTab("ai_scenes")}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold font-thai transition-all ${
-                  visualTab === "ai_scenes"
-                    ? "bg-amber-500 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.25)] font-bold"
-                    : "text-slate-400 hover:text-white hover:bg-slate-800"
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>ภาพ AI ({aiImages.length})</span>
-              </button>
+      {/* ========================================================================= */}
+      {/* 2. MAIN SPLIT-SCREEN WORKSPACE (Exact Layout matching Image 2 & Figma)    */}
+      {/* ========================================================================= */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 xl:gap-8 items-stretch w-full">
+        {/* ----------------------------------------------------------------------- */}
+        {/* LEFT COLUMN: Visual Stage & Image Gallery (Figma width: 1196px, 2/3)     */}
+        {/* ----------------------------------------------------------------------- */}
+        <div className="lg:col-span-7 xl:col-span-8 flex flex-col justify-between rounded-[16px] p-5 sm:p-6 bg-[#313131] border border-slate-700/60 shadow-2xl h-[780px] sm:h-[840px] lg:h-[880px] xl:h-[920px]">
+          {/* Main Cinematic Image Display (flex-1 dynamically fills vertical space) */}
+          <div className="relative w-full flex-1 min-h-0 rounded-[13px] overflow-hidden bg-[#1e232d] group border border-black/20 mb-3">
+            {currentFeaturedImage ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  key={currentFeaturedImage.id}
+                  src={currentFeaturedImage.filePath}
+                  alt={currentFeaturedImage.caption || currentFeaturedImage.prompt}
+                  className="w-full h-full object-cover transition-all duration-700 group-hover:scale-102 animate-fadeIn"
+                />
 
-              <button
-                onClick={() => setVisualTab("movie_stills")}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold font-thai transition-all ${
-                  visualTab === "movie_stills"
-                    ? "bg-amber-500 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.25)] font-bold"
-                    : "text-slate-400 hover:text-white hover:bg-slate-800"
-                }`}
-              >
-                <Film className="w-3.5 h-3.5" />
-                <span>ภาพหนัง ({movieStills.length})</span>
-              </button>
+                {/* Gradient overlay for readability */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
 
-              <button
-                onClick={() => setVisualTab("bgm_audio")}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold font-thai transition-all ${
-                  visualTab === "bgm_audio"
-                    ? "bg-amber-500 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.25)] font-bold"
-                    : "text-slate-400 hover:text-white hover:bg-slate-800"
-                }`}
-              >
-                <Music className="w-3.5 h-3.5" />
-                <span>🎵 เพลงประกอบฉาก ({activeScene?.bgmUrl ? 1 : 0})</span>
-              </button>
-            </div>
-
-            {visualTab === "movie_stills" && (
-              <button
-                onClick={() => setShowAddStillModal(true)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-thai border border-slate-700 transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ เพิ่มภาพหนัง</span>
-              </button>
-            )}
-          </div>
-
-          {/* TAB 1: AI Generated Images */}
-          {visualTab === "ai_scenes" && (
-            <div className="space-y-4">
-              {/* Quick AI Trigger Buttons */}
-              <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800/80 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-amber-300 font-thai flex items-center gap-1.5">
+                {/* Top Floating Controls */}
+                <div className="absolute top-3.5 left-3.5 flex items-center gap-2">
+                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/95 text-slate-950 font-thai flex items-center gap-1.5 backdrop-blur-md shadow">
                     <Sparkles className="w-3.5 h-3.5" />
-                    <span>AI Visual Moment Generator</span>
+                    <span>
+                      {currentFeaturedImage.kind === "movie_still" ? "CANON MOVIE STILL" : "CINEMATIC SCENE"}
+                    </span>
                   </span>
 
                   <button
-                    disabled={isAnalyzing || !activeScene?.contentMarkdown}
-                    onClick={handleRunAnalysis}
-                    className="text-[11px] text-amber-400 hover:underline font-thai disabled:opacity-50"
+                    onClick={() => imageFileInputRef.current?.click()}
+                    disabled={isUploadingImage}
+                    className="px-2.5 py-1 rounded-full text-xs font-bold bg-black/80 hover:bg-black text-white font-thai flex items-center gap-1.5 backdrop-blur-md border border-slate-700 shadow transition-all active:scale-95"
                   >
-                    ✨ ให้ AI เสนอ 3 จังหวะน่าวาดจากฉากนี้
+                    <Upload className="w-3 h-3 text-amber-400" />
+                    <span>{isUploadingImage ? "กำลังอัปโหลด..." : "+ อัปโหลดรูปภาพ"}</span>
                   </button>
-                </div>
 
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="ใส่คำอธิบายภาพ หรือกดให้ AI สกัดจังหวะน่าวาดอัตโนมัติ..."
-                    value={customImagePrompt}
-                    onChange={(e) => setCustomImagePrompt(e.target.value)}
-                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
-                  />
                   <button
-                    disabled={isGeneratingImage || !customImagePrompt.trim()}
-                    onClick={() => handleGenerateImage()}
-                    className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai transition-colors disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap"
+                    onClick={() => {
+                      setAiImagePromptInput(
+                        `${activeScene?.title || ""}, ${activeScene?.location || ""}, dark fantasy cinematic lighting`
+                      );
+                      setShowAiImageModal(true);
+                    }}
+                    className="px-2.5 py-1 rounded-full text-xs font-bold bg-black/80 hover:bg-black text-amber-300 font-thai flex items-center gap-1.5 backdrop-blur-md border border-amber-500/30 shadow transition-all active:scale-95"
                   >
-                    {isGeneratingImage ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                    <span>{isGeneratingImage ? "กำลังสร้าง..." : "สร้างภาพ AI"}</span>
+                    <Sparkles className="w-3 h-3 text-amber-400" />
+                    <span>สร้างด้วย AI</span>
                   </button>
                 </div>
-              </div>
 
-              {/* AI Image Gallery */}
-              {aiImages.length === 0 ? (
-                <div className="text-center py-12 rounded-xl border border-dashed border-slate-800 bg-slate-900/20">
-                  <ImageIcon className="w-10 h-10 mx-auto text-slate-600 mb-2" />
-                  <p className="text-xs text-slate-400 font-thai">
-                    ยังไม่มีภาพ AI สำหรับฉากนี้
-                  </p>
-                  <p className="text-[11px] text-slate-500 font-thai mt-1">
-                    เขียนฉากเสร็จแล้วกด &quot;✨ ให้ AI เสนอ 3 จังหวะน่าวาด&quot; เพื่อสร้างภาพประกอบอัตโนมัติ
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {aiImages.map((img) => (
-                    <div
-                      key={img.id}
-                      className="group relative rounded-xl overflow-hidden border border-slate-800 bg-slate-900 flex flex-col justify-between"
-                    >
-                      <div className="relative aspect-video w-full overflow-hidden bg-slate-950">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={img.filePath}
-                          alt={img.prompt}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-
-                        {/* Lightbox Trigger */}
-                        <button
-                          onClick={() => setLightboxImage(img.filePath)}
-                          className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="ดูภาพขยาย"
-                        >
-                          <Maximize2 className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* Approved Badge */}
-                        {img.approved === 1 && (
-                          <span className="absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-slate-950 font-thai flex items-center gap-1 shadow">
-                            <Check className="w-3 h-3 stroke-[3]" />
-                            <span>APPROVED</span>
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="p-2.5 space-y-2">
-                        <p className="text-[11px] text-slate-300 line-clamp-2 font-thai">
-                          {img.prompt}
-                        </p>
-
-                        <div className="flex items-center justify-between pt-1 border-t border-slate-800 text-[11px]">
-                          <button
-                            onClick={() => handleToggleApproveImage(img.id, img.approved)}
-                            className={`flex items-center gap-1 px-2 py-0.5 rounded font-thai font-semibold transition-colors ${
-                              img.approved === 1
-                                ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                                : "text-slate-400 hover:text-white"
-                            }`}
-                          >
-                            <Check className="w-3 h-3" />
-                            <span>{img.approved === 1 ? "อนุมัติแล้ว" : "กด Approve"}</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteImage(img.id)}
-                            className="text-slate-500 hover:text-red-400 p-1"
-                            title="ลบภาพนี้"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 2: Movie Reference Stills (ภาพจริงจากหนัง/ซีรีส์) */}
-          {visualTab === "movie_stills" && (
-            <div className="space-y-4">
-              <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800/80 flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-white font-heading">
-                    CANON MOVIE STILLS & REFERENCE
-                  </h4>
-                  <p className="text-[11px] text-slate-400 font-thai">
-                    คลังภาพสถานที่และฉากจริงจากหนัง เพื่อใช้สร้างอารมณ์ร่วมและให้ AI ใช้อ้างอิง
-                  </p>
-                </div>
+                {/* Zoom Lightbox Trigger */}
                 <button
-                  onClick={() => setShowAddStillModal(true)}
-                  className="px-3 py-1.5 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs font-thai hover:bg-amber-400 transition-colors"
+                  onClick={() => setLightboxImage(currentFeaturedImage.filePath)}
+                  className="absolute top-3.5 right-3.5 p-2 rounded-xl bg-black/70 hover:bg-black text-white backdrop-blur-md transition-all shadow"
+                  title="ขยายภาพเต็มจอ"
                 >
-                  + ใส่รูปภาพจริง
+                  <ZoomIn className="w-4 h-4" />
                 </button>
-              </div>
-
-              {movieStills.length === 0 ? (
-                <div className="text-center py-12 rounded-xl border border-dashed border-slate-800 bg-slate-900/20">
-                  <Film className="w-10 h-10 mx-auto text-slate-600 mb-2" />
-                  <p className="text-xs text-slate-400 font-thai">
-                    ยังไม่มีภาพจริงจากหนังสำหรับฉากนี้
-                  </p>
-                  <p className="text-[11px] text-slate-500 font-thai mt-1">
-                    คุณสามารถแคปภาพจาก Game of Thrones หรือแปะ URL ภาพฉาก เช่น King&apos;s Landing หรือ The Wall
-                  </p>
+              </>
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-slate-400">
+                <Film className="w-14 h-14 mb-3 text-slate-600" />
+                <p className="font-thai font-bold text-slate-200 text-base">ยังไม่มีภาพประกอบสำหรับฉากนี้</p>
+                <p className="text-xs font-thai text-slate-400 mt-1 max-w-md">
+                  คุณสามารถอัปโหลดรูปภาพของคุณเอง หรือสั่งให้ AI สร้างภาพประกอบตามเนื้อเรื่องได้ทันที
+                </p>
+                <div className="flex items-center gap-3 mt-5">
                   <button
-                    onClick={() => setShowAddStillModal(true)}
-                    className="mt-3 px-3 py-1.5 rounded-lg bg-slate-800 text-amber-300 text-xs font-thai border border-slate-700"
+                    onClick={() => imageFileInputRef.current?.click()}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai flex items-center gap-2 shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all"
                   >
-                    + เพิ่มภาพแรก
+                    <Upload className="w-4 h-4" />
+                    <span>+ อัปโหลดรูปภาพจากเครื่อง</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAiImagePromptInput(
+                        `${activeScene?.title || ""}, ${activeScene?.location || ""}, dark fantasy cinematic lighting`
+                      );
+                      setShowAiImageModal(true);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 font-bold text-xs font-thai flex items-center gap-2 transition-all"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>สั่งให้ AI วาดรูป</span>
                   </button>
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {movieStills.map((still) => (
-                    <div
-                      key={still.id}
-                      className="group relative rounded-xl overflow-hidden border border-slate-800 bg-slate-900 flex flex-col justify-between"
-                    >
-                      <div className="relative aspect-video w-full overflow-hidden bg-slate-950">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={still.filePath}
-                          alt={still.caption || "Movie Still"}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                        <button
-                          onClick={() => setLightboxImage(still.filePath)}
-                          className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <Maximize2 className="w-3.5 h-3.5" />
-                        </button>
-                        <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded text-[10px] font-semibold bg-black/80 text-amber-300 font-thai border border-amber-500/30">
-                          🎬 MOVIE STILL
-                        </span>
-                      </div>
-
-                      <div className="p-2.5 flex items-center justify-between">
-                        <p className="text-xs text-white font-thai font-medium truncate">
-                          {still.caption || "ภาพจริงในหนัง"}
-                        </p>
-                        <button
-                          onClick={() => handleDeleteImage(still.id)}
-                          className="text-slate-500 hover:text-red-400 p-1"
-                          title="ลบภาพ"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 3: Scene Background Music (เพลงประกอบฉาก) */}
-          {visualTab === "bgm_audio" && (
-            <div className="space-y-4">
-              <div className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800/80 flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-white font-heading flex items-center gap-1.5">
-                    <Music className="w-3.5 h-3.5 text-amber-400" />
-                    <span>SCENE BACKGROUND MUSIC (เพลงประจำฉาก)</span>
-                  </h4>
-                  <p className="text-[11px] text-slate-400 font-thai">
-                    อัปโหลดเพลงเฉพาะสำหรับฉากนี้ เพื่อให้เล่นเป็นเพลงพื้นหลังเวลาเปิดอ่านในโหมด Reader
-                  </p>
-                </div>
-              </div>
-
-              {/* If active scene has BGM */}
-              {activeScene?.bgmUrl ? (
-                <div className="rounded-xl border border-amber-500/40 bg-gradient-to-b from-amber-500/10 via-slate-900 to-slate-900 p-4 space-y-4 shadow-xl">
-                  {/* Track Info Header */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
-                        <Music className="w-6 h-6 animate-pulse" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded">
-                            CURRENT BGM TRACK
-                          </span>
-                        </div>
-                        <h3 className="text-sm font-bold text-white font-thai mt-1">
-                          {activeScene.bgmTitle || "เพลงประกอบประจำฉาก"}
-                        </h3>
-                        <p className="text-[11px] text-slate-400 font-mono truncate max-w-xs mt-0.5">
-                          {activeScene.bgmUrl}
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={handleDeleteStudioBgm}
-                      className="p-2 rounded-lg bg-red-950/40 border border-red-800/40 text-red-400 hover:bg-red-900/50 hover:text-white transition-colors"
-                      title="ลบเพลงประกอบประจำฉากนี้"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* Playback Controls & Progress */}
-                  <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <button
-                        onClick={handleToggleStudioAudio}
-                        className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold transition-all shadow ${
-                          isStudioAudioPlaying
-                            ? "bg-amber-500 text-slate-950"
-                            : "bg-slate-800 text-white hover:bg-amber-500 hover:text-slate-950"
-                        }`}
-                      >
-                        {isStudioAudioPlaying ? (
-                          <Pause className="w-4 h-4 fill-current" />
-                        ) : (
-                          <Play className="w-4 h-4 fill-current ml-0.5" />
-                        )}
-                      </button>
-
-                      <div className="flex-1 flex items-center gap-2">
-                        {isStudioAudioPlaying && (
-                          <div className="flex items-end gap-1 h-4">
-                            <span className="w-1 bg-amber-400 rounded-full animate-bounce h-3" />
-                            <span className="w-1 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.1s] h-4" />
-                            <span className="w-1 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.2s] h-2" />
-                            <span className="w-1 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.3s] h-3.5" />
-                          </div>
-                        )}
-                        <span className="text-xs font-thai text-slate-300">
-                          {isStudioAudioPlaying ? "กำลังเล่นตัวอย่างเสียง..." : "กดเพื่อทดลองฟังเพลง"}
-                        </span>
-                      </div>
-
-                      {/* Volume Slider */}
-                      <div className="flex items-center gap-2">
-                        <Volume2 className="w-4 h-4 text-amber-400" />
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.05"
-                          value={studioAudioVolume}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value);
-                            setStudioAudioVolume(val);
-                            if (studioAudioRef.current) {
-                              studioAudioRef.current.volume = val;
-                            }
-                          }}
-                          className="w-20 accent-amber-400 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer"
-                        />
-                      </div>
-                    </div>
-
-                    <audio
-                      ref={studioAudioRef}
-                      src={activeScene.bgmUrl}
-                      loop
-                      onEnded={() => setIsStudioAudioPlaying(false)}
-                    />
-                  </div>
-
-                  {/* Replace track button */}
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-800 text-xs font-thai">
-                    <span className="text-slate-400">ต้องการเปลี่ยนเพลงใหม่?</span>
-                    <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-semibold border border-slate-700 transition-colors">
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>{isUploadingStudioBgm ? "กำลังอัปโหลด..." : "อัปโหลดไฟล์เพลงใหม่ (MP3/WAV)"}</span>
-                      <input
-                        type="file"
-                        accept="audio/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleUploadStudioBgm(file);
-                        }}
-                      />
-                    </label>
-                  </div>
-                </div>
-              ) : (
-                /* No BGM: Upload Section */
-                <div className="space-y-4">
-                  <div className="text-center py-10 px-4 rounded-xl border border-dashed border-slate-700 bg-slate-900/30 space-y-3">
-                    <div className="w-12 h-12 rounded-full bg-slate-800 text-amber-400 flex items-center justify-center mx-auto">
-                      <Music className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-200 font-thai">
-                        ยังไม่มีเพลงประกอบสำหรับฉากนี้
-                      </h4>
-                      <p className="text-[11px] text-slate-400 font-thai mt-0.5">
-                        รองรับไฟล์เสียง MP3, WAV, M4A, OGG, AAC เพื่อเล่นเป็นเพลงประจำฉากในโหมด Reader
-                      </p>
-                    </div>
-
-                    <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all">
-                      <Upload className="w-4 h-4" />
-                      <span>{isUploadingStudioBgm ? "กำลังอัปโหลด..." : "เลือกไฟล์เพลงจากเครื่อง (MP3/WAV)"}</span>
-                      <input
-                        type="file"
-                        accept="audio/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleUploadStudioBgm(file);
-                        }}
-                      />
-                    </label>
-                  </div>
-
-                  {/* Or Enter Direct Audio URL */}
-                  <div className="bg-slate-900/40 p-3 rounded-xl border border-slate-800 space-y-2">
-                    <span className="text-xs font-semibold text-slate-300 font-thai">
-                      หรือระบุ URL เพลงโดยตรง (Audio Stream URL):
-                    </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        placeholder="ชื่อเพลง (เช่น ธีมสงครามอ่าวแบล็กวอเตอร์)"
-                        value={customAudioTitleInput}
-                        onChange={(e) => setCustomAudioTitleInput(e.target.value)}
-                        className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 font-thai"
-                      />
-                      <div className="flex gap-2">
-                        <input
-                          type="url"
-                          placeholder="https://example.com/soundtrack.mp3"
-                          value={customAudioUrlInput}
-                          onChange={(e) => setCustomAudioUrlInput(e.target.value)}
-                          className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 font-mono"
-                        />
-                        <button
-                          onClick={handleSaveCustomAudioUrl}
-                          disabled={isUploadingStudioBgm || !customAudioUrlInput.trim()}
-                          className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-thai font-semibold border border-slate-700 transition-colors disabled:opacity-50"
-                        >
-                          บันทึก
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ========================================================= */}
-        {/* RIGHT COLUMN: Story Narrative & AI Engine (เนื้อเรื่องนิยาย) */}
-        {/* ========================================================= */}
-        <div className="cinematic-card rounded-2xl p-6 border-slate-800 space-y-5 bg-slate-950/70">
-          {/* Narrative Header & Action Controls */}
-          <div className="space-y-3 border-b border-slate-800 pb-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <span className="text-[11px] font-mono text-amber-400 font-semibold uppercase tracking-wider">
-                  {currentPart ? `PART ${currentPart.number}: ${currentPart.title}` : "NO PART"}
-                </span>
-                <h2 className="font-heading text-2xl font-bold text-white mt-0.5">
-                  {activeScene ? activeScene.title : "ยังไม่ได้เลือกฉาก"}
-                </h2>
-              </div>
-
-              {/* Version History Button */}
-              {activeScene && (
-                <button
-                  onClick={() => setShowVersionModal(true)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 text-xs text-slate-300 font-thai transition-colors"
-                >
-                  <History className="w-3.5 h-3.5 text-amber-400" />
-                  <span>ประวัติ v{activeScene.version}</span>
-                </button>
-              )}
-            </div>
-
-            {/* Characters Present in this scene */}
-            {activeScene && (
-              <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                <span className="text-xs text-slate-400 font-thai flex items-center gap-1 mr-1">
-                  <Users className="w-3.5 h-3.5 text-amber-400" />
-                  <span>ตัวละครในฉากนี้:</span>
-                </span>
-                {activeScene.charactersPresentParsed && activeScene.charactersPresentParsed.length > 0 ? (
-                  activeScene.charactersPresentParsed.map((name) => {
-                    const charObj = characters.find(
-                      (c) => c.name === name || c.realNickname === name
-                    );
-                    const isFriend = charObj?.characterType === "friend";
-                    const isSelf = charObj?.characterType === "self";
-
-                    return (
-                      <span
-                        key={name}
-                        className={`px-2 py-0.5 rounded text-[11px] font-thai ${
-                          isSelf
-                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold"
-                            : isFriend
-                            ? "bg-sky-950/80 text-sky-300 border border-sky-800/60 font-semibold"
-                            : "bg-slate-800 text-slate-300"
-                        }`}
-                      >
-                        {isSelf ? "👑 " : isFriend ? "🧑‍🤝‍🧑 " : ""}
-                        {name}
-                      </span>
-                    );
-                  })
-                ) : (
-                  <span className="text-xs text-slate-500 font-thai">ไม่ได้ระบุเฉพาะเจาะจง</span>
-                )}
               </div>
             )}
+          </div>
 
-            {/* Director's Note Box */}
-            <div className="pt-2">
-              <label className="block text-xs font-semibold text-amber-300 font-thai mb-1 flex items-center gap-1.5">
-                <PenTool className="w-3.5 h-3.5" />
-                <span>Director&apos;s Note (คำสั่งกำกับทิศทางฉากนี้ให้ AI):</span>
-              </label>
-              <textarea
-                rows={2}
-                placeholder="เช่น พาฉันกับเพื่อนคนนี้ไปเจอกับ Jaime Lannister ในคุกใต้ดิน แล้วให้การตัดสินใจในฉากนี้เป็นจุดเปลี่ยน..."
-                value={directorsNote}
-                onChange={(e) => setDirectorsNote(e.target.value)}
-                className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 font-thai"
-              />
+          {/* Thumbnail Strip: Image Gallery for this EP */}
+          <div className="flex-shrink-0 space-y-1.5 mb-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-slate-400 font-thai flex items-center gap-1.5">
+                <Film className="w-3 h-3 text-amber-400" />
+                <span>คลังภาพในฉากนี้ ({sceneImages.length} ภาพ):</span>
+              </span>
+              <button
+                onClick={() => imageFileInputRef.current?.click()}
+                className="text-[11px] text-amber-400 hover:underline font-thai font-semibold flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                <span>เพิ่มภาพใหม่</span>
+              </button>
             </div>
 
-            {/* Interactive Action Toolbar */}
-            <div className="flex flex-wrap items-center gap-2 pt-2">
-              <button
-                disabled={isStreaming || !activeScene}
-                onClick={() => handleStartStream("write_next")}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs font-thai transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] disabled:opacity-50"
-              >
-                {isStreaming ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="w-3.5 h-3.5" />
-                )}
-                <span>{isStreaming ? "AI กำลังเล่าเรื่อง..." : "🖋️ ให้ AI เขียนฉากนี้ (Stream)"}</span>
-              </button>
-
-              <button
-                disabled={isStreaming || !activeScene?.contentMarkdown}
-                onClick={() => handleStartStream("regenerate")}
-                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-thai border border-slate-700 transition-colors disabled:opacity-50"
-              >
-                <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
-                <span>เขียนใหม่</span>
-              </button>
-
-              <button
-                disabled={isStreaming || !activeScene?.contentMarkdown}
-                onClick={() => handleStartStream("expand")}
-                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-thai border border-slate-700 transition-colors disabled:opacity-50"
-              >
-                <Plus className="w-3.5 h-3.5 text-amber-400" />
-                <span>ขยายฉาก</span>
-              </button>
-
-              {/* Studio View Mode Switcher (Read / Markdown Edit / Dialogue-Image Pairing) */}
-              <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-700/80">
-                <button
-                  onClick={() => setStudioViewMode("preview")}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-thai transition-colors ${
-                    studioViewMode === "preview"
-                      ? "bg-amber-500 text-slate-950 font-bold shadow"
-                      : "text-slate-300 hover:text-white hover:bg-slate-800"
-                  }`}
-                >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span>โหมดอ่าน</span>
-                </button>
-
-                <button
-                  onClick={() => setStudioViewMode("edit")}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-thai transition-colors ${
-                    studioViewMode === "edit"
-                      ? "bg-amber-500 text-slate-950 font-bold shadow"
-                      : "text-slate-300 hover:text-white hover:bg-slate-800"
-                  }`}
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>แก้ไขเอง (Markdown)</span>
-                </button>
-
-                <button
-                  onClick={() => setStudioViewMode("dialogue_bindings")}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-thai transition-colors ${
-                    studioViewMode === "dialogue_bindings"
-                      ? "bg-amber-500 text-slate-950 font-bold shadow"
-                      : "text-slate-300 hover:text-white hover:bg-slate-800"
-                  }`}
-                >
-                  <Film className="w-3.5 h-3.5" />
-                  <span>🎬 กำกับภาพตามบทพูด</span>
-                  {boundDialogueCount > 0 && (
-                    <span
-                      className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
-                        studioViewMode === "dialogue_bindings"
-                          ? "bg-slate-950 text-amber-400"
-                          : "bg-amber-500/20 text-amber-300"
-                      }`}
+            <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
+              {sceneImages.map((img, idx) => {
+                const isSelected = selectedImageIndex === idx;
+                return (
+                  <div
+                    key={img.id}
+                    onClick={() => setSelectedImageIndex(idx)}
+                    className={`cursor-pointer group relative aspect-video w-24 rounded-lg overflow-hidden border-2 flex-shrink-0 transition-all ${
+                      isSelected
+                        ? "border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.4)] ring-1 ring-amber-400 scale-105"
+                        : "border-slate-700 opacity-60 hover:opacity-100 hover:border-slate-500"
+                    }`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={img.filePath}
+                      alt={img.caption || ""}
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteImage(img.id);
+                      }}
+                      className="absolute top-1 right-1 p-1 rounded bg-black/80 hover:bg-red-950 text-slate-400 hover:text-red-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="ลบภาพนี้"
                     >
-                      {boundDialogueCount}
-                    </span>
-                  )}
-                </button>
-              </div>
+                      <Trash2 className="w-2.5 h-2.5 text-red-400" />
+                    </button>
+                  </div>
+                );
+              })}
 
+              {/* Fast Add Thumbnail Tile */}
               <button
-                disabled={isAnalyzing || !activeScene?.contentMarkdown}
-                onClick={handleRunAnalysis}
-                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-thai border border-slate-700 transition-colors disabled:opacity-50"
+                onClick={() => imageFileInputRef.current?.click()}
+                className="aspect-video w-24 rounded-lg border-2 border-dashed border-slate-700 hover:border-amber-500/60 bg-slate-900/60 flex flex-col items-center justify-center gap-1 flex-shrink-0 text-slate-400 hover:text-amber-300 transition-all cursor-pointer"
+                title="อัปโหลดรูปภาพเพิ่ม"
               >
-                <Shield className="w-3.5 h-3.5 text-amber-400" />
-                <span>{isAnalyzing ? "กำลังตรวจ..." : "ตรวจ Continuity & Moments"}</span>
+                <Plus className="w-4 h-4" />
+                <span className="text-[10px] font-thai">อัปโหลด</span>
               </button>
             </div>
           </div>
 
-          {/* Reading & Narrative Content Area */}
-          <div className="min-h-[420px] rounded-xl bg-slate-900/40 p-5 border border-slate-800/80">
+          {/* Atmospheric sensory caption underneath the image (Matching Image 2) */}
+          <div className="flex-shrink-0 p-3 pt-3 border-t border-slate-700/50 space-y-1">
+            <div className="flex items-center justify-between text-[11px] font-thai text-amber-400 font-bold">
+              <span>🎬 คำบรรยายใต้ภาพ / บทพูดที่กำลังแสดง:</span>
+              <button
+                onClick={() => {
+                  const val = prompt("แก้ไขคำบรรยายใต้ภาพ:", leftCardCaption);
+                  if (val !== null) setSceneCaptionInput(val);
+                }}
+                className="text-slate-400 hover:text-white font-normal underline"
+              >
+                แก้ไขคำบรรยาย
+              </button>
+            </div>
+            <p className="text-sm font-thai text-[#E2E8F0] leading-relaxed line-clamp-3">
+              {leftCardCaption}
+            </p>
+          </div>
+        </div>
+
+        {/* ----------------------------------------------------------------------- */}
+        {/* RIGHT COLUMN: Dialogue Card (Figma width: 596px, 1/3, Editable Beats)     */}
+        {/* ----------------------------------------------------------------------- */}
+        <div className="lg:col-span-5 xl:col-span-4 flex flex-col justify-between rounded-[16px] p-5 sm:p-6 bg-[#313131] border border-slate-700/60 shadow-2xl h-[780px] sm:h-[840px] lg:h-[880px] xl:h-[920px] space-y-3">
+          {/* Header: Part subtitle & Clean Scene Title (Editable!) */}
+          <div className="flex-shrink-0 space-y-2 border-b border-slate-700/50 pb-3">
+            {currentPart && (
+              <div className="text-[11px] font-mono font-bold text-[#FBBF24] tracking-wider uppercase">
+                PART {currentPart.number}: {currentPart.title}
+              </div>
+            )}
+
+            {/* Editable Scene Title */}
+            {isEditingTitle ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={sceneTitleInput}
+                  onChange={(e) => {
+                    setSceneTitleInput(e.target.value);
+                    setHasUnsavedChanges(true);
+                  }}
+                  className="w-full bg-slate-900 border border-amber-400 rounded-lg px-2.5 py-1 text-base font-bold text-white font-thai focus:outline-none"
+                  autoFocus
+                />
+                <button
+                  onClick={() => setIsEditingTitle(false)}
+                  className="px-2 py-1 rounded bg-amber-500 text-slate-950 font-bold text-xs"
+                >
+                  ตกลง
+                </button>
+              </div>
+            ) : (
+              <h2
+                onClick={() => setIsEditingTitle(true)}
+                className="font-heading text-xl sm:text-2xl font-bold text-white tracking-tight leading-snug hover:text-amber-300 cursor-pointer flex items-center gap-2 group"
+                title="คลิกเพื่อแก้ไขชื่อฉาก"
+              >
+                <span>{sceneTitleInput || activeScene?.title || "ฉากที่ 1"}</span>
+                <Edit3 className="w-3.5 h-3.5 text-slate-500 group-hover:text-amber-400 opacity-60" />
+              </h2>
+            )}
+
+            {/* Location & AI Toolbar Row */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+              <div className="flex items-center gap-2 text-xs font-thai">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-slate-300">
+                  <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                  <input
+                    type="text"
+                    value={sceneLocationInput}
+                    onChange={(e) => {
+                      setSceneLocationInput(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                    placeholder="ระบุสถานที่..."
+                    className="bg-transparent text-xs text-slate-200 focus:outline-none w-28 truncate"
+                  />
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-900 text-slate-400 font-mono text-[11px]">
+                  <span>{dialogueBlocks.length} ประโยค</span>
+                </span>
+              </div>
+
+              {/* AI & Markdown Toggle Buttons */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  disabled={isStreaming}
+                  onClick={() => handleStartStream("write_next")}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                  title="สั่งให้ AI ประพันธ์บทพูดและเนื้อเรื่องต่อ"
+                >
+                  {isStreaming ? (
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3 h-3" />
+                  )}
+                  <span>{isStreaming ? "AI กำลังเขียน..." : "AI แต่งต่อ"}</span>
+                </button>
+
+                <button
+                  onClick={handleAutoDistributeImages}
+                  disabled={sceneImages.length === 0 || dialogueBlocks.length === 0}
+                  className="p-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-amber-300 border border-slate-800 text-xs transition-colors"
+                  title="กระจายภาพทั้งหมดในฉากนี้ตามบทพูดโดยอัตโนมัติ"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                </button>
+
+                <button
+                  onClick={() => setIsRawMarkdownMode(!isRawMarkdownMode)}
+                  className={`p-1 rounded-lg text-xs transition-colors border ${
+                    isRawMarkdownMode
+                      ? "bg-amber-500 text-slate-950 border-amber-400"
+                      : "bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800"
+                  }`}
+                  title={isRawMarkdownMode ? "สลับเป็นโหมดจัดบทพูด (Visual Mode)" : "สลับเป็นโหมด Markdown ดิบ"}
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  disabled={isAnalyzing}
+                  onClick={handleRunAnalysis}
+                  className="p-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-amber-300 border border-slate-800 text-xs transition-colors"
+                  title="ตรวจ Continuity & Moments"
+                >
+                  <Shield className="w-3.5 h-3.5 text-amber-400" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Inner Dialogue Container (#2D2D2D, rounded-[18px]) - FULLY INTERACTIVE & EDITABLE */}
+          <div className="relative flex-1 min-h-0 rounded-[18px] bg-[#2D2D2D] p-4 sm:p-5 border border-slate-700/40 overflow-y-auto dialogue-scroll space-y-3 pr-2.5">
             {isStreaming ? (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-xs font-semibold text-amber-400 font-thai animate-pulse">
+              <div className="space-y-4 p-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-400 font-thai animate-pulse">
                   <Sparkles className="w-4 h-4" />
                   <span>AI กำลังประพันธ์เนื้อเรื่องแบบ Real-Time...</span>
                 </div>
-                <div className="prose prose-invert prose-amber max-w-none font-thai text-slate-200 text-sm leading-relaxed whitespace-pre-wrap">
+                <div className="font-thai text-slate-200 text-sm leading-relaxed whitespace-pre-wrap">
                   {streamingText}
                   <span className="inline-block w-2 h-4 bg-amber-400 ml-1 animate-pulse" />
                 </div>
               </div>
-            ) : studioViewMode === "edit" ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400 font-thai">
-                    โหมดแก้ไขเนื้อเรื่องโดยตรง (Markdown)
-                  </span>
+            ) : isRawMarkdownMode ? (
+              <div className="space-y-3 h-full flex flex-col">
+                <div className="flex items-center justify-between text-xs text-slate-400 font-thai">
+                  <span>แก้ไขเนื้อเรื่องแบบ Markdown ดิบ (Raw Markdown)</span>
                   <button
-                    disabled={isSavingScene}
-                    onClick={handleSaveContent}
-                    className="px-4 py-1.5 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs font-thai hover:bg-amber-400 transition-colors disabled:opacity-50"
+                    onClick={() => {
+                      const parsed = parseSceneToDialogueBlocks(editableMarkdown, characters);
+                      setDialogueBlocks(parsed);
+                      setIsRawMarkdownMode(false);
+                      setHasUnsavedChanges(true);
+                      toast.success("แปลง Markdown เป็นโหมดบทพูดเรียบร้อย!");
+                    }}
+                    className="text-amber-400 underline font-bold"
                   >
-                    {isSavingScene ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}
+                    กลับสู่โหมดจัดบทพูด
                   </button>
                 </div>
                 <textarea
-                  rows={16}
                   value={editableMarkdown}
-                  onChange={(e) => setEditableMarkdown(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-sm text-slate-100 font-thai leading-relaxed focus:outline-none focus:border-amber-400"
+                  onChange={(e) => {
+                    setEditableMarkdown(e.target.value);
+                    setHasUnsavedChanges(true);
+                  }}
+                  rows={18}
+                  className="w-full flex-1 bg-slate-950 border border-slate-700 rounded-xl p-3.5 text-sm text-slate-100 font-thai leading-relaxed focus:outline-none focus:border-amber-400"
                 />
               </div>
-            ) : studioViewMode === "dialogue_bindings" ? (
-              <div className="space-y-4">
-                {/* Director Header Controls */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-xl bg-slate-950/80 border border-slate-800">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-heading text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                        <Film className="w-4 h-4 text-amber-400" />
-                        <span>🎬 สตูดิโอกำกับภาพตามบทสนทนา (Dialogue-Image Sync)</span>
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-thai font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                        จับคู่แล้ว {boundDialogueCount} / {studioDialogueBlocks.length} ประโยค
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 font-thai">
-                      เลือกภาพประกอบที่จะให้ปรากฏบนการ์ดภาพฝั่งซ้ายเมื่อผู้อ่านเลื่อนอ่านถึงประโยคนี้
-                    </p>
-                  </div>
+            ) : dialogueBlocks.length > 0 ? (
+              dialogueBlocks.map((block, idx) => {
+                const isActive = idx === activeBlockIndex;
+                const assignedImageId = localDialogueBindings[String(idx)];
+                const assignedImage = sceneImages.find((img) => img.id === assignedImageId);
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={handleAutoDistributeImages}
-                      disabled={sceneImages.length === 0 || studioDialogueBlocks.length === 0}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 border border-slate-700 text-xs font-thai font-semibold transition-colors"
-                      title="กระจายภาพทั้งหมดในฉากนี้อย่างสม่ำเสมอตามบทพูด"
+                // 1. SOUND EFFECT ROW (Centered atmospheric text)
+                if (block.type === "sound") {
+                  return (
+                    <div
+                      key={block.id}
+                      onClick={() => handleSelectDialogueRow(idx)}
+                      className={`group relative p-2.5 rounded-xl border text-center transition-all ${
+                        isActive
+                          ? "bg-amber-500/15 border-amber-400 ring-2 ring-amber-400/60 shadow-lg"
+                          : "border-transparent hover:border-slate-700/60 hover:bg-black/20"
+                      }`}
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>✨ จับคู่อัตโนมัติ</span>
-                    </button>
+                      <input
+                        type="text"
+                        value={block.text}
+                        onChange={(e) => handleUpdateBlockText(idx, e.target.value)}
+                        className="w-full bg-transparent text-center text-slate-300 font-thai text-sm italic tracking-widest focus:outline-none focus:text-white"
+                        placeholder="*ระบุเสียงประกอบ เช่น เสียงลมพัด...*"
+                      />
 
-                    {boundDialogueCount > 0 && (
-                      <button
-                        onClick={handleClearAllBindings}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-red-950/50 hover:text-red-300 text-slate-400 border border-slate-700 text-xs font-thai transition-colors"
-                        title="ล้างการจับคู่ภาพทั้งหมด"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                        <span>ล้างทั้งหมด</span>
-                      </button>
+                      {/* Line Tools Bar on Hover / Active */}
+                      <div className="flex items-center justify-center gap-1.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <select
+                          value={assignedImageId || ""}
+                          onChange={(e) => handleAssignBlockImage(idx, e.target.value)}
+                          className="bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-slate-300 font-thai"
+                        >
+                          <option value="">⚪ คงภาพเดิม</option>
+                          {sceneImages.map((img, i) => (
+                            <option key={img.id} value={img.id}>
+                              🖼️ ภาพ #{i + 1}: {img.caption || img.prompt.slice(0, 20)}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => handleMoveBlock(idx, "up")}
+                          disabled={idx === 0}
+                          className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-30"
+                          title="เลื่อนขึ้น"
+                        >
+                          <ArrowUp className="w-2.5 h-2.5" />
+                        </button>
+                        <button
+                          onClick={() => handleMoveBlock(idx, "down")}
+                          disabled={idx === dialogueBlocks.length - 1}
+                          className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-30"
+                          title="เลื่อนลง"
+                        >
+                          <ArrowDown className="w-2.5 h-2.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteBlock(idx)}
+                          className="p-1 rounded bg-slate-800 hover:bg-red-950 text-red-400"
+                          title="ลบประโยคนี้"
+                        >
+                          <Trash2 className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Determine Attributes
+                const isSelf = block.speaker?.characterType === "self";
+                const isFriend = block.speaker?.characterType === "friend";
+                const avatarUrl = block.speaker?.avatarUrl;
+                const displayName =
+                  block.speaker?.realNickname || block.speaker?.name || block.speakerName || "ผู้พูด";
+                const mbti = block.speaker?.currentMbti;
+
+                // Avatar Icon Component
+                const AvatarIcon = () => (
+                  <div
+                    className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden border-2 shadow-md transition-transform ${
+                      isSelf
+                        ? "border-amber-400 bg-amber-950/60 text-amber-300"
+                        : isFriend
+                        ? "border-sky-400 bg-sky-950/60 text-sky-300"
+                        : "border-slate-500 bg-slate-800 text-slate-300"
+                    }`}
+                  >
+                    {avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={avatarUrl}
+                        alt={displayName}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="font-heading font-bold text-xs uppercase">
+                        {displayName.slice(0, 2)}
+                      </span>
                     )}
-
-                    <button
-                      onClick={() => handleSaveDialogueBindings()}
-                      disabled={isSavingBindings}
-                      className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai transition-colors shadow-[0_0_15px_rgba(245,158,11,0.25)]"
-                    >
-                      {isSavingBindings ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Check className="w-3.5 h-3.5 stroke-[3]" />
-                      )}
-                      <span>{isSavingBindings ? "กำลังบันทึก..." : "บันทึกการผูกภาพ"}</span>
-                    </button>
-
-                    <Link
-                      href={`/projects/${projectId}/read?sceneId=${activeSceneId}`}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 text-xs font-thai font-semibold transition-colors"
-                      target="_blank"
-                    >
-                      <BookOpen className="w-3.5 h-3.5" />
-                      <span>เปิดอ่านใน Reader ↗</span>
-                    </Link>
                   </div>
-                </div>
+                );
 
-                {/* Scene Images Summary Banner */}
-                {sceneImages.length === 0 ? (
-                  <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200 text-xs font-thai flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                      <span>ฉากนี้ยังไม่มีภาพประกอบ กรุณาสร้างภาพ AI หรืออัปโหลด Movie Still จากฝั่งซ้าย (Visual Stage) ก่อน</span>
-                    </div>
-                    <button
-                      onClick={() => setVisualTab("ai_scenes")}
-                      className="px-3 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs font-thai hover:bg-amber-400"
+                // LEFT OR RIGHT DIALOGUE ROW
+                return (
+                  <div
+                    key={block.id}
+                    onClick={() => handleSelectDialogueRow(idx)}
+                    className={`group relative p-2.5 rounded-xl border transition-all ${
+                      isActive
+                        ? "bg-amber-500/10 border-amber-400 ring-2 ring-amber-400/60 shadow-lg"
+                        : "border-transparent hover:border-slate-700/60 hover:bg-black/20"
+                    }`}
+                  >
+                    <div
+                      className={`flex items-start gap-3 ${
+                        block.side === "right" ? "flex-row-reverse" : "flex-row"
+                      }`}
                     >
-                      ไปที่ Visual Stage
-                    </button>
-                  </div>
-                ) : (
-                  <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs font-thai text-slate-400">
-                    <span>คลังภาพในฉากนี้: {sceneImages.length} ภาพ (AI: {aiImages.length}, หนังจริง: {movieStills.length})</span>
-                    <span className="text-[11px] text-slate-500">เลือกภาพในแต่ละประโยคด้านล่างได้เลย ระบบบันทึกให้อัตโนมัติ</span>
-                  </div>
-                )}
+                      <AvatarIcon />
 
-                {/* Dialogue Sentences List */}
-                {studioDialogueBlocks.length > 0 ? (
-                  <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
-                    {studioDialogueBlocks.map((block, idx) => {
-                      const assignedImageId = localDialogueBindings[String(idx)];
-                      const assignedImage = sceneImages.find((img) => img.id === assignedImageId);
-                      const isSelf = block.speaker?.characterType === "self";
-                      const isFriend = block.speaker?.characterType === "friend";
-                      const displayName =
-                        block.speaker?.realNickname || block.speaker?.name || block.speakerName || "ผู้พูด";
-
-                      return (
+                      <div className={`flex-1 space-y-1 ${block.side === "right" ? "text-right" : "text-left"}`}>
+                        {/* Speaker Selector & Line Meta */}
                         <div
-                          key={block.id}
-                          className={`p-3.5 rounded-xl border transition-all ${
-                            assignedImage
-                              ? "bg-amber-500/10 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.1)]"
-                              : "bg-slate-950/40 border-slate-800/80 hover:border-slate-700"
+                          className={`flex items-center gap-2 flex-wrap ${
+                            block.side === "right" ? "justify-end" : "justify-start"
                           }`}
                         >
-                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                            {/* Left: Speaker & Dialogue Text */}
-                            <div className="flex items-start gap-3 flex-1">
-                              {/* Line Index Badge */}
-                              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 flex-shrink-0">
-                                #{idx + 1}
-                              </span>
+                          <select
+                            value={
+                              block.isNarrator
+                                ? "narrator"
+                                : block.speaker?.id || block.speaker?.name || "narrator"
+                            }
+                            onChange={(e) => handleUpdateBlockSpeaker(idx, e.target.value)}
+                            className={`bg-slate-900 border border-slate-700 rounded-lg px-2 py-0.5 text-[11px] font-thai font-bold focus:outline-none cursor-pointer ${
+                              isSelf ? "text-amber-400" : isFriend ? "text-sky-400" : "text-slate-300"
+                            }`}
+                          >
+                            <option value="narrator">📜 ผู้บรรยาย (Narrator)</option>
+                            <option value="sound">⚡ เสียงประกอบ (Sound FX)</option>
+                            {characters.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.characterType === "self" ? "👑 " : c.characterType === "friend" ? "🧑‍🤝‍🧑 " : ""}
+                                {c.name} {c.realNickname ? `(${c.realNickname})` : ""}
+                              </option>
+                            ))}
+                          </select>
 
-                              {/* Speaker Avatar & Name */}
-                              <div className="space-y-1 flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className={`text-xs font-thai font-bold ${
-                                      isSelf ? "text-amber-400" : isFriend ? "text-sky-400" : "text-slate-300"
-                                    }`}
-                                  >
-                                    {isSelf ? "👑 " : isFriend ? "🧑‍🤝‍🧑 " : ""}{displayName}
-                                  </span>
-                                  {block.isNarrator && (
-                                    <span className="text-[9px] font-thai text-amber-300 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.2 rounded font-semibold">
-                                      ผู้บรรยาย
-                                    </span>
-                                  )}
-                                  {block.type === "sound" && (
-                                    <span className="text-[9px] font-thai text-slate-400 bg-slate-800 px-1.5 py-0.2 rounded">
-                                      เสียงประกอบ
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="font-thai text-slate-200 text-sm leading-relaxed">
-                                  {block.text}
-                                </p>
-                              </div>
-                            </div>
+                          {mbti && (
+                            <span className="text-[10px] font-mono text-slate-500 font-semibold">
+                              [{mbti}]
+                            </span>
+                          )}
 
-                            {/* Right: Image Selector Dropdown & Assigned Thumbnail */}
-                            <div className="flex-shrink-0 w-full sm:w-72 space-y-2">
-                              <div className="flex items-center gap-2">
-                                <select
-                                  value={assignedImageId || ""}
-                                  onChange={(e) => handleAssignImageToBlock(idx, e.target.value)}
-                                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-thai focus:outline-none focus:border-amber-400"
-                                >
-                                  <option value="">⚪ คงภาพเดิม (ไม่เปลี่ยนภาพ)</option>
-                                  {sceneImages.map((img, imgIdx) => {
-                                    const isMovie = img.kind === "movie_still" || img.kind === "reference";
-                                    const label = img.caption || img.prompt.slice(0, 35);
-                                    return (
-                                      <option key={img.id} value={img.id}>
-                                        🖼️ ภาพ #{imgIdx + 1} [{isMovie ? "MOVIE" : "AI"}]: {label}
-                                      </option>
-                                    );
-                                  })}
-                                </select>
+                          {/* Image Binding Dropdown */}
+                          <div className="flex items-center gap-1">
+                            <select
+                              value={assignedImageId || ""}
+                              onChange={(e) => {
+                                if (e.target.value === "__upload_new__") {
+                                  targetUploadBlockIdxRef.current = idx;
+                                  blockImageUploadRef.current?.click();
+                                } else {
+                                  handleAssignBlockImage(idx, e.target.value);
+                                }
+                              }}
+                              className={`rounded-lg px-2 py-0.5 text-[10px] font-thai border focus:outline-none cursor-pointer ${
+                                assignedImage
+                                  ? "bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold"
+                                  : "bg-slate-900 text-slate-400 border-slate-700"
+                              }`}
+                            >
+                              <option value="">⚪ คงภาพเดิม</option>
+                              {sceneImages.map((img, i) => (
+                                <option key={img.id} value={img.id}>
+                                  🖼️ ภาพ #{i + 1}: {img.caption || img.prompt.slice(0, 20)}
+                                </option>
+                              ))}
+                              <option value="__upload_new__">+ 📁 อัปโหลดรูปใหม่สำหรับบทนี้...</option>
+                            </select>
 
-                                {assignedImageId && (
-                                  <button
-                                    onClick={() => handleAssignImageToBlock(idx, "")}
-                                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-red-950 text-slate-400 hover:text-red-300 transition-colors"
-                                    title="ยกเลิกการผูกภาพ"
-                                  >
-                                    <X className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                              </div>
-
-                              {/* Assigned Image Thumbnail Card */}
-                              {assignedImage && (
-                                <div className="flex items-center gap-2.5 p-2 rounded-lg bg-slate-900/90 border border-amber-500/40">
-                                  <div className="relative aspect-video w-16 h-10 rounded overflow-hidden flex-shrink-0 border border-black/40">
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img
-                                      src={assignedImage.filePath}
-                                      alt={assignedImage.caption || ""}
-                                      className="w-full h-full object-cover"
-                                    />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <span className="text-[10px] font-bold text-amber-400 block truncate font-thai">
-                                      {assignedImage.caption || "ภาพประจำประโยคนี้"}
-                                    </span>
-                                    <span className="text-[9px] font-mono text-slate-400 block truncate">
-                                      {assignedImage.kind === "movie_still" ? "CANON MOVIE STILL" : "AI SCENE"}
-                                    </span>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
+                            {assignedImage && (
+                              <button
+                                onClick={() => handleAssignBlockImage(idx, "")}
+                                className="p-0.5 rounded text-slate-400 hover:text-red-400"
+                                title="ยกเลิกการผูกภาพ"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
                           </div>
                         </div>
-                      );
-                    })}
+
+                        {/* Editable Speech Text */}
+                        <textarea
+                          rows={2}
+                          value={block.text}
+                          onChange={(e) => handleUpdateBlockText(idx, e.target.value)}
+                          className={`w-full bg-transparent p-1 rounded font-thai text-sm leading-relaxed text-[#E2E8F0] focus:bg-slate-950 focus:border focus:border-amber-400/60 focus:outline-none resize-none ${
+                            block.side === "right" ? "text-right" : "text-left"
+                          }`}
+                        />
+
+                        {/* Assigned Image Miniature Preview Tag */}
+                        {assignedImage && (
+                          <div
+                            className={`flex items-center gap-1.5 pt-0.5 ${
+                              block.side === "right" ? "justify-end" : "justify-start"
+                            }`}
+                          >
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300 font-thai">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={assignedImage.filePath}
+                                alt=""
+                                className="w-4 h-4 rounded object-cover"
+                              />
+                              <span className="truncate max-w-[140px]">
+                                {assignedImage.caption || "ภาพประกอบบทนี้"}
+                              </span>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Floating Action Tools on Row */}
+                    <div className="absolute top-1 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/90 rounded-lg p-1 border border-slate-700 shadow-md">
+                      <button
+                        onClick={() => handleToggleBlockSide(idx)}
+                        className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-amber-300 text-[10px] font-mono"
+                        title="สลับฝั่งซ้าย/ขวา"
+                      >
+                        {block.side === "left" ? "ชิดขวา" : "ชิดซ้าย"}
+                      </button>
+                      <button
+                        onClick={() => handleAddBlock("self", idx)}
+                        className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white"
+                        title="แทรกประโยคใหม่ด้านล่าง"
+                      >
+                        <Plus className="w-3 h-3 text-amber-400" />
+                      </button>
+                      <button
+                        onClick={() => handleMoveBlock(idx, "up")}
+                        disabled={idx === 0}
+                        className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-30"
+                        title="เลื่อนขึ้น"
+                      >
+                        <ArrowUp className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => handleMoveBlock(idx, "down")}
+                        disabled={idx === dialogueBlocks.length - 1}
+                        className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-30"
+                        title="เลื่อนลง"
+                      >
+                        <ArrowDown className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteBlock(idx)}
+                        className="p-1 rounded hover:bg-red-950 text-red-400"
+                        title="ลบประโยคนี้"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
-                ) : (
-                  <div className="text-center py-16 text-slate-500">
-                    <PenTool className="w-10 h-10 mx-auto mb-3 opacity-40 text-amber-400" />
-                    <p className="text-sm font-thai">ยังไม่มีบทพูดหรือเนื้อเรื่องในฉากนี้</p>
-                    <p className="text-xs font-thai mt-1 text-slate-400">
-                      กรอก Director&apos;s Note ด้านบน แล้วกดปุ่ม &quot;🖋️ ให้ AI เขียนฉากนี้&quot; ก่อน
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : activeScene?.contentMarkdown ? (
-              <div className="prose prose-invert prose-amber max-w-none font-thai text-slate-200 text-sm leading-relaxed">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {activeScene.contentMarkdown}
-                </ReactMarkdown>
-              </div>
+                );
+              })
             ) : (
-              <div className="text-center py-20 text-slate-500">
-                <PenTool className="w-10 h-10 mx-auto mb-3 opacity-40 text-amber-400" />
-                <p className="text-sm font-thai">ฉากนี้ยังไม่มีเนื้อเรื่อง</p>
-                <p className="text-xs font-thai mt-1 text-slate-400">
-                  กรอก Director&apos;s Note ด้านบน แล้วกดปุ่ม &quot;🖋️ ให้ AI เขียนฉากนี้ (Stream)&quot; ได้ทันที
+              <div className="text-center py-16 text-slate-500 font-thai space-y-3">
+                <PenTool className="w-12 h-12 mx-auto text-amber-400/40" />
+                <p className="text-sm font-bold text-slate-300">ฉากนี้ยังไม่มีบทสนทนา</p>
+                <p className="text-xs text-slate-400">
+                  คลิกปุ่มด้านล่างเพื่อเริ่มสร้างบทพูด หรือสั่งให้ AI เขียนฉากนี้ได้ทันที
                 </p>
               </div>
             )}
           </div>
+
+          {/* Bottom Quick-Add Toolbar & Save Footer */}
+          <div className="flex-shrink-0 pt-2 border-t border-slate-700/50 space-y-2.5">
+            {/* Quick Add Line Buttons */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                onClick={() => handleAddBlock("self")}
+                className="flex-1 min-w-[100px] inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-thai font-bold transition-all shadow-sm active:scale-95"
+              >
+                <Plus className="w-3 h-3" />
+                <span>+ บทพูดฉัน</span>
+              </button>
+              <button
+                onClick={() => handleAddBlock("friend")}
+                className="flex-1 min-w-[100px] inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-[11px] font-thai font-bold transition-all shadow-sm active:scale-95"
+              >
+                <Plus className="w-3 h-3" />
+                <span>+ บทพูดเพื่อน</span>
+              </button>
+              <button
+                onClick={() => handleAddBlock("narration")}
+                className="flex-1 min-w-[90px] inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-thai font-bold transition-all shadow-sm active:scale-95"
+              >
+                <Plus className="w-3 h-3" />
+                <span>+ คำบรรยาย</span>
+              </button>
+              <button
+                onClick={() => handleAddBlock("sound")}
+                className="flex-1 min-w-[90px] inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-thai font-bold transition-all shadow-sm active:scale-95"
+              >
+                <Plus className="w-3 h-3" />
+                <span>+ เสียงประกอบ</span>
+              </button>
+            </div>
+
+            {/* Bottom Actions Row */}
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <button
+                onClick={handleSaveAll}
+                disabled={isSavingScene}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all active:scale-95"
+              >
+                {isSavingScene ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                )}
+                <span>{isSavingScene ? "กำลังบันทึก..." : "บันทึกการแก้ไขทั้งหมด"}</span>
+              </button>
+
+              <Link
+                href={`/projects/${projectId}/read${activeScene ? `?sceneId=${activeScene.id}` : ""}`}
+                className="inline-flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 font-thai font-bold underline"
+              >
+                <span>เปิดอ่านใน Reader →</span>
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* ========================================================= */}
-      {/* MODAL 1: Create New Scene Modal */}
-      {/* ========================================================= */}
-      {showNewSceneModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="cinematic-card w-full max-w-lg rounded-2xl p-6 border-slate-700 space-y-4 bg-slate-950">
+      {/* Hidden Audio Player for Custom Scene BGM */}
+      <audio
+        ref={studioAudioPlayerRef}
+        loop
+        className="hidden"
+        onEnded={() => setIsAudioPlaying(false)}
+      />
+
+      {/* Hidden File Inputs */}
+      <input
+        ref={imageFileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleUploadSceneImage(file);
+        }}
+      />
+      <input
+        ref={blockImageUploadRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file && targetUploadBlockIdxRef.current !== null) {
+            handleUploadSceneImage(file, targetUploadBlockIdxRef.current);
+          }
+        }}
+      />
+      <input
+        ref={audioFileInputRef}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={handleUploadAudioFile}
+      />
+
+      {/* ========================================================================= */}
+      {/* MODAL 1: AI Image Generator Modal                                        */}
+      {/* ========================================================================= */}
+      {showAiImageModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="cinematic-card w-full max-w-lg rounded-2xl p-6 border-slate-700 space-y-4 bg-slate-950 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="font-heading text-lg font-bold text-white">เพิ่มฉากใหม่ในเรื่อง</h3>
+              <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-amber-400" />
+                <span>สั่ง AI สร้างภาพประกอบประจำฉาก</span>
+              </h3>
+              <button
+                onClick={() => setShowAiImageModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 font-thai">
+              <label className="text-xs font-semibold text-slate-300">
+                คำอธิบายภาพ (Prompt):
+              </label>
+              <textarea
+                rows={4}
+                value={aiImagePromptInput}
+                onChange={(e) => setAiImagePromptInput(e.target.value)}
+                placeholder="เช่น กองทัพบาราเธียนแตกพ่ายบนชายหาดแบล็กวอเตอร์ เปลวไฟสีเขียวสว่างวาบ..."
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-400"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                onClick={() => setShowAiImageModal(false)}
+                className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-thai"
+              >
+                ยกเลิก
+              </button>
+              <button
+                disabled={isGeneratingAiImage || !aiImagePromptInput.trim()}
+                onClick={handleGenerateAiImage}
+                className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai shadow transition-all disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isGeneratingAiImage ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                <span>{isGeneratingAiImage ? "กำลังวาดภาพ..." : "สร้างภาพทันที"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 2: Create New Scene Modal                                          */}
+      {/* ========================================================================= */}
+      {showNewSceneModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="cinematic-card w-full max-w-lg rounded-2xl p-6 border-slate-700 space-y-4 bg-slate-950 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-heading text-lg font-bold text-white">เพิ่มฉากใหม่ในเรื่อง (New EP)</h3>
               <button
                 onClick={() => setShowNewSceneModal(false)}
                 className="text-slate-400 hover:text-white"
@@ -1825,9 +1890,9 @@ export default function StoryWorkspacePage({
               </button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3 font-thai">
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-300 font-thai">
+                <label className="text-xs font-semibold text-slate-300">
                   ชื่อฉาก <span className="text-red-400">*</span>
                 </label>
                 <input
@@ -1835,23 +1900,23 @@ export default function StoryWorkspacePage({
                   placeholder="เช่น เผชิญหน้าสภาเงา, เพลิงไหม้ที่ท่าเรือ"
                   value={newSceneTitle}
                   onChange={(e) => setNewSceneTitle(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-thai"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-300 font-thai">สถานที่เกิดเหตุ</label>
+                <label className="text-xs font-semibold text-slate-300">สถานที่เกิดเหตุ</label>
                 <input
                   type="text"
-                  placeholder="เช่น Dragonstone Crypts, King's Landing, Castle Black"
+                  placeholder="เช่น Dragonstone Crypts, King's Landing"
                   value={newSceneLocation}
                   onChange={(e) => setNewSceneLocation(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-thai"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-300 font-thai">
+                <label className="text-xs font-semibold text-slate-300">
                   เลือกตัวละครที่จะอยู่ในฉากนี้
                 </label>
                 <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-2 bg-slate-900 rounded-lg border border-slate-800">
@@ -1860,7 +1925,7 @@ export default function StoryWorkspacePage({
                     return (
                       <label
                         key={c.id}
-                        className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer font-thai"
+                        className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer"
                       >
                         <input
                           type="checkbox"
@@ -1905,286 +1970,97 @@ export default function StoryWorkspacePage({
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* MODAL 2: Add Movie Still Modal */}
-      {/* ========================================================= */}
-      {showAddStillModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="cinematic-card w-full max-w-md rounded-2xl p-6 border-slate-700 space-y-4 bg-slate-950">
+      {/* ========================================================================= */}
+      {/* MODAL 3: Continuity & Moments Analysis Modal                             */}
+      {/* ========================================================================= */}
+      {showAnalysisModal && analysisResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="cinematic-card w-full max-w-2xl max-h-[88vh] overflow-y-auto rounded-2xl p-6 border-slate-700 space-y-4 bg-slate-950 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2">
-                <Film className="w-4 h-4 text-amber-400" />
-                <span>เพิ่มภาพจริงจากหนัง/ซีรีส์</span>
+                <Shield className="w-5 h-5 text-amber-400" />
+                <span>ผลวิเคราะห์ความต่อเนื่อง & จังหวะพัฒนาการ (Continuity Check)</span>
               </h3>
               <button
-                onClick={() => setShowAddStillModal(false)}
+                onClick={() => setShowAnalysisModal(false)}
                 className="text-slate-400 hover:text-white"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-300 font-thai">
-                  คำอธิบายภาพ / สถานที่จริง
-                </label>
-                <input
-                  type="text"
-                  placeholder="เช่น ปราสาท Red Keep, ผากำแพง The Wall"
-                  value={stillCaptionInput}
-                  onChange={(e) => setStillCaptionInput(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-thai"
-                />
+            <div className="space-y-4 font-thai text-xs">
+              {/* Consistency Flag */}
+              <div
+                className={`p-3.5 rounded-xl border flex items-center gap-3 ${
+                  analysisResult.continuity_check?.is_consistent
+                    ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-200"
+                    : "bg-red-950/40 border-red-500/40 text-red-200"
+                }`}
+              >
+                {analysisResult.continuity_check?.is_consistent ? (
+                  <Check className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                )}
+                <div>
+                  <p className="font-bold text-sm">
+                    {analysisResult.continuity_check?.is_consistent
+                      ? "ฉากนี้สอดคล้องกับ Canon และประวัติศาสตร์ที่ผ่านมา"
+                      : "พบจุดที่ขัดแย้งกับประวัติศาสตร์เดิม (Canon Deviation)"}
+                  </p>
+                  <p className="text-[11px] opacity-80 mt-0.5">
+                    {analysisResult.continuity_check?.explanation}
+                  </p>
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-300 font-thai">
-                  ใส่ URL ของภาพจากอินเทอร์เน็ต
-                </label>
-                <input
-                  type="text"
-                  placeholder="https://example.com/movie-still.jpg"
-                  value={stillUrlInput}
-                  onChange={(e) => setStillUrlInput(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-mono text-xs"
-                />
-              </div>
-
-              <div className="relative py-2 text-center text-xs text-slate-500 font-thai">
-                <span>— หรืออัปโหลดไฟล์จากเครื่อง —</span>
-              </div>
-
-              <div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  ref={fileInputRef}
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-2.5 rounded-lg border border-dashed border-slate-700 hover:border-amber-400 bg-slate-900 text-slate-300 hover:text-white text-xs font-thai flex items-center justify-center gap-2 transition-colors"
-                >
-                  <Upload className="w-4 h-4 text-amber-400" />
-                  <span>เลือกไฟล์รูปภาพจากคอมพิวเตอร์ของคุณ</span>
-                </button>
-              </div>
+              {/* Character Shifts */}
+              {analysisResult.character_shifts && analysisResult.character_shifts.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="font-bold text-amber-300">การเปลี่ยนแปลงตัวละครในฉากนี้:</h4>
+                  <div className="space-y-2">
+                    {analysisResult.character_shifts.map((shift: any, idx: number) => (
+                      <div key={idx} className="p-3 bg-slate-900 rounded-xl border border-slate-800">
+                        <span className="font-bold text-white text-xs">{shift.character_name}</span>
+                        <p className="text-slate-400 text-[11px] mt-1">{shift.shift_reason}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
               <button
-                onClick={() => setShowAddStillModal(false)}
-                className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-thai"
-              >
-                ยกเลิก
-              </button>
-              <button
-                disabled={isUploadingStill || !stillUrlInput.trim()}
-                onClick={handleAddMovieStill}
-                className="px-5 py-2 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs font-thai hover:bg-amber-400 disabled:opacity-50"
-              >
-                {isUploadingStill ? "กำลังบันทึก..." : "บันทึกรูปภาพ"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================= */}
-      {/* MODAL 3: Continuity Check & Visual Moments Review */}
-      {/* ========================================================= */}
-      {showAnalysisModal && analysisResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="cinematic-card w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 border-slate-700 space-y-5 bg-slate-950">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Shield className="w-5 h-5 text-amber-400" />
-                <h3 className="font-heading text-lg font-bold text-white">
-                  CONTINUITY CHECK & VISUAL MOMENTS
-                </h3>
-              </div>
-              <button
-                onClick={() => setShowAnalysisModal(false)}
-                className="text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Contradiction Warning */}
-            {analysisResult.continuityCheck.hasContradiction && (
-              <div className="p-3.5 rounded-xl bg-red-950/80 border border-red-800/80 text-red-200 text-xs font-thai space-y-1">
-                <div className="flex items-center gap-2 font-bold text-red-300">
-                  <AlertTriangle className="w-4 h-4 text-red-400" />
-                  <span>คำเตือน: พบข้อขัดแย้งกับ Continuity Ledger!</span>
-                </div>
-                <p>{analysisResult.continuityCheck.warningDetails}</p>
-                <p className="text-amber-300">
-                  คำแนะนำในการแก้ไข: {analysisResult.continuityCheck.aiFixSuggestion}
-                </p>
-              </div>
-            )}
-
-            {/* Summary */}
-            <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800 space-y-1">
-              <h4 className="text-xs font-bold text-amber-300 font-thai">สรุปฉาก (3-5 บรรทัด):</h4>
-              <p className="text-xs text-slate-200 font-thai leading-relaxed">
-                {analysisResult.summary}
-              </p>
-            </div>
-
-            {/* Visual Moments (AI Suggestions) */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-amber-300 font-thai flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4" />
-                <span>3 จังหวะน่าวาดประจำฉาก (Visual Moments) - กดสร้างภาพได้ทันที:</span>
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                {analysisResult.suggestedVisualMoments.map((moment: any, idx: number) => (
-                  <div
-                    key={idx}
-                    className="p-3 rounded-lg bg-slate-900 border border-slate-800 flex flex-col justify-between space-y-2"
-                  >
-                    <div>
-                      <h5 className="font-bold text-xs text-white font-thai">{moment.momentTitle}</h5>
-                      <p className="text-[11px] text-slate-400 font-thai line-clamp-2 mt-1">
-                        {moment.compositionDescription}
-                      </p>
-                    </div>
-                    <button
-                      disabled={isGeneratingImage}
-                      onClick={() => {
-                        handleGenerateImage(moment.englishPrompt);
-                        setShowAnalysisModal(false);
-                      }}
-                      className="w-full py-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-thai font-semibold transition-colors flex items-center justify-center gap-1"
-                    >
-                      <Sparkles className="w-3 h-3" />
-                      <span>สร้างภาพจังหวะนี้</span>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Proposed Ledger Updates */}
-            <div className="p-3.5 bg-slate-900/80 rounded-xl border border-slate-800 space-y-2 text-xs font-thai">
-              <h4 className="font-bold text-slate-200">
-                ข้อมูลที่จะอัปเดตลง Continuity Ledger:
-              </h4>
-              <div className="grid grid-cols-2 gap-2 text-slate-400">
-                <div>
-                  <span className="text-amber-400 font-semibold">ผู้บาดเจ็บ/แผลใหม่:</span>{" "}
-                  {analysisResult.ledgerUpdates.newInjuries.join(", ") || "ไม่มี"}
-                </div>
-                <div>
-                  <span className="text-red-400 font-semibold">ผู้เสียชีวิตใหม่:</span>{" "}
-                  {analysisResult.ledgerUpdates.newDeaths.map((d: any) => `${d.name} (${d.cause})`).join(", ") || "ไม่มี"}
-                </div>
-                <div className="col-span-2">
-                  <span className="text-emerald-400 font-semibold">ปมใหม่ที่เปิด (Open Threads):</span>{" "}
-                  {analysisResult.ledgerUpdates.newOpenThreads.join(", ") || "ไม่มี"}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-3 border-t border-slate-800">
-              <button
                 onClick={() => setShowAnalysisModal(false)}
                 className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-thai"
               >
-                ปิดหน้าต่าง
+                ปิด
               </button>
-
               <button
                 disabled={isApplyingLedger}
                 onClick={handleConfirmLedgerUpdate}
-                className="px-6 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs font-thai hover:bg-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)] disabled:opacity-50 flex items-center gap-1.5"
+                className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai shadow"
               >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>
-                  {isApplyingLedger ? "กำลังบันทึก..." : "ยืนยันการอัปเดตลง Continuity Ledger"}
-                </span>
+                {isApplyingLedger ? "กำลังบันทึก..." : "บันทึกอัปเดตสถานะลงสมุดทะเบียน"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* MODAL 4: Version History Modal */}
-      {/* ========================================================= */}
-      {showVersionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="cinematic-card w-full max-w-xl max-h-[80vh] overflow-y-auto rounded-2xl p-6 border-slate-700 space-y-4 bg-slate-950">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2">
-                <History className="w-5 h-5 text-amber-400" />
-                <span>ประวัติเวอร์ชันของฉาก (Version History)</span>
-              </h3>
-              <button
-                onClick={() => setShowVersionModal(false)}
-                className="text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {sceneVersions.length === 0 ? (
-                <p className="text-xs text-slate-400 font-thai text-center py-6">
-                  ยังไม่มีประวัติเวอร์ชันอื่น
-                </p>
-              ) : (
-                sceneVersions.map((v) => (
-                  <div
-                    key={v.id}
-                    className="p-3 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between gap-3 text-xs"
-                  >
-                    <div>
-                      <span className="font-bold font-mono text-amber-400">
-                        Version {v.versionNumber}
-                      </span>
-                      <p className="text-slate-400 font-thai text-[11px] mt-0.5 line-clamp-1">
-                        {v.contentMarkdown?.slice(0, 100) || "(ไม่มีเนื้อหา)"}
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        setEditableMarkdown(v.contentMarkdown);
-                        setStudioViewMode("edit");
-                        setShowVersionModal(false);
-                        toast.info(`โหลดเนื้อหา Version ${v.versionNumber} เข้าสู่ตัวแก้ไขแล้ว`);
-                      }}
-                      className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] font-thai whitespace-nowrap"
-                    >
-                      กู้คืนเวอร์ชันนี้
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================= */}
       {/* Lightbox Modal */}
-      {/* ========================================================= */}
       {lightboxImage && (
         <div
           onClick={() => setLightboxImage(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-md cursor-pointer"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-md cursor-pointer animate-fadeIn"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={lightboxImage}
             alt="Fullscreen Preview"
-            className="max-w-full max-h-[90vh] object-contain rounded-xl shadow-2xl"
+            className="max-w-full max-h-[92vh] object-contain rounded-2xl shadow-2xl"
           />
         </div>
       )}

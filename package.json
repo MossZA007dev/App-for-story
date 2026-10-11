@@ -11,7 +11,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/scripts/seed.ts",
-    "share": "npx localtunnel --port 3000 --subdomain saga-forge-moss"
+    "share": ".\\bin\\cloudflared.exe tunnel --url http://localhost:3000",
+    "share:lt": "npx localtunnel --port 3000"
   },
   "engines": {
     "node": "22.x"

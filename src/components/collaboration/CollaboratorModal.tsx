@@ -577,10 +577,10 @@ export function CollaboratorModal({
 
               <div className="flex items-center gap-2">
                 <div className="flex-1 px-3 py-2 rounded-lg bg-black/60 border border-slate-700 font-mono text-emerald-300 text-xs truncate select-all">
-                  https://saga-forge-moss.loca.lt/projects/{projectId}
+                  https://pose-parcel-determine-throw.trycloudflare.com/projects/{projectId}
                 </div>
                 <button
-                  onClick={() => handleCopyLink(`https://saga-forge-moss.loca.lt/projects/${projectId}`, "ลิงก์ออนไลน์ข้ามเน็ต")}
+                  onClick={() => handleCopyLink(`https://pose-parcel-determine-throw.trycloudflare.com/projects/${projectId}`, "ลิงก์ออนไลน์ Cloudflare Tunnel")}
                   className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1 transition-all shadow"
                 >
                   <Copy className="w-3.5 h-3.5" />
@@ -588,22 +588,9 @@ export function CollaboratorModal({
                 </button>
               </div>
 
-              <div className="p-2.5 rounded-lg bg-black/40 border border-emerald-500/20 text-[11px] text-slate-300 space-y-1">
+              <div className="p-2.5 rounded-lg bg-emerald-950/30 border border-emerald-500/30 text-[11px] text-emerald-200 space-y-1">
                 <p>
-                  🔑 <strong>รหัสผ่านเข้าเว็บครั้งแรก (Password IP):</strong>{" "}
-                  <code className="text-amber-300 bg-black/80 px-1.5 py-0.5 rounded border border-slate-700 font-bold">49.49.235.52</code>{" "}
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText("49.49.235.52");
-                      toast.success("คัดลอกรหัสผ่าน 49.49.235.52 แล้ว!");
-                    }}
-                    className="text-amber-400 hover:underline text-[10px] ml-1"
-                  >
-                    (คลิกคัดลอก)
-                  </button>
-                </p>
-                <p className="text-slate-400 text-[10px]">
-                  *เมื่อเพื่อนเปิดลิงก์ครั้งแรก เว็บจะถามรหัสผ่าน ให้เพื่อนกรอกเลขนี้แล้วกด Click to Submit ก็จะเข้าห้องแต่งนิยายได้ทันที!
+                  ⚡ <strong>Cloudflare High-Speed Tunnel:</strong> เพื่อนสามารถคลิกลิงก์นี้แล้วเข้าหน้าแต่งนิยายได้ทันที <strong>ไม่ต้องกรอกรหัสผ่านใดๆ ทั้งสิ้น!</strong> เชื่อมตรงเข้าคอมพิวเตอร์ของคุณแบบเรียลไทม์ 100%
                 </p>
               </div>
             </div>

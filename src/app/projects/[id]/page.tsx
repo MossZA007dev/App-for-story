@@ -10,6 +10,7 @@ import {
   Sparkles,
   RefreshCw,
   Edit3,
+  BookOpen,
   CheckCircle2,
   AlertTriangle,
   Image as ImageIcon,
@@ -657,6 +658,13 @@ export default function StoryWorkspacePage({
             <span className="px-2 py-0.5 rounded bg-slate-800 text-amber-400 font-mono text-[11px] font-semibold">
               {(activeScene.wordCount || 0).toLocaleString()} คำ
             </span>
+            <Link
+              href={`/projects/${projectId}/read${activeScene ? `?sceneId=${activeScene.id}` : ""}`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-bold hover:from-amber-400 hover:to-amber-500 font-thai text-xs shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>เปิดโหมดอ่านนิยาย (Reader View) →</span>
+            </Link>
           </div>
         )}
       </div>

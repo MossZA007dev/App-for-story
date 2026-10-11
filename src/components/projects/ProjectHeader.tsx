@@ -10,6 +10,7 @@ import {
   Settings,
   ChevronLeft,
   Flame,
+  BookOpen,
 } from "lucide-react";
 
 interface ProjectHeaderProps {
@@ -28,7 +29,8 @@ export function ProjectHeader({
   const pathname = usePathname();
 
   const tabs = [
-    { href: `/projects/${projectId}`, label: "Story Workspace", icon: PenTool },
+    { href: `/projects/${projectId}/read`, label: "📖 โหมดอ่านนิยาย (Reader)", icon: BookOpen },
+    { href: `/projects/${projectId}`, label: "Studio แก้ไข & สตรีมฉาก", icon: PenTool },
     { href: `/projects/${projectId}/characters`, label: "Character Bible", icon: Users },
     { href: `/projects/${projectId}/images`, label: "Image Studio", icon: ImageIcon },
     { href: `/projects/${projectId}/timeline`, label: "Timeline & Relations", icon: GitBranch },

@@ -45,6 +45,7 @@ import {
   VolumeX,
   Volume1,
   Youtube,
+  Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
@@ -54,6 +55,7 @@ import { ImageCropModal, AspectRatioType } from "@/components/images/ImageCropMo
 import { VideoTrimModal } from "@/components/media/VideoTrimModal";
 import { CollaboratorModal } from "@/components/collaboration/CollaboratorModal";
 import { ClaudeScriptImportModal } from "@/components/story/ClaudeScriptImportModal";
+import { CharacterAvatarModal, AvatarCharacterInfo } from "@/components/characters/CharacterAvatarModal";
 import {
   parseSceneToDialogueBlocks,
   parseClaudeScript,
@@ -239,7 +241,62 @@ export default function StoryWorkspacePage({
   const [quickCharName, setQuickCharName] = useState("");
   const [quickCharNickname, setQuickCharNickname] = useState("");
   const [quickCharType, setQuickCharType] = useState<"canon" | "friend" | "self">("canon");
+  const [quickCharAvatarUrl, setQuickCharAvatarUrl] = useState("");
   const [isCreatingChar, setIsCreatingChar] = useState(false);
+
+  // Character Profile Picture / Avatar Modal State
+  const [avatarModalOpen, setAvatarModalOpen] = useState(false);
+  const [avatarModalChar, setAvatarModalChar] = useState<AvatarCharacterInfo | null>(null);
+
+  const handleOpenAvatarModal = (char: CharacterSummary | any) => {
+    if (!char) return;
+    const charName = char.name || char.speakerName || "";
+    const matchedChar =
+      characters.find(
+        (c) =>
+          (char.id && c.id === char.id) ||
+          (charName && c.name.toLowerCase() === charName.toLowerCase()) ||
+          (char.realNickname && c.realNickname && c.realNickname.toLowerCase() === char.realNickname.toLowerCase())
+      ) || char;
+
+    setAvatarModalChar({
+      id: matchedChar.id || `char-${Date.now()}`,
+      name: matchedChar.name || charName || "ตัวละคร",
+      realNickname: matchedChar.realNickname || char.realNickname,
+      characterType: matchedChar.characterType || char.characterType,
+      chosenRole: matchedChar.chosenRole,
+      avatarUrl: matchedChar.avatarUrl || char.avatarUrl,
+    });
+    setAvatarModalOpen(true);
+  };
+
+  const handleAvatarSuccess = (charId: string, newAvatarUrl: string) => {
+    // 1. Update characters state
+    setCharacters((prev) =>
+      prev.map((c) => (c.id === charId ? { ...c, avatarUrl: newAvatarUrl } : c))
+    );
+
+    // 2. Update dialogue blocks state so all speech cards immediately display new avatar
+    setDialogueBlocks((prev) =>
+      prev.map((b) => {
+        const isTarget =
+          b.speaker?.id === charId ||
+          (avatarModalChar && b.speaker?.name?.toLowerCase() === avatarModalChar.name.toLowerCase()) ||
+          (avatarModalChar?.realNickname && b.speaker?.realNickname?.toLowerCase() === avatarModalChar.realNickname.toLowerCase());
+
+        if (isTarget && b.speaker) {
+          return {
+            ...b,
+            speaker: {
+              ...b.speaker,
+              avatarUrl: newAvatarUrl,
+            },
+          };
+        }
+        return b;
+      })
+    );
+  };
 
   // File Inputs
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1065,6 +1122,7 @@ export default function StoryWorkspacePage({
           name: quickCharName.trim(),
           realNickname: quickCharNickname.trim() || undefined,
           characterType: quickCharType,
+          avatarUrl: quickCharAvatarUrl.trim() || undefined,
         }),
       });
 
@@ -1082,6 +1140,7 @@ export default function StoryWorkspacePage({
       setShowQuickAddCharModal(false);
       setQuickCharName("");
       setQuickCharNickname("");
+      setQuickCharAvatarUrl("");
       setTargetBlockIdxForNewChar(null);
     } catch (err: any) {
       console.error(err);
@@ -1092,6 +1151,20 @@ export default function StoryWorkspacePage({
   };
 
   const handleUpdateBlockSpeaker = (index: number, targetKey: string) => {
+    if (targetKey === "__change_avatar__") {
+      const curSpeaker = dialogueBlocks[index]?.speaker;
+      const char = characters.find(
+        (c) =>
+          (curSpeaker?.id && c.id === curSpeaker.id) ||
+          c.name.toLowerCase() === (curSpeaker?.name || "").toLowerCase()
+      ) || curSpeaker;
+      if (char) {
+        handleOpenAvatarModal(char);
+      } else {
+        toast.info("กรุณาเลือกตัวละครก่อนตั้งค่ารูปโปรไฟล์");
+      }
+      return;
+    }
     if (targetKey === "__quick_add_char__") {
       setTargetBlockIdxForNewChar(index);
       setQuickCharName("");
@@ -3014,31 +3087,56 @@ export default function StoryWorkspacePage({
                   block.speaker?.realNickname || block.speaker?.name || block.speakerName || "ผู้พูด";
                 const mbti = block.speaker?.currentMbti;
 
-                // Avatar Icon Component
-                const AvatarIcon = () => (
-                  <div
-                    className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden border-2 shadow-md transition-transform ${
-                      isSelf
-                        ? "border-amber-400 bg-amber-950/60 text-amber-300"
-                        : isFriend
-                        ? "border-sky-400 bg-sky-950/60 text-sky-300"
-                        : "border-slate-500 bg-slate-800 text-slate-300"
-                    }`}
-                  >
-                    {avatarUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={avatarUrl}
-                        alt={displayName}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="font-heading font-bold text-xs uppercase">
-                        {displayName.slice(0, 2)}
+                // Avatar Icon Component (Clickable to change profile picture!)
+                const AvatarIcon = () => {
+                  const charObj = block.speaker?.id
+                    ? characters.find((c) => c.id === block.speaker?.id) || block.speaker
+                    : characters.find(
+                        (c) =>
+                          c.name.toLowerCase() === (block.speaker?.name || "").toLowerCase() ||
+                          (c.realNickname && c.realNickname.toLowerCase() === (block.speaker?.realNickname || "").toLowerCase())
+                      ) || block.speaker;
+
+                  return (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (charObj) {
+                          handleOpenAvatarModal(charObj);
+                        } else {
+                          toast.info(`กรุณาเลือกตัวละครให้บทพูดนี้ก่อนตั้งค่ารูปโปรไฟล์`);
+                        }
+                      }}
+                      className={`relative group/avatar w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden border-2 shadow-md hover:scale-110 active:scale-95 transition-all cursor-pointer ${
+                        isSelf
+                          ? "border-amber-400 bg-amber-950/60 text-amber-300 hover:ring-2 hover:ring-amber-400/50"
+                          : isFriend
+                          ? "border-sky-400 bg-sky-950/60 text-sky-300 hover:ring-2 hover:ring-sky-400/50"
+                          : "border-slate-500 bg-slate-800 text-slate-300 hover:ring-2 hover:ring-slate-400/50"
+                      }`}
+                      title={`คลิกเพื่อเปลี่ยนรูปโปรไฟล์ของ ${displayName}`}
+                    >
+                      {avatarUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={avatarUrl}
+                          alt={displayName}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="font-heading font-bold text-xs uppercase">
+                          {displayName.slice(0, 2)}
+                        </span>
+                      )}
+
+                      {/* Subtle Camera Hover Overlay */}
+                      <span className="absolute inset-0 bg-black/60 opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center text-white transition-opacity">
+                        <Camera className="w-3.5 h-3.5" />
                       </span>
-                    )}
-                  </div>
-                );
+                    </button>
+                  );
+                };
 
                 // LEFT OR RIGHT DIALOGUE ROW
                 return (
@@ -3089,6 +3187,9 @@ export default function StoryWorkspacePage({
                               </option>
                             )}
                           <optgroup label="จัดการตัวละคร">
+                            <option value="__change_avatar__" className="text-amber-300">
+                              📷 เปลี่ยนรูปโปรไฟล์ ({displayName})...
+                            </option>
                             <option value="__quick_add_char__" className="text-amber-300 font-bold">
                               ➕ เพิ่มตัวละครใหม่ (สร้างด่วน)...
                             </option>
@@ -3710,6 +3811,51 @@ export default function StoryWorkspacePage({
                 </div>
               </div>
 
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-300">
+                  รูปโปรไฟล์ / Avatar URL (ตัวเลือก):
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={quickCharAvatarUrl}
+                    onChange={(e) => setQuickCharAvatarUrl(e.target.value)}
+                    placeholder="https://... หรืออัปโหลดภาพ"
+                    className="flex-1 bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 outline-none"
+                  />
+                  <label className="cursor-pointer px-3 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-xl text-xs font-bold transition-colors flex items-center gap-1">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>อัปโหลด</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const formData = new FormData();
+                          formData.append("file", file);
+                          const res = await fetch("/api/characters/avatar", {
+                            method: "POST",
+                            body: formData,
+                          });
+                          const d = await res.json();
+                          if (res.ok && d.url) {
+                            setQuickCharAvatarUrl(d.url);
+                            toast.success("อัปโหลดรูปภาพสำเร็จ!");
+                          } else {
+                            toast.error(d.error || "อัปโหลดไม่สำเร็จ");
+                          }
+                        } catch {
+                          toast.error("เกิดข้อผิดพลาดในการอัปโหลด");
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
                 <button
                   type="button"
@@ -4130,6 +4276,15 @@ export default function StoryWorkspacePage({
             })
             .catch(() => {});
         }}
+      />
+
+      {/* Character Profile Picture / Avatar Modal */}
+      <CharacterAvatarModal
+        isOpen={avatarModalOpen}
+        onClose={() => setAvatarModalOpen(false)}
+        character={avatarModalChar}
+        projectId={projectId}
+        onSuccess={handleAvatarSuccess}
       />
 
       {/* Claude Script Import Modal */}

@@ -16,8 +16,12 @@ import {
   Skull,
   HelpCircle,
   Lock,
+  Camera,
+  Upload,
+  Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { CharacterAvatarModal, AvatarCharacterInfo } from "@/components/characters/CharacterAvatarModal";
 
 interface CharacterData {
   id: string;
@@ -31,6 +35,7 @@ interface CharacterData {
   background: string;
   characterType?: "self" | "friend" | "canon";
   realNickname?: string;
+  avatarUrl?: string;
   status: "alive" | "dead" | "missing" | "captive";
   locationNow: string;
   visualSheet: string;
@@ -85,6 +90,28 @@ export default function CharacterBiblePage({
   const [newAbilityName, setNewAbilityName] = useState("");
   const [newAbilityCost, setNewAbilityCost] = useState("");
 
+  // Quick Avatar Modal State
+  const [avatarModalOpen, setAvatarModalOpen] = useState(false);
+  const [avatarModalChar, setAvatarModalChar] = useState<AvatarCharacterInfo | null>(null);
+
+  const handleOpenAvatarModal = (char: CharacterData) => {
+    setAvatarModalChar({
+      id: char.id,
+      name: char.name,
+      realNickname: char.realNickname,
+      characterType: char.characterType,
+      chosenRole: char.chosenRole,
+      avatarUrl: char.avatarUrl,
+    });
+    setAvatarModalOpen(true);
+  };
+
+  const handleAvatarSuccess = (charId: string, newAvatarUrl: string) => {
+    setCharacters((prev) =>
+      prev.map((c) => (c.id === charId ? { ...c, avatarUrl: newAvatarUrl } : c))
+    );
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -116,6 +143,7 @@ export default function CharacterBiblePage({
       roleReason: "",
       faction: "",
       background: "",
+      avatarUrl: "",
       status: "alive",
       locationNow: "",
       visualSheetParsed: {
@@ -134,6 +162,7 @@ export default function CharacterBiblePage({
   const openEditModal = (char: CharacterData) => {
     setEditingChar({
       ...char,
+      avatarUrl: char.avatarUrl || "",
       visualSheetParsed: char.visualSheetParsed || {},
       abilities: [...(char.abilities || [])],
     });
@@ -166,6 +195,7 @@ export default function CharacterBiblePage({
           background: editingChar.background,
           characterType: editingChar.characterType || "friend",
           realNickname: editingChar.realNickname || "",
+          avatarUrl: editingChar.avatarUrl || "",
           status: editingChar.status,
           locationNow: editingChar.locationNow,
           visualSheet: editingChar.visualSheetParsed,
@@ -311,11 +341,42 @@ export default function CharacterBiblePage({
                 <div className="space-y-4">
                   {/* Card Header */}
                   <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-heading text-xl font-bold text-white">
-                          {char.name}
-                        </h3>
+                    <div className="flex items-start gap-3.5">
+                      {/* Avatar Thumbnail */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAvatarModal(char)}
+                        className={`relative group/avatar w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden border-2 shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer ${
+                          char.characterType === "self"
+                            ? "border-amber-400 bg-amber-950/60 text-amber-300 hover:ring-2 hover:ring-amber-400/50"
+                            : char.characterType === "friend"
+                            ? "border-sky-400 bg-sky-950/60 text-sky-300 hover:ring-2 hover:ring-sky-400/50"
+                            : "border-slate-500 bg-slate-800 text-slate-300 hover:ring-2 hover:ring-slate-400/50"
+                        }`}
+                        title={`คลิกเพื่อเปลี่ยนรูปโปรไฟล์ของ ${char.name}`}
+                      >
+                        {char.avatarUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={char.avatarUrl}
+                            alt={char.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="font-heading font-bold text-sm uppercase">
+                            {(char.realNickname || char.name).slice(0, 2)}
+                          </span>
+                        )}
+                        <span className="absolute inset-0 bg-black/60 opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center text-white transition-opacity">
+                          <Camera className="w-4 h-4" />
+                        </span>
+                      </button>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-heading text-xl font-bold text-white">
+                            {char.name}
+                          </h3>
                         {char.characterType === "self" && (
                           <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 font-thai">
                             👑 ตัวฉันเอง (Self)
@@ -343,8 +404,9 @@ export default function CharacterBiblePage({
                         {char.locationNow && <span>ตำแหน่ง: {char.locationNow}</span>}
                       </div>
                     </div>
+                  </div>
 
-                    <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1">
                       <button
                         onClick={() => openEditModal(char)}
                         className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded transition-colors"
@@ -476,6 +538,71 @@ export default function CharacterBiblePage({
             </div>
 
             <div className="space-y-4">
+              {/* Avatar Section */}
+              <div className="flex items-center gap-4 p-3.5 bg-slate-900/80 rounded-xl border border-slate-800">
+                <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-amber-400 bg-slate-800 flex items-center justify-center flex-shrink-0 text-white shadow-md">
+                  {editingChar.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={editingChar.avatarUrl}
+                      alt="Avatar Preview"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="font-heading font-bold text-base">
+                      {(editingChar.realNickname || editingChar.name || "??").slice(0, 2).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1.5 flex-1 min-w-0">
+                  <label className="text-xs font-semibold text-slate-300 font-thai flex items-center gap-1.5">
+                    <Camera className="w-3.5 h-3.5 text-amber-400" />
+                    <span>รูปโปรไฟล์ตัวละคร (Avatar)</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="วางลิงก์ URL หรือกดปุ่มอัปโหลด..."
+                      value={editingChar.avatarUrl || ""}
+                      onChange={(e) =>
+                        setEditingChar((prev) => ({ ...prev, avatarUrl: e.target.value }))
+                      }
+                      className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
+                    />
+                    <label className="cursor-pointer px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 whitespace-nowrap">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>อัปโหลด</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            const formData = new FormData();
+                            formData.append("file", file);
+                            const res = await fetch("/api/characters/avatar", {
+                              method: "POST",
+                              body: formData,
+                            });
+                            const d = await res.json();
+                            if (res.ok && d.url) {
+                              setEditingChar((prev) => ({ ...prev, avatarUrl: d.url }));
+                              toast.success("อัปโหลดรูปโปรไฟล์สำเร็จ!");
+                            } else {
+                              toast.error(d.error || "อัปโหลดไม่สำเร็จ");
+                            }
+                          } catch {
+                            toast.error("เกิดข้อผิดพลาดในการอัปโหลด");
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-300 font-thai">
@@ -723,6 +850,15 @@ export default function CharacterBiblePage({
           </div>
         </div>
       )}
+
+      {/* Quick Character Avatar Modal */}
+      <CharacterAvatarModal
+        isOpen={avatarModalOpen}
+        onClose={() => setAvatarModalOpen(false)}
+        character={avatarModalChar}
+        projectId={projectId}
+        onSuccess={handleAvatarSuccess}
+      />
     </div>
   );
 }

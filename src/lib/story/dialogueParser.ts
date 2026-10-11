@@ -27,6 +27,8 @@ export interface SceneImageMeta {
   kind: "portrait" | "scene" | "cover" | "movie_still" | "reference";
   approved?: number;
   caption?: string;
+  metadata?: string | null;
+  provider?: string;
 }
 
 export interface ParsedScriptResult {
@@ -351,30 +353,50 @@ export function parseSceneToDialogueBlocks(
  * Otherwise, scans backwards to find the most recent bound image.
  * Falls back to images[0] or null if no images are bound.
  */
+function makeDirectUrlImage(val: string): SceneImageMeta {
+  const url = val.startsWith("url:") ? val.replace(/^url:/, "") : val;
+  const isVideo = /\.(mp4|webm|mov|mkv)$/i.test(url);
+  return {
+    id: val,
+    filePath: url,
+    caption: isVideo ? "🎬 วิดีโอจากลิงก์" : "🖼️ ภาพจากลิงก์",
+    kind: isVideo ? "movie_still" : "scene",
+    prompt: url,
+  };
+}
+
 export function resolveImageForDialogueIndex(
   activeIndex: number,
   bindings: Record<string, string>,
   images: SceneImageMeta[]
 ): { image: SceneImageMeta | null; imageIndex: number; isDirectBinding: boolean; boundBlockIndex?: number } {
-  if (!images || images.length === 0) {
-    return { image: null, imageIndex: -1, isDirectBinding: false };
-  }
-
   if (activeIndex < 0) {
-    return { image: images[0], imageIndex: 0, isDirectBinding: false };
+    return images && images.length > 0
+      ? { image: images[0], imageIndex: 0, isDirectBinding: false }
+      : { image: null, imageIndex: -1, isDirectBinding: false };
   }
 
   // 1. Direct binding on activeIndex
   const directImageId = bindings[String(activeIndex)];
   if (directImageId) {
-    const idx = images.findIndex((img) => img.id === directImageId);
-    if (idx !== -1) {
+    if (directImageId.startsWith("url:") || /^https?:\/\//i.test(directImageId)) {
       return {
-        image: images[idx],
-        imageIndex: idx,
+        image: makeDirectUrlImage(directImageId),
+        imageIndex: -1,
         isDirectBinding: true,
         boundBlockIndex: activeIndex,
       };
+    }
+    if (images && images.length > 0) {
+      const idx = images.findIndex((img) => img.id === directImageId);
+      if (idx !== -1) {
+        return {
+          image: images[idx],
+          imageIndex: idx,
+          isDirectBinding: true,
+          boundBlockIndex: activeIndex,
+        };
+      }
     }
   }
 
@@ -382,20 +404,34 @@ export function resolveImageForDialogueIndex(
   for (let i = activeIndex - 1; i >= 0; i--) {
     const imageId = bindings[String(i)];
     if (imageId) {
-      const idx = images.findIndex((img) => img.id === imageId);
-      if (idx !== -1) {
+      if (imageId.startsWith("url:") || /^https?:\/\//i.test(imageId)) {
         return {
-          image: images[idx],
-          imageIndex: idx,
+          image: makeDirectUrlImage(imageId),
+          imageIndex: -1,
           isDirectBinding: false,
           boundBlockIndex: i,
         };
+      }
+      if (images && images.length > 0) {
+        const idx = images.findIndex((img) => img.id === imageId);
+        if (idx !== -1) {
+          return {
+            image: images[idx],
+            imageIndex: idx,
+            isDirectBinding: false,
+            boundBlockIndex: i,
+          };
+        }
       }
     }
   }
 
   // 3. Fallback to the first image in the scene
-  return { image: images[0], imageIndex: 0, isDirectBinding: false };
+  if (images && images.length > 0) {
+    return { image: images[0], imageIndex: 0, isDirectBinding: false };
+  }
+
+  return { image: null, imageIndex: -1, isDirectBinding: false };
 }
 
 /**

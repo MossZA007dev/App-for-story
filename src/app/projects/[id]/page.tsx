@@ -61,6 +61,7 @@ import {
   autoDistributeDialogueImages,
   DialogueBlock,
   CharacterMeta,
+  SceneImageMeta,
 } from "@/lib/story/dialogueParser";
 
 interface CharacterSummary {
@@ -139,6 +140,17 @@ export default function StoryWorkspacePage({
   // Editable Dialogue Beats State
   const [dialogueBlocks, setDialogueBlocks] = useState<DialogueBlock[]>([]);
   const [activeBlockIndex, setActiveBlockIndex] = useState<number>(0);
+  const dialogueRowRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Smoothly scroll active dialogue block into view when stepping through dialogue
+  useEffect(() => {
+    if (activeBlockIndex >= 0 && dialogueRowRefs.current[activeBlockIndex]) {
+      dialogueRowRefs.current[activeBlockIndex]?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    }
+  }, [activeBlockIndex]);
   const [localDialogueBindings, setLocalDialogueBindings] = useState<Record<string, string>>({});
   const [directorsNote, setDirectorsNote] = useState("");
   const [sceneTitleInput, setSceneTitleInput] = useState("");
@@ -668,7 +680,7 @@ export default function StoryWorkspacePage({
   };
 
   // Helper to extract video range timings
-  const getVideoTiming = (img?: { metadata?: string | null }) => {
+  const getVideoTiming = (img?: { metadata?: string | null } | null) => {
     if (!img?.metadata) return { startTime: 0, endTime: null, isMuted: true };
     try {
       const parsed = typeof img.metadata === "string" ? JSON.parse(img.metadata) : img.metadata;
@@ -739,7 +751,7 @@ export default function StoryWorkspacePage({
   };
 
   // Set image as novel cover
-  const handleSetAsCover = async (image: SceneImage | string) => {
+  const handleSetAsCover = async (image: SceneImage | SceneImageMeta | string) => {
     const imagePath = typeof image === "string" ? image : image.filePath;
     const imageId = typeof image === "string" ? undefined : image.id;
     try {
@@ -1466,12 +1478,16 @@ export default function StoryWorkspacePage({
     }
   };
 
-  // Compute Active Images & Captions
+  // Compute Active Images & Captions (Dynamically resolves image/video bound to current dialogue beat)
   const currentPart = parts.find((p) => p.id === activePartId);
+  const resolvedMedia = resolveImageForDialogueIndex(
+    activeBlockIndex,
+    localDialogueBindings,
+    sceneImages
+  );
   const currentFeaturedImage =
-    sceneImages.length > 0
-      ? sceneImages[selectedImageIndex] || sceneImages[0]
-      : null;
+    resolvedMedia.image ||
+    (sceneImages.length > 0 ? sceneImages[selectedImageIndex] || sceneImages[0] : null);
 
   const activeBlock = dialogueBlocks[activeBlockIndex];
   const leftCardCaption =
@@ -2218,6 +2234,67 @@ export default function StoryWorkspacePage({
             </div>
           </div>
 
+          {/* Interactive Studio Reader Stepper Bar */}
+          {dialogueBlocks.length > 0 && !isRawMarkdownMode && !isStreaming && (
+            <div className="flex-shrink-0 flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-slate-950/90 border border-slate-700/80 text-xs font-thai shadow-lg mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-amber-400 font-bold flex items-center gap-1.5">
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>ทดลองอ่านตามบท:</span>
+                </span>
+                <span className="font-mono text-slate-300">
+                  บทที่ <strong className="text-amber-300 font-bold">{activeBlockIndex + 1}</strong> / {dialogueBlocks.length}
+                </span>
+                {localDialogueBindings[String(activeBlockIndex)] && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                    <Sparkles className="w-2.5 h-2.5" />
+                    <span>มีภาพ/คลิปผูกไว้</span>
+                  </span>
+                )}
+                {localDialogueBindings['audio_' + activeBlockIndex] && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1">
+                    <Music className="w-2.5 h-2.5" />
+                    <span>มีเสียงผูกไว้</span>
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={activeBlockIndex <= 0}
+                  onClick={() => handleSelectDialogueRow(Math.max(0, activeBlockIndex - 1))}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-200 text-xs font-semibold flex items-center gap-1 transition-all active:scale-95"
+                  title="ประโยคก่อนหน้า"
+                >
+                  <ArrowUp className="w-3.5 h-3.5 text-amber-400" />
+                  <span>ก่อนหน้า</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={activeBlockIndex >= dialogueBlocks.length - 1}
+                  onClick={() => handleSelectDialogueRow(Math.min(dialogueBlocks.length - 1, activeBlockIndex + 1))}
+                  className="px-3.5 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-amber-400 hover:brightness-110 disabled:opacity-30 disabled:hover:brightness-100 text-slate-950 text-xs font-black flex items-center gap-1.5 shadow-[0_0_12px_rgba(245,158,11,0.3)] transition-all active:scale-95 cursor-pointer"
+                  title="กดอ่านประโยคถัดไป (รูปภาพ/คลิป และเสียงเพลงจะเปลี่ยนตามบทนั้นทันที)"
+                >
+                  <span>ถัดไป</span>
+                  <ArrowDown className="w-3.5 h-3.5 stroke-[3]" />
+                </button>
+
+                <Link
+                  href={`/projects/${projectId}/read${activeScene ? `?sceneId=${activeScene.id}` : ""}`}
+                  target="_blank"
+                  className="ml-2 inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-amber-400 hover:text-amber-300 border border-amber-500/30 font-bold text-xs transition-colors shadow-sm"
+                  title="เปิดอ่านในมุมมองผู้อ่านเต็มจอ (Visual Novel)"
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>เปิดโหมดอ่านเต็มจอ ↗</span>
+                </Link>
+              </div>
+            </div>
+          )}
+
           {/* Inner Dialogue Container (#2D2D2D, rounded-[18px]) - FULLY INTERACTIVE & EDITABLE */}
           <div className="relative flex-1 min-h-0 rounded-[18px] bg-[#2D2D2D] p-4 sm:p-5 border border-slate-700/40 overflow-y-auto dialogue-scroll space-y-3 pr-2.5">
             {isStreaming ? (
@@ -2301,6 +2378,7 @@ export default function StoryWorkspacePage({
                   return (
                     <div
                       key={block.id}
+                      ref={(el) => { dialogueRowRefs.current[idx] = el; }}
                       onClick={() => handleSelectDialogueRow(idx)}
                       className={`group relative p-2.5 rounded-xl border text-center transition-all ${
                         isActive
@@ -2318,18 +2396,36 @@ export default function StoryWorkspacePage({
 
                       {/* Line Tools Bar on Hover / Active */}
                       <div className="flex items-center justify-center gap-1.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap">
-                        {/* Image Select */}
+                        {/* Image & Video Select */}
                         <select
                           value={assignedImageId || ""}
-                          onChange={(e) => handleAssignBlockImage(idx, e.target.value)}
-                          className="bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-slate-300 font-thai"
+                          onChange={(e) => {
+                            if (e.target.value === "__upload_new__") {
+                              targetUploadBlockIdxRef.current = idx;
+                              blockImageUploadRef.current?.click();
+                            } else if (e.target.value === "__custom_url__") {
+                              const customUrl = window.prompt("กรุณาระบุลิงก์รูปภาพ หรือ วิดีโอ/GIF ภายนอก:");
+                              if (customUrl && customUrl.trim()) {
+                                handleAssignBlockImage(idx, `url:${customUrl.trim()}`);
+                              }
+                            } else {
+                              handleAssignBlockImage(idx, e.target.value);
+                            }
+                          }}
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-thai border focus:outline-none cursor-pointer ${
+                            assignedImageId
+                              ? "bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold"
+                              : "bg-slate-900 text-slate-400 border-slate-700"
+                          }`}
                         >
                           <option value="">⚪ คงภาพเดิม</option>
                           {sceneImages.map((img, i) => (
                             <option key={img.id} value={img.id}>
-                              🖼️ ภาพ #{i + 1}: {img.caption || img.prompt.slice(0, 20)}
+                              {isVideoMedia(img) ? "🎬 วิดีโอ" : "🖼️ ภาพ"} #{i + 1}: {img.caption || img.prompt.slice(0, 20)}
                             </option>
                           ))}
+                          <option value="__upload_new__">+ 📁 อัปโหลดภาพหรือคลิปใหม่...</option>
+                          <option value="__custom_url__">+ 🔗 ลิงก์รูป/คลิปภายนอก...</option>
                         </select>
 
                         {/* Audio / Mood Select */}
@@ -2475,6 +2571,7 @@ export default function StoryWorkspacePage({
                 return (
                   <div
                     key={block.id}
+                    ref={(el) => { dialogueRowRefs.current[idx] = el; }}
                     onClick={() => handleSelectDialogueRow(idx)}
                     className={`group relative p-2.5 rounded-xl border transition-all ${
                       isActive
@@ -2534,7 +2631,7 @@ export default function StoryWorkspacePage({
                             </span>
                           )}
 
-                          {/* Image Binding Dropdown */}
+                          {/* Image & Video Binding Dropdown */}
                           <div className="flex items-center gap-1">
                             <select
                               value={assignedImageId || ""}
@@ -2542,26 +2639,33 @@ export default function StoryWorkspacePage({
                                 if (e.target.value === "__upload_new__") {
                                   targetUploadBlockIdxRef.current = idx;
                                   blockImageUploadRef.current?.click();
+                                } else if (e.target.value === "__custom_url__") {
+                                  const customUrl = window.prompt("กรุณาระบุลิงก์รูปภาพ หรือ วิดีโอ/GIF ภายนอก (เช่น https://.../ice.jpg หรือ .gif หรือ .mp4):");
+                                  if (customUrl && customUrl.trim()) {
+                                    handleAssignBlockImage(idx, `url:${customUrl.trim()}`);
+                                  }
                                 } else {
                                   handleAssignBlockImage(idx, e.target.value);
                                 }
                               }}
                               className={`rounded-lg px-2 py-0.5 text-[10px] font-thai border focus:outline-none cursor-pointer ${
-                                assignedImage
+                                assignedImage || assignedImageId
                                   ? "bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold"
                                   : "bg-slate-900 text-slate-400 border-slate-700"
                               }`}
+                              title="เปลี่ยนภาพหรือวิดีโอประกอบในบทนี้"
                             >
                               <option value="">⚪ คงภาพเดิม</option>
                               {sceneImages.map((img, i) => (
                                 <option key={img.id} value={img.id}>
-                                  🖼️ ภาพ #{i + 1}: {img.caption || img.prompt.slice(0, 20)}
+                                  {isVideoMedia(img) ? "🎬 วิดีโอ" : "🖼️ ภาพ"} #{i + 1}: {img.caption || img.prompt.slice(0, 20)}
                                 </option>
                               ))}
-                              <option value="__upload_new__">+ 📁 อัปโหลดรูปใหม่สำหรับบทนี้...</option>
+                              <option value="__upload_new__">+ 📁 อัปโหลดภาพหรือวิดีโอใหม่สำหรับบทนี้...</option>
+                              <option value="__custom_url__">+ 🔗 ใส่ลิงก์รูป/วิดีโอ/GIF ภายนอก...</option>
                             </select>
 
-                            {assignedImage && (
+                            {(assignedImage || assignedImageId) && (
                               <button
                                 onClick={() => handleAssignBlockImage(idx, "")}
                                 className="p-0.5 rounded text-slate-400 hover:text-red-400"
@@ -2641,26 +2745,48 @@ export default function StoryWorkspacePage({
                           }`}
                         />
 
-                        {/* Assigned Miniature Preview Tags (Image & Audio Mood) */}
-                        {(assignedImage || assignedAudioValue) && (
+                        {/* Assigned Miniature Preview Tags (Image/Video & Audio Mood) */}
+                        {((assignedImage || assignedImageId) || assignedAudioValue) && (
                           <div
                             className={`flex items-center gap-2 pt-0.5 flex-wrap ${
                               block.side === "right" ? "justify-end" : "justify-start"
                             }`}
                           >
-                            {assignedImage && (
-                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300 font-thai">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={assignedImage.filePath}
-                                  alt=""
-                                  className="w-4 h-4 rounded object-cover"
-                                />
-                                <span className="truncate max-w-[140px]">
-                                  {assignedImage.caption || "ภาพประกอบบทนี้"}
+                            {(assignedImage || assignedImageId) && (() => {
+                              const mediaItem = assignedImage || {
+                                filePath: (assignedImageId || "").replace(/^url:/, ""),
+                                caption: isVideoMedia({ filePath: assignedImageId }) ? "วิดีโอจากลิงก์" : "ภาพจากลิงก์",
+                              };
+                              const isVid = isVideoMedia(mediaItem);
+                              return (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300 font-thai">
+                                  {isVid ? (
+                                    <Film className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
+                                  ) : (
+                                    /* eslint-disable-next-line @next/next/no-img-element */
+                                    <img
+                                      src={mediaItem.filePath}
+                                      alt=""
+                                      className="w-4 h-4 rounded object-cover flex-shrink-0"
+                                    />
+                                  )}
+                                  <span className="truncate max-w-[140px]">
+                                    {mediaItem.caption || "ภาพประกอบบทนี้"}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleAssignBlockImage(idx, "");
+                                    }}
+                                    className="p-0.5 hover:text-red-400 rounded hover:bg-amber-600/30"
+                                    title="ยกเลิกภาพ/วิดีโอในบทนี้"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
                                 </span>
-                              </span>
-                            )}
+                              );
+                            })()}
 
                             {assignedAudioValue && (
                               <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-purple-500/15 border border-purple-500/35 text-[10px] text-purple-300 font-thai">

@@ -498,11 +498,6 @@ export default function NovelReaderPage({
     ? parts.find((p) => p.id === activeScene.partId)
     : null;
 
-  const currentFeaturedImage =
-    activeSceneImages.length > 0
-      ? activeSceneImages[selectedImageIndex] || activeSceneImages[0]
-      : null;
-
   // Parse markdown into Dialogue Blocks for Visual Novel Mode
   const parsedBlocks = activeScene
     ? parseSceneToDialogueBlocks(activeScene.contentMarkdown, characters)
@@ -519,6 +514,17 @@ export default function NovelReaderPage({
       return {};
     }
   })();
+
+  const resolvedMedia = resolveImageForDialogueIndex(
+    activeDialogueIndex,
+    dialogueBindings,
+    activeSceneImages
+  );
+  const currentFeaturedImage =
+    resolvedMedia.image ||
+    (activeSceneImages.length > 0
+      ? activeSceneImages[selectedImageIndex] || activeSceneImages[0]
+      : null);
 
   // Synchronize featured image automatically when activeDialogueIndex changes
   useEffect(() => {
@@ -1045,6 +1051,7 @@ export default function NovelReaderPage({
               <>
                 {isVideoMedia(currentFeaturedImage) ? (
                   <video
+                    key={currentFeaturedImage.id || currentFeaturedImage.filePath}
                     src={currentFeaturedImage.filePath}
                     autoPlay
                     loop
@@ -1066,6 +1073,7 @@ export default function NovelReaderPage({
                 ) : (
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img
+                    key={currentFeaturedImage.id || currentFeaturedImage.filePath}
                     src={currentFeaturedImage.filePath}
                     alt={currentFeaturedImage.caption || currentFeaturedImage.prompt}
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-102"

@@ -271,6 +271,11 @@ export default function StoryWorkspacePage({
     }
   };
 
+  // Real-time Collaborative Live Sync (Figma Mode) State
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const pollCycleCountRef = useRef<number>(0);
+
   const handleOpenAvatarModal = (char: CharacterSummary | any) => {
     if (!char) return;
     const charName = char.name || char.speakerName || "";
@@ -1796,6 +1801,122 @@ export default function StoryWorkspacePage({
     return () => clearTimeout(timer);
   }, [hasUnsavedChanges, activeSceneId, dialogueBlocks, editableMarkdown, sceneTitleInput, sceneLocationInput, localDialogueBindings, directorsNote]);
 
+  // 6.5. Real-Time Collaborative Live Sync (Figma Mode):
+  // Automatically polls every 3.5s when tab is visible and local user is not actively typing
+  useEffect(() => {
+    if (!activeSceneId) return;
+
+    const pollInterval = setInterval(async () => {
+      // 1. Skip if tab is hidden (saves bandwidth and CPU)
+      if (typeof document !== "undefined" && document.hidden) return;
+
+      // 2. Skip if local user has unsaved edits, is saving, or AI is currently streaming
+      if (hasUnsavedChanges || isSavingScene || isStreaming) return;
+
+      try {
+        pollCycleCountRef.current += 1;
+
+        // Fetch latest state for active scene
+        const res = await fetch(`/api/projects/${projectId}/scenes/${activeSceneId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const remoteScene = data.scene;
+        if (!remoteScene) return;
+
+        // Compare if remote scene has new changes
+        const isContentDifferent = remoteScene.contentMarkdown !== editableMarkdown;
+        const isTitleDifferent = (remoteScene.title || "") !== sceneTitleInput;
+        const isLocationDifferent = (remoteScene.location || "") !== sceneLocationInput;
+        const isImagesDifferent = (data.images || []).length !== sceneImages.length;
+        const isRemoteNewer = Boolean(
+          remoteScene.updatedAt &&
+          activeScene?.updatedAt &&
+          remoteScene.updatedAt !== activeScene.updatedAt
+        );
+
+        if (isContentDifferent || isTitleDifferent || isLocationDifferent || isImagesDifferent || isRemoteNewer) {
+          // Double check local user didn't start typing while fetch was in flight
+          if (hasUnsavedChanges || isSavingScene || isStreaming) return;
+
+          // Smoothly update local state with remote changes
+          setActiveScene(remoteScene);
+          setEditableMarkdown(remoteScene.contentMarkdown || "");
+          const parsed = parseSceneToDialogueBlocks(remoteScene.contentMarkdown || "", characters);
+          setDialogueBlocks(parsed);
+          setSceneTitleInput(remoteScene.title || "");
+          setSceneLocationInput(remoteScene.location || "");
+          setDirectorsNote(remoteScene.directorNote || "");
+          setSceneImages(data.images || []);
+
+          if (remoteScene.dialogueBindings) {
+            try {
+              const parsedB =
+                typeof remoteScene.dialogueBindings === "string"
+                  ? JSON.parse(remoteScene.dialogueBindings)
+                  : remoteScene.dialogueBindings;
+              setLocalDialogueBindings(parsedB || {});
+            } catch {
+              setLocalDialogueBindings({});
+            }
+          }
+
+          // Update parts array in memory to reflect new scene title/wordCount
+          setParts((prevParts) =>
+            prevParts.map((part) => ({
+              ...part,
+              scenes: part.scenes.map((s) => (s.id === activeSceneId ? { ...s, ...remoteScene } : s)),
+            }))
+          );
+
+          setLastSyncTime(new Date());
+
+          const author = remoteScene.lastEditedBy;
+          if (author && author !== currentAuthorName) {
+            setSyncNotice(`⚡ ${author} เพิ่งอัปเดตฉากนี้`);
+            toast.info(`⚡ Live Sync: "${author}" เพิ่งอัปเดตบทพูดฉากนี้เรียบร้อย!`, { duration: 3000 });
+            setTimeout(() => setSyncNotice(null), 5000);
+          }
+        }
+
+        // Every 3 cycles (~10.5 seconds), check if project parts/scenes were added or deleted
+        if (pollCycleCountRef.current % 3 === 0) {
+          const projRes = await fetch(`/api/projects/${projectId}`);
+          if (projRes.ok) {
+            const projData = await projRes.json();
+            if (projData.parts) {
+              setParts((prevParts) => {
+                const prevTotalScenes = prevParts.reduce((acc, p) => acc + (p.scenes?.length || 0), 0);
+                const nextTotalScenes = projData.parts.reduce((acc: number, p: any) => acc + (p.scenes?.length || 0), 0);
+                if (prevParts.length !== projData.parts.length || prevTotalScenes !== nextTotalScenes) {
+                  return projData.parts;
+                }
+                return prevParts;
+              });
+            }
+          }
+        }
+      } catch {
+        // Silent catch for background polling
+      }
+    }, 3500);
+
+    return () => clearInterval(pollInterval);
+  }, [
+    activeSceneId,
+    hasUnsavedChanges,
+    isSavingScene,
+    isStreaming,
+    editableMarkdown,
+    sceneTitleInput,
+    sceneLocationInput,
+    localDialogueBindings,
+    sceneImages.length,
+    activeScene?.updatedAt,
+    currentAuthorName,
+    projectId,
+    characters,
+  ]);
+
   // 7. AI Story Streaming (Claude 3.5 Sonnet)
   const handleStartStream = async (actionType: "write_next" | "regenerate" = "write_next") => {
     if (!activeScene) return;
@@ -2109,6 +2230,20 @@ export default function StoryWorkspacePage({
                   </option>
                 ))}
               </select>
+              {/* Figma-Style Live Sync Badge */}
+              <div
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-950/60 border border-emerald-500/30 text-[10px] font-thai text-emerald-300 shadow-sm ml-1"
+                title="ระบบซิงค์ข้อมูลกับเพื่อนอัตโนมัติแบบเรียลไทม์ทุก 3.5 วินาที (Figma Mode)"
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="font-bold hidden sm:inline">
+                  {syncNotice || "Live Sync"}
+                </span>
+              </div>
+
               <button
                 type="button"
                 onClick={async () => {
@@ -2120,7 +2255,7 @@ export default function StoryWorkspacePage({
                     });
                   }
                 }}
-                title="กดเพื่อดึงการแก้ไขล่าสุดจากเพื่อนร่วมแต่ง"
+                title="กดเพื่อดึงการแก้ไขล่าสุดทันที (ระบบซิงค์ให้อัตโนมัติทุก 3.5 วินาทีอยู่แล้ว)"
                 className="p-1 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-all ml-0.5"
               >
                 <RefreshCw className="w-3.5 h-3.5" />

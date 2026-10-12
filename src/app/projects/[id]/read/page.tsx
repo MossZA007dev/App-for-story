@@ -103,6 +103,8 @@ interface SceneItem {
   images?: SceneImage[];
   bgmUrl?: string | null;
   bgmTitle?: string | null;
+  updatedAt?: string;
+  lastEditedBy?: string | null;
 }
 
 interface PartItem {
@@ -314,6 +316,40 @@ export default function NovelReaderPage({
     setLoading(true);
     reloadProjectData().finally(() => setLoading(false));
   }, [projectId, initialSceneId]);
+
+  // Real-Time Collaborative Live Sync for Reader View (Figma Mode)
+  useEffect(() => {
+    if (!activeScene?.id) return;
+
+    const pollInterval = setInterval(async () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+
+      try {
+        const res = await fetch(`/api/projects/${projectId}/scenes/${activeScene.id}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const remoteScene = data.scene;
+        if (!remoteScene) return;
+
+        const isContentDifferent = remoteScene.contentMarkdown !== activeScene.contentMarkdown;
+        const isImagesDifferent = (data.images || []).length !== activeSceneImages.length;
+        const isUpdatedNewer = Boolean(
+          remoteScene.updatedAt &&
+          activeScene.updatedAt &&
+          remoteScene.updatedAt !== activeScene.updatedAt
+        );
+
+        if (isContentDifferent || isImagesDifferent || isUpdatedNewer) {
+          setActiveScene((prev) => (prev ? { ...prev, ...remoteScene } : remoteScene));
+          setActiveSceneImages(data.images || []);
+        }
+      } catch {
+        // Silent catch for background poll
+      }
+    }, 4000);
+
+    return () => clearInterval(pollInterval);
+  }, [activeScene?.id, activeScene?.contentMarkdown, activeScene?.updatedAt, activeSceneImages.length, projectId]);
 
   // Stop sound when leaving page
   useEffect(() => {
@@ -1317,6 +1353,18 @@ export default function NovelReaderPage({
                 </option>
               ))}
             </select>
+
+            {/* Live Sync Badge (Figma Mode) */}
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-900 border border-emerald-500/30 text-[11px] font-thai text-emerald-300 shadow-sm"
+              title="ระบบซิงค์เนื้อเรื่องจาก Studio อัตโนมัติทุก 4 วินาที (Figma Live Sync)"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="font-bold hidden sm:inline">Live Sync</span>
+            </div>
 
             <button
               type="button"

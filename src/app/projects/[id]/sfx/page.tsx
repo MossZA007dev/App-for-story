@@ -19,6 +19,7 @@ import {
   Link2,
   Copy,
   Check,
+  Edit3,
   FolderOpen,
   Filter,
   Sliders,
@@ -80,6 +81,11 @@ export default function SoundEffectsVaultPage({
   const previewAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const youtubeIframeRef = useRef<HTMLIFrameElement | null>(null);
   const previewYoutubeIframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  // SFX Inline Rename State
+  const [editingSfxId, setEditingSfxId] = useState<string | null>(null);
+  const [editingSfxName, setEditingSfxName] = useState<string>("");
+  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
 
   // Upload Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -254,6 +260,78 @@ export default function SoundEffectsVaultPage({
       console.error(err);
       setSfxList(previousList);
       toast.error(err.message || "เกิดข้อผิดพลาดในการลบเสียง SFX");
+    }
+  };
+
+  const handleStartEdit = (item: SoundEffectItem) => {
+    setEditingSfxId(item.id);
+    setEditingSfxName(item.name);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingSfxId(null);
+    setEditingSfxName("");
+  };
+
+  const handleSaveSfxName = async (id: string) => {
+    const cleanName = editingSfxName.trim();
+    if (!cleanName) {
+      toast.error("กรุณาระบุชื่อเสียง SFX");
+      return;
+    }
+
+    const currentItem = sfxList.find((s) => s.id === id);
+    if (!currentItem) return;
+    if (currentItem.name === cleanName) {
+      setEditingSfxId(null);
+      return;
+    }
+
+    const previousList = sfxList;
+    try {
+      setIsSavingEdit(true);
+
+      // Optimistically update list
+      setSfxList((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, name: cleanName } : s))
+      );
+      setEditingSfxId(null);
+
+      // Call API (nested route first, fallback to collection route)
+      let res = await fetch(`/api/projects/${projectId}/sfx/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: cleanName }),
+      });
+
+      if (!res.ok) {
+        res = await fetch(`/api/projects/${projectId}/sfx`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, name: cleanName }),
+        });
+      }
+
+      if (!res.ok) {
+        setSfxList(previousList);
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "แก้ไขชื่อไม่สำเร็จ");
+      }
+
+      const result = await res.json();
+      if (result.soundEffect) {
+        setSfxList((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, ...result.soundEffect } : s))
+        );
+      }
+
+      toast.success(`เปลี่ยนชื่อเป็น "${cleanName}" สำเร็จ!`);
+    } catch (err: any) {
+      console.error(err);
+      setSfxList(previousList);
+      toast.error(err.message || "เกิดข้อผิดพลาดในการบันทึกชื่อ");
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -625,26 +703,102 @@ export default function SoundEffectsVaultPage({
 
                   {/* Sound Info */}
                   <div className="flex-1 min-w-0 space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className={`text-xs font-bold truncate transition-colors ${
-                        isMusic
-                          ? "text-white group-hover:text-purple-300"
-                          : "text-white group-hover:text-amber-300"
-                      }`}>
-                        {item.name}
-                      </h3>
-                      {/* Delete button */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteSfx(item.id, item.name);
-                        }}
-                        className="opacity-70 group-hover:opacity-100 hover:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-950/50 active:scale-95 transition-all"
-                        title="ลบรายการนี้"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    {editingSfxId === item.id ? (
+                      <div className="flex items-center gap-1.5 w-full py-0.5">
+                        <input
+                          type="text"
+                          value={editingSfxName}
+                          onChange={(e) => setEditingSfxName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleSaveSfxName(item.id);
+                            } else if (e.key === "Escape") {
+                              handleCancelEdit();
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className={`flex-1 min-w-0 px-2.5 py-1 text-xs bg-slate-900 border rounded-lg text-white font-medium focus:outline-none transition-all shadow-inner ${
+                            isMusic
+                              ? "border-purple-500/80 focus:ring-1 focus:ring-purple-400"
+                              : "border-amber-500/80 focus:ring-1 focus:ring-amber-400"
+                          }`}
+                          placeholder="พิมพ์ชื่อเสียงใหม่..."
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSaveSfxName(item.id);
+                          }}
+                          disabled={isSavingEdit}
+                          className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all flex items-center gap-1 shadow-sm flex-shrink-0 active:scale-95"
+                          title="บันทึกชื่อ (Enter)"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>บันทึก</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCancelEdit();
+                          }}
+                          disabled={isSavingEdit}
+                          className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors flex-shrink-0 active:scale-95"
+                          title="ยกเลิก (Esc)"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2">
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartEdit(item);
+                          }}
+                          className="flex items-center gap-1.5 min-w-0 cursor-pointer group/title flex-1"
+                          title="คลิกเพื่อแก้ไขชื่อเสียงนี้"
+                        >
+                          <h3
+                            className={`text-xs font-bold truncate transition-colors ${
+                              isMusic
+                                ? "text-white group-hover/title:text-purple-300"
+                                : "text-white group-hover/title:text-amber-300"
+                            }`}
+                          >
+                            {item.name}
+                          </h3>
+                          <Edit3 className="w-3 h-3 text-slate-500 opacity-0 group-hover/title:opacity-100 group-hover:opacity-100 transition-opacity flex-shrink-0 hover:text-amber-400" />
+                        </div>
+
+                        {/* Action buttons: Edit & Delete */}
+                        <div className="flex items-center gap-0.5 flex-shrink-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStartEdit(item);
+                            }}
+                            className="opacity-70 group-hover:opacity-100 hover:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-slate-800/80 active:scale-95 transition-all"
+                            title="แก้ไขชื่อเสียงนี้"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSfx(item.id, item.name);
+                            }}
+                            className="opacity-70 group-hover:opacity-100 hover:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-950/50 active:scale-95 transition-all"
+                            title="ลบรายการนี้"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Category & Source Type Badges */}
                     <div className="flex items-center gap-1.5 flex-wrap">

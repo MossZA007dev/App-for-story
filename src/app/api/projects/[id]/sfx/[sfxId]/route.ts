@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { soundEffects } from "@/lib/db/schema";
+import { soundEffects, scenes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { audioStorage } from "@/lib/storage";
 
@@ -14,7 +14,7 @@ export async function GET(
       .select()
       .from(soundEffects)
       .where(and(eq(soundEffects.id, sfxId), eq(soundEffects.projectId, projectId)))
-      .get();
+      .get() || db.select().from(soundEffects).where(eq(soundEffects.id, sfxId)).get();
 
     if (!item) {
       return NextResponse.json({ error: "ไม่พบเสียง SFX นี้" }, { status: 404 });
@@ -38,7 +38,7 @@ export async function PUT(
       .select()
       .from(soundEffects)
       .where(and(eq(soundEffects.id, sfxId), eq(soundEffects.projectId, projectId)))
-      .get();
+      .get() || db.select().from(soundEffects).where(eq(soundEffects.id, sfxId)).get();
 
     if (!item) {
       return NextResponse.json({ error: "ไม่พบเสียง SFX นี้" }, { status: 404 });
@@ -51,9 +51,11 @@ export async function PUT(
     if (Array.isArray(body.tags)) updatedTags = JSON.stringify(body.tags);
     else if (body.tags !== undefined) updatedTags = String(body.tags);
 
+    const newName = body.name !== undefined ? body.name.trim() : item.name;
+
     db.update(soundEffects)
       .set({
-        name: body.name !== undefined ? body.name.trim() : item.name,
+        name: newName,
         category: body.category !== undefined ? body.category.trim() : item.category,
         volume: typeof body.volume === "number" ? Math.max(0, Math.min(1, body.volume)) : item.volume,
         tags: updatedTags,
@@ -62,6 +64,18 @@ export async function PUT(
       })
       .where(eq(soundEffects.id, sfxId))
       .run();
+
+    // If this sound effect is tied to scenes as bgmUrl, update scenes.bgmTitle as well
+    if (body.name !== undefined && item.audioUrl) {
+      try {
+        db.update(scenes)
+          .set({ bgmTitle: newName })
+          .where(eq(scenes.bgmUrl, item.audioUrl))
+          .run();
+      } catch (sceneErr) {
+        console.warn("Could not sync bgmTitle to scenes:", sceneErr);
+      }
+    }
 
     const updated = db.select().from(soundEffects).where(eq(soundEffects.id, sfxId)).get();
 
@@ -72,6 +86,8 @@ export async function PUT(
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
+
+export const PATCH = PUT;
 
 export async function DELETE(
   _req: NextRequest,

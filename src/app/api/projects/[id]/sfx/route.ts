@@ -325,6 +325,71 @@ export async function POST(
   }
 }
 
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: projectId } = await params;
+    const body = await req.json();
+    const sfxId = body.id || body.sfxId;
+    if (!sfxId) {
+      return NextResponse.json({ error: "ไม่พบรหัสเสียง SFX ที่ต้องการแก้ไข" }, { status: 400 });
+    }
+
+    const item = db
+      .select()
+      .from(soundEffects)
+      .where(eq(soundEffects.id, sfxId))
+      .get();
+
+    if (!item) {
+      return NextResponse.json({ error: "ไม่พบเสียง SFX นี้" }, { status: 404 });
+    }
+
+    const now = new Date().toISOString();
+    let updatedTags = item.tags;
+    if (Array.isArray(body.tags)) updatedTags = JSON.stringify(body.tags);
+    else if (body.tags !== undefined) updatedTags = String(body.tags);
+
+    const newName = body.name !== undefined ? body.name.trim() : item.name;
+
+    db.update(soundEffects)
+      .set({
+        name: newName,
+        category: body.category !== undefined ? body.category.trim() : item.category,
+        volume: typeof body.volume === "number" ? Math.max(0, Math.min(1, body.volume)) : item.volume,
+        tags: updatedTags,
+        description: body.description !== undefined ? body.description.trim() : item.description,
+        updatedAt: now,
+      })
+      .where(eq(soundEffects.id, sfxId))
+      .run();
+
+    // If this sound effect is tied to scenes as bgmUrl, update scenes.bgmTitle as well
+    if (body.name !== undefined && item.audioUrl) {
+      try {
+        db.update(scenes)
+          .set({ bgmTitle: newName })
+          .where(eq(scenes.bgmUrl, item.audioUrl))
+          .run();
+      } catch (sceneErr) {
+        console.warn("Could not sync bgmTitle to scenes:", sceneErr);
+      }
+    }
+
+    const updated = db.select().from(soundEffects).where(eq(soundEffects.id, sfxId)).get();
+
+    return NextResponse.json({ success: true, soundEffect: updated });
+  } catch (error: unknown) {
+    console.error("Failed to update sound effect:", error);
+    const msg = error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการอัปเดตเสียง SFX";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
+export const PATCH = PUT;
+
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

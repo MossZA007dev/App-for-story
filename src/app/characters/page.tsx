@@ -63,19 +63,33 @@ export default function CharactersDashboardPage() {
   useEffect(() => {
     const fetchProjects = async () => {
       try {
-        setLoading(true);
+        const cached = localStorage.getItem("saga_cached_projects_list");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setProjects(parsed);
+            setSelectedProjectId(parsed[0].id);
+            fetchCharacters(parsed[0].id);
+            setLoading(false);
+          }
+        }
+      } catch {}
+
+      try {
         const res = await fetch("/api/projects");
         if (!res.ok) throw new Error("โหลดโปรเจกต์ไม่สำเร็จ");
         const data = await res.json();
         setProjects(data);
+        try {
+          localStorage.setItem("saga_cached_projects_list", JSON.stringify(data));
+        } catch {}
 
-        if (data.length > 0) {
+        if (data.length > 0 && !selectedProjectId) {
           setSelectedProjectId(data[0].id);
           fetchCharacters(data[0].id);
         }
       } catch (err) {
         console.error(err);
-        toast.error("ไม่สามารถโหลดข้อมูลโปรเจกต์ได้");
       } finally {
         setLoading(false);
       }

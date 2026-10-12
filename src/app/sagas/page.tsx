@@ -44,20 +44,42 @@ export default function SagasDashboardPage() {
   const [selectedCollabProject, setSelectedCollabProject] = useState<SagaProject | null>(null);
 
   useEffect(() => {
+    // 1. Instant cache retrieval for 0ms load time
+    try {
+      const cached = localStorage.getItem("saga_cached_projects_list");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setProjects(parsed);
+          setLoading(false);
+        }
+      }
+    } catch {}
+
+    // 2. Fetch fresh data in background
     fetchProjects();
   }, []);
 
   const fetchProjects = async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+
     try {
-      setLoading(true);
-      const res = await fetch("/api/projects");
+      const res = await fetch("/api/projects", { signal: controller.signal });
+      clearTimeout(timer);
       if (!res.ok) throw new Error("โหลดข้อมูลไม่สำเร็จ");
       const data = await res.json();
       setProjects(data);
-    } catch (err) {
-      console.error(err);
-      toast.error("ไม่สามารถโหลดรายการเนื้อเรื่องได้");
+      try {
+        localStorage.setItem("saga_cached_projects_list", JSON.stringify(data));
+      } catch {}
+    } catch (err: any) {
+      console.warn("fetchProjects:", err);
+      if (err.name === "AbortError" && projects.length === 0) {
+        toast.error("การเชื่อมต่อใช้เวลานาน กรุณากดรีเฟรชหน้าเว็บใหม่อีกครั้ง");
+      }
     } finally {
+      clearTimeout(timer);
       setLoading(false);
     }
   };
@@ -143,10 +165,28 @@ export default function SagasDashboardPage() {
           </div>
         </div>
 
-        {/* Loading Spinner */}
-        {loading ? (
-          <div className="flex items-center justify-center min-h-[400px]">
-            <div className="animate-spin w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full" />
+        {/* Loading Skeletons (Shown only on first visit before cache is ready) */}
+        {loading && projects.length === 0 ? (
+          <div className="space-y-4 pt-4">
+            <div className="flex items-center gap-2 text-amber-400 font-thai text-xs font-semibold animate-pulse">
+              <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+              <span>กำลังดึงข้อมูลมหากาพย์นิยายของคุณ...</span>
+            </div>
+            <div className="flex flex-wrap items-stretch gap-[32px] sm:gap-[40px] xl:gap-[50px]">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="w-full sm:w-[354px] h-[480px] rounded-[15px] bg-[#272727]/70 border border-slate-800/80 animate-pulse p-4 flex flex-col justify-between"
+                >
+                  <div className="space-y-3">
+                    <div className="w-2/3 h-5 bg-slate-800 rounded-md" />
+                    <div className="w-1/2 h-3.5 bg-slate-800/60 rounded-md" />
+                    <div className="w-full h-48 bg-slate-800/40 rounded-xl mt-4" />
+                  </div>
+                  <div className="w-full h-10 bg-slate-800/50 rounded-xl" />
+                </div>
+              ))}
+            </div>
           </div>
         ) : filteredProjects.length === 0 ? (
           /* Empty State */

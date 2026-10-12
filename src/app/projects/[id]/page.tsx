@@ -1801,6 +1801,21 @@ export default function StoryWorkspacePage({
     return () => clearTimeout(timer);
   }, [hasUnsavedChanges, activeSceneId, dialogueBlocks, editableMarkdown, sceneTitleInput, sceneLocationInput, localDialogueBindings, directorsNote]);
 
+  // Keyboard Shortcut: Ctrl+S / Cmd+S to save immediately
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (activeSceneId && !isSavingScene) {
+          handleSaveAll(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeSceneId, isSavingScene, handleSaveAll]);
+
+
   // 6.5. Real-Time Collaborative Live Sync (Figma Mode):
   // Automatically polls every 3.5s when tab is visible and local user is not actively typing
   useEffect(() => {

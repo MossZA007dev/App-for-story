@@ -61,6 +61,7 @@ export function CharacterAvatarModal({
   const [projectImages, setProjectImages] = useState<Array<{ id: string; filePath: string; caption?: string }>>([]);
   const [loadingImages, setLoadingImages] = useState<boolean>(false);
   const [showCropModal, setShowCropModal] = useState<boolean>(false);
+  const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -98,12 +99,10 @@ export function CharacterAvatarModal({
   const liveDisplayName = nicknameInput.trim() || nameInput.trim() || "ตัวละคร";
   const initials = liveDisplayName.slice(0, 2).toUpperCase();
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      toast.error("กรุณาเลือกไฟล์รูปภาพที่ถูกต้อง (PNG, JPG, GIF, WebP)");
+  const uploadAvatarFile = async (file: File) => {
+    const isImage = file.type.startsWith("image/") || /\.(jfif|jpg|jpeg|png|webp|gif|bmp|svg)$/i.test(file.name);
+    if (!isImage) {
+      toast.error("กรุณาเลือกไฟล์รูปภาพที่ถูกต้อง (PNG, JPG, JFIF, GIF, WebP)");
       return;
     }
 
@@ -122,7 +121,7 @@ export function CharacterAvatarModal({
 
       setPreviewUrl(data.url);
       setUrlInput(data.url);
-      toast.success("อัปโหลดรูปภาพสำเร็จแล้ว! อย่าลืมกดบันทึก");
+      toast.success("อัปโหลดรูปภาพสำเร็จแล้ว! คุณสามารถกด 'ปรับตำแหน่ง / ครอปรูป' หรือ 'บันทึก' ได้ทันที");
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "เกิดข้อผิดพลาดในการอัปโหลดรูปภาพ");
@@ -130,6 +129,12 @@ export function CharacterAvatarModal({
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await uploadAvatarFile(file);
   };
 
   const handleApplyUrl = () => {
@@ -391,14 +396,35 @@ export function CharacterAvatarModal({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
+                accept="image/png,image/jpeg,image/webp,image/gif,.jfif"
                 onChange={handleFileUpload}
                 className="hidden"
               />
 
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-slate-700 hover:border-amber-400/80 rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all bg-slate-950/40 hover:bg-slate-950/80 group"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingFile(true);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingFile(false);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingFile(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) uploadAvatarFile(file);
+                }}
+                className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
+                  isDraggingFile
+                    ? "border-amber-400 bg-amber-500/20 scale-[1.02] shadow-[0_0_20px_rgba(245,158,11,0.3)] ring-4 ring-amber-400/30"
+                    : "border-slate-700 hover:border-amber-400/80 bg-slate-950/40 hover:bg-slate-950/80"
+                } group`}
               >
                 <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-3 group-hover:scale-110 transition-transform">
                   {isUploading ? (
@@ -408,10 +434,14 @@ export function CharacterAvatarModal({
                   )}
                 </div>
                 <h4 className="text-sm font-bold text-white mb-1">
-                  {isUploading ? "กำลังอัปโหลดไฟล์..." : "คลิกเพื่อเลือกไฟล์รูปภาพจากเครื่อง"}
+                  {isUploading
+                    ? "กำลังอัปโหลดไฟล์..."
+                    : isDraggingFile
+                    ? "ปล่อยรูปภาพที่นี่ (Drop Image Here)"
+                    : "คลิกหรือลากวางรูปภาพจากเครื่องมาที่นี่"}
                 </h4>
                 <p className="text-xs text-slate-400 max-w-xs">
-                  รองรับ PNG, JPG, JPEG, GIF, WebP (แนะนำรูปสี่เหลี่ยมจัตุรัส หรือภาพใบหน้าบุคคล)
+                  รองรับ PNG, JPG, JPEG, JFIF, GIF, WebP (ลากวางจาก File Explorer ได้เลย)
                 </p>
 
                 <button

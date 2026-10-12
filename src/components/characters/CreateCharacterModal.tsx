@@ -71,6 +71,7 @@ export function CreateCharacterModal({
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCropModal, setShowCropModal] = useState(false);
+  const [isDraggingAvatar, setIsDraggingAvatar] = useState(false);
 
   // Projects list for selecting target project
   const [projectsList, setProjectsList] = useState<ProjectOption[]>([]);
@@ -129,9 +130,12 @@ export function CreateCharacterModal({
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const uploadCharacterAvatarFile = async (file: File) => {
+    const isImage = file.type.startsWith("image/") || /\.(jfif|jpg|jpeg|png|webp|gif|bmp|svg)$/i.test(file.name);
+    if (!isImage) {
+      toast.error("กรุณาเลือกไฟล์รูปภาพที่ถูกต้อง (PNG, JPG, JFIF, GIF, WebP)");
+      return;
+    }
 
     try {
       setIsUploadingPhoto(true);
@@ -163,6 +167,12 @@ export function CreateCharacterModal({
     } finally {
       setIsUploadingPhoto(false);
     }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await uploadCharacterAvatarFile(file);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -344,7 +354,30 @@ export function CreateCharacterModal({
           </div>
 
           {/* Avatar Photo Upload & Preview Section */}
-          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row items-center gap-4">
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDraggingAvatar(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDraggingAvatar(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDraggingAvatar(false);
+              const file = e.dataTransfer.files?.[0];
+              if (file) uploadCharacterAvatarFile(file);
+            }}
+            className={`p-4 rounded-xl border flex flex-col sm:flex-row items-center gap-4 transition-all ${
+              isDraggingAvatar
+                ? "bg-amber-500/20 border-amber-400 ring-4 ring-amber-400/30 scale-[1.01]"
+                : "bg-slate-950/80 border-slate-800"
+            }`}
+          >
             {/* Avatar Preview */}
             <div className="relative w-20 h-20 rounded-full overflow-hidden bg-slate-900 border-2 border-amber-500/50 flex items-center justify-center flex-shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
               {avatarUrl ? (
@@ -372,17 +405,19 @@ export function CreateCharacterModal({
                   รูปถ่ายของคุณ (Avatar Photo)
                 </span>
                 <span className="text-[11px] text-slate-400 font-thai">
-                  อัปโหลดรูปหน้าตรงหรือรูปถ่ายจริงของคุณเพื่อใช้เป็นโปรไฟล์และภาพอ้างอิง
+                  {isDraggingAvatar
+                    ? "ปล่อยรูปภาพที่นี่ (Drop Avatar Photo)"
+                    : "คลิกหรือลากวางรูปถ่ายจริงจากเครื่องมาที่นี่ (รองรับ JPG, JFIF, PNG, WebP)"}
                 </span>
               </div>
 
               <div className="flex items-center gap-2 justify-center sm:justify-start flex-wrap">
                 <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/40 transition-colors font-thai">
                   <Camera className="w-3.5 h-3.5" />
-                  <span>{avatarUrl ? "เปลี่ยนรูปถ่าย" : "เลือกรูปจากเครื่อง (JPG/PNG)"}</span>
+                  <span>{avatarUrl ? "เปลี่ยนรูปถ่าย" : "เลือกรูปจากเครื่อง (JPG/PNG/JFIF)"}</span>
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/*,.jfif"
                     onChange={handleFileUpload}
                     className="hidden"
                     disabled={isUploadingPhoto}

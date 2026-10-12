@@ -16,7 +16,7 @@ export async function GET(
 
     const ext = path.extname(filename).toLowerCase();
     let contentType = "image/png";
-    if (ext === ".jpg" || ext === ".jpeg") contentType = "image/jpeg";
+    if (ext === ".jpg" || ext === ".jpeg" || ext === ".jfif") contentType = "image/jpeg";
     else if (ext === ".webp") contentType = "image/webp";
     else if (ext === ".gif") contentType = "image/gif";
     else if (ext === ".mp4") contentType = "video/mp4";

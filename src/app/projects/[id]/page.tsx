@@ -425,11 +425,16 @@ export default function StoryWorkspacePage({
     );
   };
 
-  // File Inputs
+  // File Inputs & Drag-Drop States
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const blockImageUploadRef = useRef<HTMLInputElement | null>(null);
   const targetUploadBlockIdxRef = useRef<number | null>(null);
   const audioFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Drag and drop states for Visual Stage & Dialogue Blocks
+  const [isDraggingOverVisualStage, setIsDraggingOverVisualStage] = useState(false);
+  const visualStageDragCounterRef = useRef(0);
+  const [dragOverBlockIdx, setDragOverBlockIdx] = useState<number | null>(null);
 
   // 1. Load Project Data
   const loadProjectData = async () => {
@@ -1087,38 +1092,48 @@ export default function StoryWorkspacePage({
     }
   };
 
-  // 4. Image Upload & Management
+  // 4. Image Upload & Management (Supports Single & Multiple Files + Drag and Drop)
+  const uploadSingleSceneFile = async (file: File) => {
+    if (!activeSceneId) throw new Error("ไม่พบฉากที่กำลังเลือก");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("sceneId", activeSceneId);
+    formData.append("caption", file.name.replace(/\.[^/.]+$/, ""));
+
+    const res = await fetch(`/api/projects/${projectId}/images/reference`, {
+      method: "POST",
+      body: formData,
+    });
+
+    const resText = await res.text();
+    let data: any = {};
+    try {
+      data = JSON.parse(resText);
+    } catch {}
+
+    if (!res.ok) {
+      if (res.status === 413 || resText.includes("PAYLOAD_TOO_LARGE") || resText.includes("Request Entity Too Large")) {
+        throw new Error(
+          `ไฟล์ "${file.name}" มีขนาดใหญ่เกินกว่าที่ Vercel รองรับ (${(file.size / (1024 * 1024)).toFixed(1)} MB > 4.5 MB) — กรุณาใช้งานผ่าน Cloudflare Tunnel ซึ่งรองรับไฟล์ใหญ่ได้ถึง 100 MB`
+        );
+      }
+      throw new Error(data?.error || `อัปโหลดไฟล์ "${file.name}" ไม่สำเร็จ`);
+    }
+
+    return data.image;
+  };
+
   const handleUploadSceneImage = async (file: File, bindToBlockIdx?: number) => {
-    if (!activeSceneId) return;
+    if (!activeSceneId) {
+      toast.error("กรุณาเลือกฉากก่อนอัปโหลดรูปภาพ");
+      return;
+    }
 
     try {
       setIsUploadingImage(true);
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("sceneId", activeSceneId);
-      formData.append("caption", file.name.replace(/\.[^/.]+$/, ""));
+      const newImg = await uploadSingleSceneFile(file);
 
-      const res = await fetch(`/api/projects/${projectId}/images/reference`, {
-        method: "POST",
-        body: formData,
-      });
-
-      const resText = await res.text();
-      let data: any = {};
-      try {
-        data = JSON.parse(resText);
-      } catch {}
-
-      if (!res.ok) {
-        if (res.status === 413 || resText.includes("PAYLOAD_TOO_LARGE") || resText.includes("Request Entity Too Large")) {
-          throw new Error(
-            `ไฟล์มีขนาดใหญ่เกินกว่าที่ Vercel รองรับ (${(file.size / (1024 * 1024)).toFixed(1)} MB > 4.5 MB) — กรุณาใช้งานผ่าน Cloudflare Tunnel ซึ่งรองรับไฟล์ใหญ่ได้ถึง 100 MB`
-          );
-        }
-        throw new Error(data?.error || "อัปโหลดภาพไม่สำเร็จ");
-      }
-
-      const newImg = data.image;
       const updatedImages = [newImg, ...sceneImages];
       setSceneImages(updatedImages);
       setSelectedImageIndex(0);
@@ -1128,7 +1143,7 @@ export default function StoryWorkspacePage({
         const nextBindings = { ...localDialogueBindings, [String(bindToBlockIdx)]: newImg.id };
         setLocalDialogueBindings(nextBindings);
         setHasUnsavedChanges(true);
-        toast.success(`อัปโหลดและผูกกับประโยค #${bindToBlockIdx + 1} สำเร็จ!`);
+        toast.success(`อัปโหลดและผูกภาพกับประโยค #${bindToBlockIdx + 1} สำเร็จ!`);
       } else {
         toast.success(`อัปโหลด "${newImg.caption || file.name}" สำเร็จ!`);
       }
@@ -1155,6 +1170,168 @@ export default function StoryWorkspacePage({
       if (blockImageUploadRef.current) blockImageUploadRef.current.value = "";
       targetUploadBlockIdxRef.current = null;
     }
+  };
+
+  const handleUploadMultipleImages = async (files: File[], bindToBlockIdx?: number) => {
+    if (!activeSceneId) {
+      toast.error("กรุณาเลือกฉากก่อนอัปโหลดรูปภาพ");
+      return;
+    }
+    if (files.length === 0) return;
+
+    if (files.length === 1) {
+      return handleUploadSceneImage(files[0], bindToBlockIdx);
+    }
+
+    try {
+      setIsUploadingImage(true);
+      const uploadToastId = toast.loading(`กำลังอัปโหลด ${files.length} ไฟล์...`);
+      const newUploadedImages: any[] = [];
+      let failCount = 0;
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        try {
+          const img = await uploadSingleSceneFile(file);
+          newUploadedImages.push(img);
+        } catch (e: any) {
+          console.error(`Error uploading ${file.name}:`, e);
+          failCount++;
+          toast.error(`ไฟล์ "${file.name}": ${e.message || "ล้มเหลว"}`);
+        }
+      }
+
+      toast.dismiss(uploadToastId);
+
+      if (newUploadedImages.length > 0) {
+        setSceneImages((prev) => [...newUploadedImages, ...prev]);
+        setSelectedImageIndex(0);
+
+        if (bindToBlockIdx !== undefined && bindToBlockIdx >= 0) {
+          const nextBindings = { ...localDialogueBindings, [String(bindToBlockIdx)]: newUploadedImages[0].id };
+          setLocalDialogueBindings(nextBindings);
+          setHasUnsavedChanges(true);
+          toast.success(`อัปโหลด ${newUploadedImages.length} ไฟล์ และผูกรูปแรกกับประโยค #${bindToBlockIdx + 1} เรียบร้อย!`);
+        } else {
+          toast.success(`อัปโหลดสำเร็จทั้งหมด ${newUploadedImages.length} ไฟล์!`);
+        }
+
+        // If any video among the batch, notify or open trim modal for the first one
+        const firstVideo = files.find((f) => f.type.startsWith("video/") || /\.(mp4|webm|mov|mkv)$/i.test(f.name));
+        if (firstVideo) {
+          const matchingImg = newUploadedImages.find((img) => img.caption === firstVideo.name.replace(/\.[^/.]+$/, "") || isVideoMedia(img));
+          if (matchingImg) {
+            toast.info("พบไฟล์วิดีโอ — คุณสามารถเลือกช่วงเวลาของวิดีโอนี้ได้ทันที");
+            setVideoTrimData({
+              isOpen: true,
+              videoSrc: matchingImg.filePath,
+              videoId: matchingImg.id,
+              startTime: 0,
+              endTime: null,
+              caption: matchingImg.caption || firstVideo.name,
+            });
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "อัปโหลดหลายไฟล์ไม่สำเร็จ");
+    } finally {
+      setIsUploadingImage(false);
+      if (imageFileInputRef.current) imageFileInputRef.current.value = "";
+      if (blockImageUploadRef.current) blockImageUploadRef.current.value = "";
+      targetUploadBlockIdxRef.current = null;
+    }
+  };
+
+  // Drag and Drop Event Handlers for Visual Stage
+  const handleVisualStageDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    visualStageDragCounterRef.current += 1;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDraggingOverVisualStage(true);
+    }
+  };
+
+  const handleVisualStageDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleVisualStageDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    visualStageDragCounterRef.current -= 1;
+    if (visualStageDragCounterRef.current <= 0) {
+      visualStageDragCounterRef.current = 0;
+      setIsDraggingOverVisualStage(false);
+    }
+  };
+
+  const handleVisualStageDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    visualStageDragCounterRef.current = 0;
+    setIsDraggingOverVisualStage(false);
+
+    const rawFiles = Array.from(e.dataTransfer.files || []);
+    if (rawFiles.length === 0) return;
+
+    // Filter valid image and video files (support .jfif, .jpg, .jpeg, .png, .webp, .gif, .mp4, .mov, etc.)
+    const validFiles = rawFiles.filter((f) => {
+      const ext = f.name.toLowerCase().split(".").pop() || "";
+      const isMediaExt = ["jpg", "jpeg", "jfif", "png", "webp", "gif", "svg", "bmp", "mp4", "mov", "webm", "mkv"].includes(ext);
+      return f.type.startsWith("image/") || f.type.startsWith("video/") || isMediaExt;
+    });
+
+    if (validFiles.length === 0) {
+      toast.error("กรุณาลากวางไฟล์รูปภาพหรือวิดีโอ (JPG, PNG, JFIF, WebP, GIF, MP4, MOV)");
+      return;
+    }
+
+    handleUploadMultipleImages(validFiles);
+  };
+
+  // Drag and Drop Event Handlers for Dialogue Blocks
+  const handleBlockDragOver = (e: React.DragEvent, blockIdx: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    if (dragOverBlockIdx !== blockIdx) {
+      setDragOverBlockIdx(blockIdx);
+    }
+  };
+
+  const handleBlockDragLeave = (e: React.DragEvent, blockIdx: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragOverBlockIdx === blockIdx) {
+      setDragOverBlockIdx(null);
+    }
+  };
+
+  const handleBlockDrop = (e: React.DragEvent, blockIdx: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverBlockIdx(null);
+
+    const rawFiles = Array.from(e.dataTransfer.files || []);
+    if (rawFiles.length === 0) return;
+
+    const validFiles = rawFiles.filter((f) => {
+      const ext = f.name.toLowerCase().split(".").pop() || "";
+      const isMediaExt = ["jpg", "jpeg", "jfif", "png", "webp", "gif", "svg", "bmp", "mp4", "mov", "webm", "mkv"].includes(ext);
+      return f.type.startsWith("image/") || f.type.startsWith("video/") || isMediaExt;
+    });
+
+    if (validFiles.length === 0) {
+      toast.error("กรุณาลากวางไฟล์รูปภาพหรือวิดีโอสำหรับบทนี้");
+      return;
+    }
+
+    handleUploadMultipleImages(validFiles, blockIdx);
   };
 
   // Helper to check if a media item is a video
@@ -2905,7 +3082,38 @@ export default function StoryWorkspacePage({
         {/* ----------------------------------------------------------------------- */}
         {/* LEFT COLUMN: Visual Stage & Image Gallery (Figma width: 1196px, 2/3)     */}
         {/* ----------------------------------------------------------------------- */}
-        <div className="lg:col-span-7 xl:col-span-8 flex flex-col justify-between rounded-[16px] p-5 sm:p-6 bg-[#313131] border border-slate-700/60 shadow-2xl h-[780px] sm:h-[840px] lg:h-[880px] xl:h-[920px]">
+        <div
+          onDragEnter={handleVisualStageDragEnter}
+          onDragOver={handleVisualStageDragOver}
+          onDragLeave={handleVisualStageDragLeave}
+          onDrop={handleVisualStageDrop}
+          className={`relative lg:col-span-7 xl:col-span-8 flex flex-col justify-between rounded-[16px] p-5 sm:p-6 bg-[#313131] border shadow-2xl h-[780px] sm:h-[840px] lg:h-[880px] xl:h-[920px] transition-all duration-200 ${
+            isDraggingOverVisualStage
+              ? "border-amber-400 ring-4 ring-amber-400/30 bg-[#262626]"
+              : "border-slate-700/60"
+          }`}
+        >
+          {/* Active Drag & Drop Visual Overlay */}
+          {isDraggingOverVisualStage && (
+            <div className="absolute inset-0 z-50 rounded-[16px] bg-slate-950/90 backdrop-blur-md border-4 border-dashed border-amber-400 flex flex-col items-center justify-center p-6 text-center animate-fadeIn pointer-events-none">
+              <div className="w-20 h-20 rounded-3xl bg-amber-500/20 border border-amber-400/60 flex items-center justify-center text-amber-400 mb-4 animate-bounce shadow-[0_0_30px_rgba(245,158,11,0.5)]">
+                <Upload className="w-10 h-10" />
+              </div>
+              <h3 className="text-xl sm:text-2xl font-bold font-thai text-white mb-2 flex items-center gap-2">
+                <span>ปล่อยไฟล์รูปภาพหรือคลิปวิดีโอที่นี่</span>
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-bold uppercase tracking-wider">
+                  Drag & Drop
+                </span>
+              </h3>
+              <p className="text-sm font-thai text-amber-300/90 max-w-md mb-3">
+                รองรับ JPG, PNG, JFIF, WebP, GIF, MP4, MOV (สามารถเลือกและลากหลายไฟล์พร้อมกันได้)
+              </p>
+              <div className="px-4 py-1.5 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-mono font-semibold">
+                📥 ไฟล์จะถูกเพิ่มเข้าสู่คลังภาพของฉากนี้ทันที
+              </div>
+            </div>
+          )}
+
           {/* Main Cinematic Image Display (flex-1 dynamically fills vertical space) */}
           <div className="relative w-full flex-1 min-h-0 rounded-[13px] overflow-hidden bg-[#1e232d] group border border-black/20 mb-3">
             {currentFeaturedImage ? (
@@ -3063,18 +3271,20 @@ export default function StoryWorkspacePage({
               </>
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-slate-400">
-                <Film className="w-14 h-14 mb-3 text-slate-600" />
+                <div className="w-16 h-16 rounded-2xl bg-slate-800/80 border border-dashed border-slate-600 flex items-center justify-center mb-3 text-slate-400 group-hover:border-amber-400 group-hover:text-amber-400 transition-colors shadow-inner">
+                  <Film className="w-8 h-8" />
+                </div>
                 <p className="font-thai font-bold text-slate-200 text-base">ยังไม่มีภาพประกอบสำหรับฉากนี้</p>
                 <p className="text-xs font-thai text-slate-400 mt-1 max-w-md">
-                  คุณสามารถอัปโหลดรูปภาพของคุณเอง หรือสั่งให้ AI สร้างภาพประกอบตามเนื้อเรื่องได้ทันที
+                  คุณสามารถ <span className="text-amber-400 font-semibold">ลากวางรูปภาพจากเครื่องมาที่นี่ได้ทันที (Drag & Drop)</span> หรือกดปุ่มด้านล่างเพื่อเลือกไฟล์/สั่ง AI วาดรูป
                 </p>
-                <div className="flex items-center gap-3 mt-5">
+                <div className="flex items-center gap-3 mt-5 flex-wrap justify-center">
                   <button
                     onClick={() => imageFileInputRef.current?.click()}
                     className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai flex items-center gap-2 shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all"
                   >
                     <Upload className="w-4 h-4" />
-                    <span>+ อัปโหลดรูปภาพจากเครื่อง</span>
+                    <span>+ อัปโหลดรูปภาพจากเครื่อง (เลือกหลายรูปได้)</span>
                   </button>
                   <button
                     onClick={handleOpenAiImageModal}
@@ -3517,12 +3727,25 @@ export default function StoryWorkspacePage({
                       key={block.id}
                       ref={(el) => { dialogueRowRefs.current[idx] = el; }}
                       onClick={() => handleSelectDialogueRow(idx)}
+                      onDragOver={(e) => handleBlockDragOver(e, idx)}
+                      onDragLeave={(e) => handleBlockDragLeave(e, idx)}
+                      onDrop={(e) => handleBlockDrop(e, idx)}
                       className={`group relative p-2.5 rounded-xl border text-center transition-all ${
-                        isActive
+                        dragOverBlockIdx === idx
+                          ? "bg-amber-500/25 border-amber-400 ring-4 ring-amber-400/50 border-dashed"
+                          : isActive
                           ? "bg-amber-500/15 border-amber-400 ring-2 ring-amber-400/60 shadow-lg"
                           : "border-transparent hover:border-slate-700/60 hover:bg-black/20"
                       }`}
                     >
+                      {dragOverBlockIdx === idx && (
+                        <div className="absolute inset-0 z-20 rounded-xl bg-amber-500/20 backdrop-blur-xs border-2 border-dashed border-amber-400 flex items-center justify-center pointer-events-none">
+                          <span className="text-xs font-bold font-thai text-amber-300 bg-slate-950/90 px-3 py-1 rounded-full shadow border border-amber-400/50 flex items-center gap-1.5 animate-pulse">
+                            <Upload className="w-3.5 h-3.5 text-amber-400" />
+                            <span>วางรูปที่นี่เพื่อผูกกับแถวนี้</span>
+                          </span>
+                        </div>
+                      )}
                       <input
                         type="text"
                         value={block.text}
@@ -3772,12 +3995,25 @@ export default function StoryWorkspacePage({
                     key={block.id}
                     ref={(el) => { dialogueRowRefs.current[idx] = el; }}
                     onClick={() => handleSelectDialogueRow(idx)}
+                    onDragOver={(e) => handleBlockDragOver(e, idx)}
+                    onDragLeave={(e) => handleBlockDragLeave(e, idx)}
+                    onDrop={(e) => handleBlockDrop(e, idx)}
                     className={`group relative p-2.5 rounded-xl border transition-all ${
-                      isActive
+                      dragOverBlockIdx === idx
+                        ? "bg-amber-500/25 border-amber-400 ring-4 ring-amber-400/50 border-dashed"
+                        : isActive
                         ? "bg-amber-500/10 border-amber-400 ring-2 ring-amber-400/60 shadow-lg"
                         : "border-transparent hover:border-slate-700/60 hover:bg-black/20"
                     }`}
                   >
+                    {dragOverBlockIdx === idx && (
+                      <div className="absolute inset-0 z-20 rounded-xl bg-amber-500/20 backdrop-blur-xs border-2 border-dashed border-amber-400 flex items-center justify-center pointer-events-none">
+                        <span className="text-xs font-bold font-thai text-amber-300 bg-slate-950/90 px-3 py-1 rounded-full shadow border border-amber-400/50 flex items-center gap-1.5 animate-pulse">
+                          <Upload className="w-3.5 h-3.5 text-amber-400" />
+                          <span>วางรูปที่นี่เพื่อผูกกับบทพูดนี้</span>
+                        </span>
+                      </div>
+                    )}
                     {/* Top Row Header: Dropdowns on left, Action tools on right (clean flex layout, no overlapping!) */}
                     <div className="flex items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-slate-800/60 flex-wrap">
                       {/* Left: Speaker Selector & Media Bindings */}
@@ -4521,22 +4757,24 @@ export default function StoryWorkspacePage({
       <input
         ref={imageFileInputRef}
         type="file"
-        accept="image/*,video/*,.gif,.mp4,.webm,.mov"
+        accept="image/*,video/*,.jfif,.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.mov,.mkv"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleUploadSceneImage(file);
+          const files = e.target.files ? Array.from(e.target.files) : [];
+          if (files.length > 0) handleUploadMultipleImages(files);
         }}
       />
       <input
         ref={blockImageUploadRef}
         type="file"
-        accept="image/*,video/*,.gif,.mp4,.webm,.mov"
+        accept="image/*,video/*,.jfif,.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.mov,.mkv"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file && targetUploadBlockIdxRef.current !== null) {
-            handleUploadSceneImage(file, targetUploadBlockIdxRef.current);
+          const files = e.target.files ? Array.from(e.target.files) : [];
+          if (files.length > 0 && targetUploadBlockIdxRef.current !== null) {
+            handleUploadMultipleImages(files, targetUploadBlockIdxRef.current);
           }
         }}
       />

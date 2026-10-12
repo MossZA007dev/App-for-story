@@ -164,6 +164,7 @@ export default function NovelReaderPage({
   // Audio Engine State (Dual Architecture: Main Scene BGM vs Dialogue-Bound Music)
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const dialogueAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const activeDialogueSfxPlayerRef = useRef<HTMLAudioElement | null>(null);
   const youtubeIframeRef = useRef<HTMLIFrameElement | null>(null);
   const dialogueYoutubeIframeRef = useRef<HTMLIFrameElement | null>(null);
 
@@ -476,10 +477,24 @@ export default function NovelReaderPage({
 
   // Stop Dialogue Track completely
   const stopDialogueAudio = () => {
+    // 1. Stop managed dialogue audio element
     if (dialogueAudioPlayerRef.current) {
       dialogueAudioPlayerRef.current.pause();
       dialogueAudioPlayerRef.current.currentTime = 0;
+      dialogueAudioPlayerRef.current.removeAttribute("src");
+      dialogueAudioPlayerRef.current.load();
     }
+    // 2. Stop dedicated dialogue SFX instance
+    if (activeDialogueSfxPlayerRef.current) {
+      activeDialogueSfxPlayerRef.current.pause();
+      activeDialogueSfxPlayerRef.current.currentTime = 0;
+      activeDialogueSfxPlayerRef.current.removeAttribute("src");
+      activeDialogueSfxPlayerRef.current.load();
+      activeDialogueSfxPlayerRef.current = null;
+    }
+    // 3. Stop procedural synth / ambient sound
+    ambientSound.stop();
+    // 4. Stop YouTube player if playing dialogue channel
     if (dialogueYoutubeIframeRef.current) {
       dialogueYoutubeIframeRef.current.contentWindow?.postMessage(
         JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
@@ -496,8 +511,13 @@ export default function NovelReaderPage({
 
   // Play Dialogue-specific audio track (pauses Main Scene BGM seamlessly)
   const triggerDialogueAudio = (audioResolved: AudioBindingResult) => {
-    if (currentDialogueAudioRef.current === audioResolved.value) {
-      // Same track on consecutive dialogue lines: continue without restarting!
+    // Check if this is a one-shot SFX vs continuous background music
+    const sfxId = audioResolved.value.startsWith("sfx:") ? audioResolved.value.replace(/^sfx:/, "") : null;
+    const foundSfx = sfxId ? projectSfxList.find((s) => s.id === sfxId) : null;
+    const isOneShotSfx = foundSfx ? foundSfx.category !== "music" : false;
+
+    if (!isOneShotSfx && currentDialogueAudioRef.current === audioResolved.value) {
+      // Same continuous music track on consecutive dialogue lines: continue without restarting!
       return;
     }
 
@@ -509,11 +529,11 @@ export default function NovelReaderPage({
     pauseMainSceneBgm();
     mainBgmPausedForDialogueRef.current = true;
 
-    // 2. Stop old dialogue audio
+    // 2. Stop old dialogue audio completely
     stopDialogueAudio();
 
     currentDialogueAudioRef.current = audioResolved.value;
-    setDialogueAudioTitle(audioResolved.label || "เพลงประจำบทพูด");
+    setDialogueAudioTitle(audioResolved.label || (isOneShotSfx ? "เสียงเอฟเฟกต์ SFX" : "เพลงประจำบทพูด"));
 
     if (audioResolved.action === "play_url") {
       const directUrl = audioResolved.value.replace(/^url:/, "");
@@ -547,18 +567,18 @@ export default function NovelReaderPage({
         }, 120);
       } else if (dialogueAudioPlayerRef.current) {
         setDialogueYouTubeVideoId(null);
+        dialogueAudioPlayerRef.current.loop = true;
         dialogueAudioPlayerRef.current.src = directUrl;
         dialogueAudioPlayerRef.current.volume = isMuted ? 0 : volume;
+        dialogueAudioPlayerRef.current.currentTime = 0;
         dialogueAudioPlayerRef.current.play().catch((e) => console.warn(e));
         setActivePlayingChannel("dialogue");
         setIsCustomAudioPlaying(true);
         setAudioMode("custom");
       }
     } else if (audioResolved.action === "play_sfx") {
-      const sfxId = audioResolved.value.replace(/^sfx:/, "");
-      const sfx = projectSfxList.find((s) => s.id === sfxId);
-      if (sfx) {
-        const ytId = extractYouTubeVideoId(sfx.audioUrl);
+      if (foundSfx) {
+        const ytId = extractYouTubeVideoId(foundSfx.audioUrl);
         if (ytId) {
           setDialogueYouTubeVideoId(ytId);
           setActivePlayingChannel("dialogue");
@@ -586,25 +606,32 @@ export default function NovelReaderPage({
               "*"
             );
           }, 120);
-        } else if (sfx.category === "music" && dialogueAudioPlayerRef.current) {
+        } else if (foundSfx.audioUrl.startsWith("synth:")) {
           setDialogueYouTubeVideoId(null);
-          dialogueAudioPlayerRef.current.src = sfx.audioUrl;
-          dialogueAudioPlayerRef.current.volume = isMuted ? 0 : (sfx.volume ?? 0.8) * volume;
-          dialogueAudioPlayerRef.current.play().catch(() => {});
-          setActivePlayingChannel("dialogue");
-          setIsCustomAudioPlaying(true);
-          setAudioMode("custom");
-        } else if (sfx.audioUrl.startsWith("synth:")) {
-          ambientSound.setVolume(isMuted ? 0 : (sfx.volume ?? 0.8) * volume);
-          ambientSound.play(sfx.audioUrl.replace(/^synth:/, "") as any);
+          ambientSound.setVolume(isMuted ? 0 : (foundSfx.volume ?? 0.8) * volume);
+          ambientSound.play(foundSfx.audioUrl.replace(/^synth:/, "") as any);
           setActivePlayingChannel("dialogue");
           setIsPlayingBgm(true);
         } else {
-          try {
-            const snd = new Audio(sfx.audioUrl);
-            snd.volume = isMuted ? 0 : (sfx.volume ?? 0.8) * volume;
-            snd.play().catch(() => {});
-          } catch {}
+          // Play audio file (both music and SFX) with fully managed audio player
+          setDialogueYouTubeVideoId(null);
+          if (dialogueAudioPlayerRef.current) {
+            dialogueAudioPlayerRef.current.loop = !isOneShotSfx;
+            dialogueAudioPlayerRef.current.src = foundSfx.audioUrl;
+            dialogueAudioPlayerRef.current.volume = isMuted ? 0 : (foundSfx.volume ?? 0.8) * volume;
+            dialogueAudioPlayerRef.current.currentTime = 0;
+            dialogueAudioPlayerRef.current.play().catch((e) => console.warn("Dialogue audio play error:", e));
+            setActivePlayingChannel("dialogue");
+            setIsCustomAudioPlaying(true);
+            setAudioMode("custom");
+          } else {
+            try {
+              const snd = new Audio(foundSfx.audioUrl);
+              snd.volume = isMuted ? 0 : (foundSfx.volume ?? 0.8) * volume;
+              activeDialogueSfxPlayerRef.current = snd;
+              snd.play().catch(() => {});
+            } catch {}
+          }
         }
       }
     } else if (audioResolved.action === "play_ambient") {
@@ -2456,7 +2483,6 @@ export default function NovelReaderPage({
       />
       <audio
         ref={dialogueAudioPlayerRef}
-        loop
         crossOrigin="anonymous"
         className="hidden"
         onPlay={() => {
@@ -2466,6 +2492,14 @@ export default function NovelReaderPage({
         onPause={() => {
           if (activePlayingChannelRef.current === "dialogue") {
             setIsCustomAudioPlaying(false);
+          }
+        }}
+        onEnded={() => {
+          if (activePlayingChannelRef.current === "dialogue") {
+            // One-shot SFX finished naturally: resume main scene BGM if it was paused
+            if (mainBgmPausedForDialogueRef.current && activeScene?.bgmUrl) {
+              resumeSceneBgmOrAmbient(false);
+            }
           }
         }}
         onError={(e) => {

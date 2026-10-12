@@ -206,6 +206,7 @@ export default function StoryWorkspacePage({
   // Audio / Music State (Dual Architecture: Main Scene BGM vs Dialogue-Bound Music)
   const studioAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const dialogueStudioAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const activeStudioDialogueSfxRef = useRef<HTMLAudioElement | null>(null);
   const youtubeIframeRef = useRef<HTMLIFrameElement | null>(null);
   const dialogueYoutubeIframeRef = useRef<HTMLIFrameElement | null>(null);
 
@@ -1778,12 +1779,22 @@ export default function StoryWorkspacePage({
 
   // Preview an audio binding immediately in Studio (with seamless resume of Main Scene BGM)
   const handlePreviewAudioBinding = (audioValue: string) => {
-    if (!audioValue || audioValue === "stop") {
-      // 1. Stop dialogue audio completely
+    // 1. Helper to stop any currently playing dialogue audio completely
+    const stopCurrentDialogueAudio = () => {
       if (dialogueStudioAudioPlayerRef.current) {
         dialogueStudioAudioPlayerRef.current.pause();
         dialogueStudioAudioPlayerRef.current.currentTime = 0;
+        dialogueStudioAudioPlayerRef.current.removeAttribute("src");
+        dialogueStudioAudioPlayerRef.current.load();
       }
+      if (activeStudioDialogueSfxRef.current) {
+        activeStudioDialogueSfxRef.current.pause();
+        activeStudioDialogueSfxRef.current.currentTime = 0;
+        activeStudioDialogueSfxRef.current.removeAttribute("src");
+        activeStudioDialogueSfxRef.current.load();
+        activeStudioDialogueSfxRef.current = null;
+      }
+      ambientSound.stop();
       if (dialogueYoutubeIframeRef.current) {
         dialogueYoutubeIframeRef.current.contentWindow?.postMessage(
           JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
@@ -1796,8 +1807,12 @@ export default function StoryWorkspacePage({
       }
       currentDialogueAudioRef.current = "";
       setDialogueAudioTitle("");
+    };
 
-      // 2. Pause Main Scene BGM (preserving playhead position)
+    if (!audioValue || audioValue === "stop") {
+      stopCurrentDialogueAudio();
+
+      // Pause Main Scene BGM (preserving playhead position)
       if (studioAudioPlayerRef.current) {
         studioAudioPlayerRef.current.pause();
       }
@@ -1817,25 +1832,9 @@ export default function StoryWorkspacePage({
     }
 
     if (audioValue === "scene_bgm") {
-      // 1. Stop dialogue audio
-      if (dialogueStudioAudioPlayerRef.current) {
-        dialogueStudioAudioPlayerRef.current.pause();
-        dialogueStudioAudioPlayerRef.current.currentTime = 0;
-      }
-      if (dialogueYoutubeIframeRef.current) {
-        dialogueYoutubeIframeRef.current.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-          "*"
-        );
-        dialogueYoutubeIframeRef.current.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
-          "*"
-        );
-      }
-      currentDialogueAudioRef.current = "";
-      setDialogueAudioTitle("");
+      stopCurrentDialogueAudio();
 
-      // 2. RESUME Main Scene BGM from where it was paused (zero reload delay!)
+      // RESUME Main Scene BGM from where it was paused (zero reload delay!)
       if (activeScene?.bgmUrl) {
         ambientSound.stop();
         const ytId = extractYouTubeVideoId(activeScene.bgmUrl);
@@ -1887,8 +1886,12 @@ export default function StoryWorkspacePage({
     }
 
     // 3. DIALOGUE-BOUND AUDIO TRACK:
-    if (currentDialogueAudioRef.current === audioValue) {
-      // Consecutive rows with identical audio: continue playing smoothly without restarting
+    const sfxId = audioValue.startsWith("sfx:") ? audioValue.replace(/^sfx:/, "") : null;
+    const foundSfx = sfxId ? projectSfxList.find((s) => s.id === sfxId) : null;
+    const isOneShotSfx = foundSfx ? foundSfx.category !== "music" : false;
+
+    if (!isOneShotSfx && currentDialogueAudioRef.current === audioValue) {
+      // Consecutive rows with identical music: continue playing smoothly without restarting
       return;
     }
 
@@ -1906,24 +1909,11 @@ export default function StoryWorkspacePage({
     }
 
     // Stop previous dialogue audio
-    if (dialogueStudioAudioPlayerRef.current) {
-      dialogueStudioAudioPlayerRef.current.pause();
-      dialogueStudioAudioPlayerRef.current.currentTime = 0;
-    }
-    if (dialogueYoutubeIframeRef.current) {
-      dialogueYoutubeIframeRef.current.contentWindow?.postMessage(
-        JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-        "*"
-      );
-      dialogueYoutubeIframeRef.current.contentWindow?.postMessage(
-        JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
-        "*"
-      );
-    }
+    stopCurrentDialogueAudio();
 
     currentDialogueAudioRef.current = audioValue;
     const moodLabel = getAudioMoodLabel(audioValue, customSfxMap);
-    setDialogueAudioTitle(moodLabel || "เพลงประจำบทพูด");
+    setDialogueAudioTitle(moodLabel || (isOneShotSfx ? "เสียงเอฟเฟกต์ SFX" : "เพลงประจำบทพูด"));
 
     if (audioValue.startsWith("url:")) {
       const urlStr = audioValue.replace(/^url:/, "");
@@ -1956,8 +1946,10 @@ export default function StoryWorkspacePage({
         }, 120);
       } else if (dialogueStudioAudioPlayerRef.current) {
         setDialogueYouTubeVideoId(null);
+        dialogueStudioAudioPlayerRef.current.loop = true;
         dialogueStudioAudioPlayerRef.current.src = urlStr;
         dialogueStudioAudioPlayerRef.current.volume = isAudioMuted ? 0 : audioVolume;
+        dialogueStudioAudioPlayerRef.current.currentTime = 0;
         dialogueStudioAudioPlayerRef.current.play().catch(() => {});
         setActivePlayingChannel("dialogue");
         setIsAudioPlaying(true);
@@ -1966,10 +1958,8 @@ export default function StoryWorkspacePage({
     }
 
     if (audioValue.startsWith("sfx:")) {
-      const sfxId = audioValue.replace(/^sfx:/, "");
-      const sfx = projectSfxList.find((s) => s.id === sfxId);
-      if (sfx) {
-        const ytId = extractYouTubeVideoId(sfx.audioUrl);
+      if (foundSfx) {
+        const ytId = extractYouTubeVideoId(foundSfx.audioUrl);
         if (ytId) {
           setDialogueYouTubeVideoId(ytId);
           setActivePlayingChannel("dialogue");
@@ -1996,30 +1986,33 @@ export default function StoryWorkspacePage({
               "*"
             );
           }, 120);
-          toast.info(`เล่นเพลง: "${sfx.name}"`);
-        } else if (sfx.category === "music") {
+          toast.info(`เล่นเพลง: "${foundSfx.name}"`);
+        } else if (foundSfx.audioUrl.startsWith("synth:")) {
+          setDialogueYouTubeVideoId(null);
+          ambientSound.setVolume(isAudioMuted ? 0 : (foundSfx.volume ?? 0.8) * audioVolume);
+          ambientSound.play(foundSfx.audioUrl.replace(/^synth:/, "") as any);
+          setActivePlayingChannel("dialogue");
+          setIsAudioPlaying(true);
+          toast.info(`ทดสอบเสียง SFX: "${foundSfx.name}"`);
+        } else {
+          setDialogueYouTubeVideoId(null);
           if (dialogueStudioAudioPlayerRef.current) {
-            setDialogueYouTubeVideoId(null);
-            dialogueStudioAudioPlayerRef.current.src = sfx.audioUrl;
-            dialogueStudioAudioPlayerRef.current.volume = isAudioMuted ? 0 : (sfx.volume ?? 0.8) * audioVolume;
+            dialogueStudioAudioPlayerRef.current.loop = !isOneShotSfx;
+            dialogueStudioAudioPlayerRef.current.src = foundSfx.audioUrl;
+            dialogueStudioAudioPlayerRef.current.volume = isAudioMuted ? 0 : (foundSfx.volume ?? 0.8) * audioVolume;
+            dialogueStudioAudioPlayerRef.current.currentTime = 0;
             dialogueStudioAudioPlayerRef.current.play().catch(() => {});
             setActivePlayingChannel("dialogue");
             setIsAudioPlaying(true);
+          } else {
+            try {
+              const snd = new Audio(foundSfx.audioUrl);
+              snd.volume = isAudioMuted ? 0 : (foundSfx.volume ?? 0.8) * audioVolume;
+              activeStudioDialogueSfxRef.current = snd;
+              snd.play().catch(() => {});
+            } catch {}
           }
-          toast.info(`เล่นเพลง: "${sfx.name}"`);
-        } else if (sfx.audioUrl.startsWith("synth:")) {
-          ambientSound.setVolume(isAudioMuted ? 0 : (sfx.volume ?? 0.8) * audioVolume);
-          ambientSound.play(sfx.audioUrl.replace(/^synth:/, "") as any);
-          setActivePlayingChannel("dialogue");
-          setIsAudioPlaying(true);
-          toast.info(`ทดสอบเสียง SFX: "${sfx.name}"`);
-        } else {
-          try {
-            const snd = new Audio(sfx.audioUrl);
-            snd.volume = isAudioMuted ? 0 : (sfx.volume ?? 0.8) * audioVolume;
-            snd.play().catch(() => {});
-          } catch {}
-          toast.info(`ทดสอบเสียง SFX: "${sfx.name}"`);
+          toast.info(`เล่นเสียง: "${foundSfx.name}"`);
         }
       }
       return;
@@ -2880,12 +2873,10 @@ export default function StoryWorkspacePage({
     const audioResolved = resolveAudioForDialogueIndex(index, localDialogueBindings, activeScene?.bgmUrl, customSfxMap);
     if (audioResolved.isDirectBinding) {
       handlePreviewAudioBinding(audioResolved.value);
-    } else if (isAudioPlaying || mainBgmPausedForDialogueRef.current) {
-      if (activeScene?.bgmUrl) {
-        handlePreviewAudioBinding("scene_bgm");
-      } else {
-        handlePreviewAudioBinding("stop");
-      }
+    } else if (activeScene?.bgmUrl && (isAudioPlaying || mainBgmPausedForDialogueRef.current)) {
+      handlePreviewAudioBinding("scene_bgm");
+    } else {
+      handlePreviewAudioBinding("stop");
     }
   };
 
@@ -4656,7 +4647,6 @@ export default function StoryWorkspacePage({
       />
       <audio
         ref={dialogueStudioAudioPlayerRef}
-        loop
         crossOrigin="anonymous"
         className="hidden"
         onPlay={() => {
@@ -4666,6 +4656,14 @@ export default function StoryWorkspacePage({
         onPause={() => {
           if (activePlayingChannelRef.current === "dialogue") {
             setIsAudioPlaying(false);
+          }
+        }}
+        onEnded={() => {
+          if (activePlayingChannelRef.current === "dialogue") {
+            // One-shot SFX finished naturally: resume main scene BGM if it was paused
+            if (mainBgmPausedForDialogueRef.current && activeScene?.bgmUrl) {
+              handlePreviewAudioBinding("scene_bgm");
+            }
           }
         }}
         onError={(e) => {

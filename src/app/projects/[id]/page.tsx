@@ -58,6 +58,8 @@ import { ClaudeScriptImportModal } from "@/components/story/ClaudeScriptImportMo
 import { CharacterAvatarModal, AvatarCharacterInfo } from "@/components/characters/CharacterAvatarModal";
 import { PartModal, PartModalData } from "@/components/parts/PartModal";
 import { SpeakerSelectDropdown } from "@/components/story/SpeakerSelectDropdown";
+import { MediaBindingDropdown } from "@/components/story/MediaBindingDropdown";
+import { AudioBindingDropdown } from "@/components/story/AudioBindingDropdown";
 import {
   parseSceneToDialogueBlocks,
   parseClaudeScript,
@@ -3851,7 +3853,7 @@ export default function StoryWorkspacePage({
                           : isActive
                           ? "bg-amber-500/15 border-amber-400 ring-2 ring-amber-400/60 shadow-lg"
                           : "border-transparent hover:border-slate-700/60 hover:bg-black/20"
-                      }`}
+                      } ${activeMediaPicker?.blockIdx === idx ? "z-40" : "z-0"}`}
                     >
                       {dragOverBlockIdx === idx && (
                         <div className="absolute inset-0 z-20 rounded-xl bg-amber-500/20 backdrop-blur-xs border-2 border-dashed border-amber-400 flex items-center justify-center pointer-events-none">
@@ -3870,104 +3872,66 @@ export default function StoryWorkspacePage({
                       />
 
                       {/* Line Tools Bar on Hover / Active */}
-                      <div className="flex items-center justify-center gap-1.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap">
+                      <div
+                        className={`flex items-center justify-center gap-1.5 mt-1.5 transition-opacity flex-wrap ${
+                          activeMediaPicker?.blockIdx === idx
+                            ? "opacity-100"
+                            : "opacity-0 group-hover:opacity-100"
+                        }`}
+                      >
                         {/* Image & Video Select */}
-                        <select
-                          value={assignedImageId || ""}
-                          onChange={(e) => {
-                            if (e.target.value === "__upload_new__") {
-                              targetUploadBlockIdxRef.current = idx;
-                              blockImageUploadRef.current?.click();
-                            } else if (e.target.value === "__custom_url__") {
-                              const customUrl = window.prompt("กรุณาระบุลิงก์รูปภาพ หรือ วิดีโอ/GIF ภายนอก:");
-                              if (customUrl && customUrl.trim()) {
-                                handleAssignBlockImage(idx, `url:${customUrl.trim()}`);
-                              }
-                            } else {
-                              handleAssignBlockImage(idx, e.target.value);
+                        <MediaBindingDropdown
+                          assignedImageId={assignedImageId}
+                          assignedImage={assignedImage}
+                          sceneImages={sceneImages}
+                          onSelectImage={(newId) => handleAssignBlockImage(idx, newId)}
+                          onUploadNew={() => {
+                            targetUploadBlockIdxRef.current = idx;
+                            blockImageUploadRef.current?.click();
+                          }}
+                          onCustomUrl={() => {
+                            const customUrl = window.prompt("กรุณาระบุลิงก์รูปภาพ หรือ วิดีโอ/GIF ภายนอก:");
+                            if (customUrl && customUrl.trim()) {
+                              handleAssignBlockImage(idx, `url:${customUrl.trim()}`);
                             }
                           }}
-                          className={`rounded px-1.5 py-0.5 text-[10px] font-thai border focus:outline-none cursor-pointer ${
-                            assignedImageId
-                              ? "bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold"
-                              : "bg-slate-900 text-slate-400 border-slate-700"
-                          }`}
-                        >
-                          <option value="">⚪ คงภาพเดิม</option>
-                          {sceneImages.map((img, i) => (
-                            <option key={img.id} value={img.id}>
-                              {isVideoMedia(img) ? "🎬 วิดีโอ" : "🖼️ ภาพ"} #{i + 1}: {img.caption || img.prompt.slice(0, 20)}
-                            </option>
-                          ))}
-                          <option value="__upload_new__">+ 📁 อัปโหลดภาพหรือคลิปใหม่...</option>
-                          <option value="__custom_url__">+ 🔗 ลิงก์รูป/คลิปภายนอก...</option>
-                        </select>
+                          isOpen={activeMediaPicker?.blockIdx === idx && activeMediaPicker.type === "image"}
+                          onToggle={() =>
+                            setActiveMediaPicker((prev) =>
+                              prev?.blockIdx === idx && prev?.type === "image"
+                                ? null
+                                : { blockIdx: idx, type: "image" }
+                            )
+                          }
+                          onClose={() => setActiveMediaPicker(null)}
+                          compact
+                        />
 
                         {/* Audio / Mood Select */}
-                        <select
-                          value={assignedAudioValue || ""}
-                          onChange={(e) => {
-                            if (e.target.value === "__custom_url__") {
-                              const customUrl = window.prompt("กรุณาระบุลิงก์ไฟล์เสียง/เพลงภายนอก (MP3/WAV):");
-                              if (customUrl && customUrl.trim()) {
-                                handleAssignBlockAudio(idx, `url:${customUrl.trim()}`);
-                              }
-                            } else if (e.target.value === "__open_sfx_tab__") {
-                              window.open(`/projects/${projectId}/sfx`, "_blank");
-                            } else {
-                              handleAssignBlockAudio(idx, e.target.value);
+                        <AudioBindingDropdown
+                          assignedAudioValue={assignedAudioValue}
+                          projectSfxList={projectSfxList}
+                          customSfxMap={customSfxMap}
+                          onSelectAudio={(newVal) => handleAssignBlockAudio(idx, newVal)}
+                          onCustomUrl={() => {
+                            const customUrl = window.prompt("กรุณาระบุลิงก์ไฟล์เสียง/เพลงภายนอก (MP3/WAV/YouTube):");
+                            if (customUrl && customUrl.trim()) {
+                              handleAssignBlockAudio(idx, `url:${customUrl.trim()}`);
                             }
                           }}
-                          className={`rounded px-1.5 py-0.5 text-[10px] font-thai border focus:outline-none cursor-pointer ${
-                            assignedAudioValue
-                              ? "bg-purple-500/20 text-purple-300 border-purple-500/50 font-bold"
-                              : "bg-slate-900 text-slate-400 border-slate-700"
-                          }`}
-                          title="เปลี่ยนอารมณ์เพลง / เสียงประกอบ"
-                        >
-                          <option value="">🎶 คงเพลงเดิม</option>
-                          <optgroup label="บรรยากาศเสียงสังเคราะห์">
-                            {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "บรรยากาศ").map((o) => (
-                              <option key={o.id} value={o.id}>
-                                {o.label}
-                              </option>
-                            ))}
-                          </optgroup>
-                          <optgroup label="🔊 เอฟเฟกต์เสียง (SFX)">
-                            {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เอฟเฟกต์").map((o) => (
-                              <option key={o.id} value={o.id}>
-                                {o.label}
-                              </option>
-                            ))}
-                            {projectSfxList
-                              .filter((sfx) => sfx.category !== "music")
-                              .map((sfx) => (
-                                <option key={sfx.id} value={`sfx:${sfx.id}`}>
-                                  🔊 {sfx.name}
-                                </option>
-                              ))}
-                          </optgroup>
-                          {projectSfxList.filter((sfx) => sfx.category === "music").length > 0 && (
-                            <optgroup label="🎵 คลังเพลง & BGM ของนิยาย">
-                              {projectSfxList
-                                .filter((sfx) => sfx.category === "music")
-                                .map((sfx) => (
-                                  <option key={sfx.id} value={`sfx:${sfx.id}`}>
-                                    🎵 {sfx.name}
-                                  </option>
-                                ))}
-                            </optgroup>
-                          )}
-                          <optgroup label="ควบคุมเพลง & คลังเสียง">
-                            {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เพลง").map((o) => (
-                              <option key={o.id} value={o.id}>
-                                {o.label}
-                              </option>
-                            ))}
-                            <option value="__custom_url__">+ 🎵 ใส่ลิงก์เพลงใหม่ (YouTube / MP3)...</option>
-                            <option value="__open_sfx_tab__">➕ 🎵/🔊 ไปที่คลังเพลง & SFX...</option>
-                          </optgroup>
-                        </select>
+                          onOpenSfxTab={() => window.open(`/projects/${projectId}/sfx`, "_blank")}
+                          onPreviewAudio={(val) => handlePreviewAudioBinding(val)}
+                          isOpen={activeMediaPicker?.blockIdx === idx && activeMediaPicker.type === "audio"}
+                          onToggle={() =>
+                            setActiveMediaPicker((prev) =>
+                              prev?.blockIdx === idx && prev?.type === "audio"
+                                ? null
+                                : { blockIdx: idx, type: "audio" }
+                            )
+                          }
+                          onClose={() => setActiveMediaPicker(null)}
+                          compact
+                        />
 
                         <button
                           onClick={() => handleMoveBlock(idx, "up")}
@@ -4119,7 +4083,7 @@ export default function StoryWorkspacePage({
                         : isActive
                         ? "bg-amber-500/10 border-amber-400 ring-2 ring-amber-400/60 shadow-lg"
                         : "border-transparent hover:border-slate-700/60 hover:bg-black/20"
-                    }`}
+                    } ${activeSpeakerDropdownIdx === idx || activeMediaPicker?.blockIdx === idx ? "z-40" : "z-0"}`}
                   >
                     {dragOverBlockIdx === idx && (
                       <div className="absolute inset-0 z-20 rounded-xl bg-amber-500/20 backdrop-blur-xs border-2 border-dashed border-amber-400 flex items-center justify-center pointer-events-none">
@@ -4154,176 +4118,61 @@ export default function StoryWorkspacePage({
                           onClose={() => setActiveSpeakerDropdownIdx(null)}
                         />
 
-                        {/* Image / Video Binding: Compact pill or picker */}
-                        {activeMediaPicker?.blockIdx === idx && activeMediaPicker.type === "image" ? (
-                          <div className="flex items-center gap-1 animate-fadeIn">
-                            <select
-                              autoFocus
-                              value={assignedImageId || ""}
-                              onChange={(e) => {
-                                if (e.target.value === "__upload_new__") {
-                                  targetUploadBlockIdxRef.current = idx;
-                                  blockImageUploadRef.current?.click();
-                                } else if (e.target.value === "__custom_url__") {
-                                  const customUrl = window.prompt("กรุณาระบุลิงก์รูปภาพ หรือ วิดีโอ/GIF ภายนอก (เช่น https://.../ice.jpg หรือ .gif หรือ .mp4):");
-                                  if (customUrl && customUrl.trim()) {
-                                    handleAssignBlockImage(idx, `url:${customUrl.trim()}`);
-                                  }
-                                } else {
-                                  handleAssignBlockImage(idx, e.target.value);
-                                }
-                                setActiveMediaPicker(null);
-                              }}
-                              onBlur={() => setActiveMediaPicker(null)}
-                              className="rounded-lg px-2 py-0.5 text-[11px] font-thai bg-slate-950 text-amber-300 border border-amber-500/60 focus:outline-none cursor-pointer max-w-[200px] truncate shadow-md"
-                            >
-                              <option value="">⚪ ไม่ผูกภาพ (คงภาพเดิม)</option>
-                              {sceneImages.map((img, i) => (
-                                <option key={img.id} value={img.id}>
-                                  {isVideoMedia(img) ? "🎬 วิดีโอ" : "🖼️ ภาพ"} #{i + 1}: {img.caption || img.prompt.slice(0, 20)}
-                                </option>
-                              ))}
-                              <option value="__upload_new__">+ 📁 อัปโหลดภาพ/วิดีโอใหม่สำหรับบทนี้...</option>
-                              <option value="__custom_url__">+ 🔗 ใส่ลิงก์รูป/วิดีโอ/GIF ภายนอก...</option>
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() => setActiveMediaPicker(null)}
-                              className="p-0.5 rounded text-slate-400 hover:text-white"
-                              title="ปิด"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ) : (assignedImage || assignedImageId) ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/40 text-[10px] text-amber-300 font-thai font-semibold shadow-sm">
-                            <span
-                              onClick={() => setActiveMediaPicker({ blockIdx: idx, type: "image" })}
-                              className="cursor-pointer hover:underline truncate max-w-[140px] sm:max-w-[180px]"
-                              title="คลิกเพื่อเปลี่ยนภาพที่ผูกกับบทนี้"
-                            >
-                              {isVideoMedia(assignedImage || { filePath: assignedImageId }) ? "🎬" : "🖼️"}{" "}
-                              {assignedImage?.caption || (assignedImageId?.startsWith("url:") ? "สื่อจากลิงก์" : "ภาพประจำบท")}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleAssignBlockImage(idx, "")}
-                              className="p-0.5 hover:text-red-400 rounded transition-colors"
-                              title="ยกเลิกการผูกภาพนี้"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setActiveMediaPicker({ blockIdx: idx, type: "image" })}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-thai text-slate-400 hover:text-amber-300 hover:bg-slate-800/80 border border-slate-700/60 transition-all active:scale-95"
-                            title="ผูกรูปภาพหรือวิดีโอเข้ากับบทพูดนี้"
-                          >
-                            <ImageIcon className="w-3 h-3 text-slate-400" />
-                            <span>+ ภาพ</span>
-                          </button>
-                        )}
+                        {/* Image / Video Binding Dropdown */}
+                        <MediaBindingDropdown
+                          assignedImageId={assignedImageId}
+                          assignedImage={assignedImage}
+                          sceneImages={sceneImages}
+                          onSelectImage={(newId) => handleAssignBlockImage(idx, newId)}
+                          onUploadNew={() => {
+                            targetUploadBlockIdxRef.current = idx;
+                            blockImageUploadRef.current?.click();
+                          }}
+                          onCustomUrl={() => {
+                            const customUrl = window.prompt(
+                              "กรุณาระบุลิงก์รูปภาพ หรือ วิดีโอ/GIF ภายนอก (เช่น https://.../ice.jpg หรือ .gif หรือ .mp4):"
+                            );
+                            if (customUrl && customUrl.trim()) {
+                              handleAssignBlockImage(idx, `url:${customUrl.trim()}`);
+                            }
+                          }}
+                          isOpen={activeMediaPicker?.blockIdx === idx && activeMediaPicker.type === "image"}
+                          onToggle={() =>
+                            setActiveMediaPicker((prev) =>
+                              prev?.blockIdx === idx && prev?.type === "image"
+                                ? null
+                                : { blockIdx: idx, type: "image" }
+                            )
+                          }
+                          onClose={() => setActiveMediaPicker(null)}
+                        />
 
-                        {/* Audio Mood Binding: Compact pill or picker */}
-                        {activeMediaPicker?.blockIdx === idx && activeMediaPicker.type === "audio" ? (
-                          <div className="flex items-center gap-1 animate-fadeIn">
-                            <select
-                              autoFocus
-                              value={assignedAudioValue || ""}
-                              onChange={(e) => {
-                                if (e.target.value === "__custom_url__") {
-                                  const customUrl = window.prompt("กรุณาระบุลิงก์ไฟล์เสียง/เพลงภายนอก (MP3/WAV/Direct URL):");
-                                  if (customUrl && customUrl.trim()) {
-                                    handleAssignBlockAudio(idx, `url:${customUrl.trim()}`);
-                                  }
-                                } else if (e.target.value === "__open_sfx_tab__") {
-                                  window.open(`/projects/${projectId}/sfx`, "_blank");
-                                } else {
-                                  handleAssignBlockAudio(idx, e.target.value);
-                                }
-                                setActiveMediaPicker(null);
-                              }}
-                              onBlur={() => setActiveMediaPicker(null)}
-                              className="rounded-lg px-2 py-0.5 text-[11px] font-thai bg-slate-950 text-purple-300 border border-purple-500/60 focus:outline-none cursor-pointer max-w-[190px] truncate shadow-md"
-                            >
-                              <option value="">⚪ คงเพลงเดิม (ไม่เปลี่ยน)</option>
-                              <optgroup label="บรรยากาศเสียงสังเคราะห์">
-                                {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "บรรยากาศ").map((o) => (
-                                  <option key={o.id} value={o.id}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                              </optgroup>
-                              <optgroup label="เอฟเฟกต์เสียง (SFX)">
-                                {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เอฟเฟกต์").map((o) => (
-                                  <option key={o.id} value={o.id}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                                {projectSfxList.map((sfx) => (
-                                  <option key={sfx.id} value={`sfx:${sfx.id}`}>
-                                    🔊 {sfx.name}
-                                  </option>
-                                ))}
-                              </optgroup>
-                              <optgroup label="ควบคุมเพลง & คลังเสียง">
-                                {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เพลง").map((o) => (
-                                  <option key={o.id} value={o.id}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                                <option value="__custom_url__">+ 🎵 ใส่ลิงก์เพลงภายนอก...</option>
-                                <option value="__open_sfx_tab__">➕ 🔊 ไปที่คลังเสียง SFX (อัปโหลดเพิ่ม)...</option>
-                              </optgroup>
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() => setActiveMediaPicker(null)}
-                              className="p-0.5 rounded text-slate-400 hover:text-white"
-                              title="ปิด"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ) : assignedAudioValue ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-500/15 border border-purple-500/40 text-[10px] text-purple-300 font-thai font-semibold shadow-sm">
-                            <span
-                              onClick={() => setActiveMediaPicker({ blockIdx: idx, type: "audio" })}
-                              className="cursor-pointer hover:underline truncate max-w-[120px] sm:max-w-[160px]"
-                              title="คลิกเพื่อเปลี่ยนอารมณ์เพลง/เสียง"
-                            >
-                              🎶 {getAudioMoodLabel(assignedAudioValue, customSfxMap)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handlePreviewAudioBinding(assignedAudioValue)}
-                              className="p-0.5 hover:text-white rounded transition-colors"
-                              title="ทดลองฟังเสียงนี้"
-                            >
-                              <Volume2 className="w-3 h-3 text-purple-300" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleAssignBlockAudio(idx, "")}
-                              className="p-0.5 hover:text-red-400 rounded transition-colors"
-                              title="ยกเลิกเพลงในบทนี้"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setActiveMediaPicker({ blockIdx: idx, type: "audio" })}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-thai text-slate-400 hover:text-purple-300 hover:bg-slate-800/80 border border-slate-700/60 transition-all active:scale-95"
-                            title="เปลี่ยนอารมณ์เพลงหรือใส่เสียงประกอบในประโยคนี้"
-                          >
-                            <Music className="w-3 h-3 text-slate-400" />
-                            <span>+ เพลง</span>
-                          </button>
-                        )}
+                        {/* Audio Mood Binding Dropdown */}
+                        <AudioBindingDropdown
+                          assignedAudioValue={assignedAudioValue}
+                          projectSfxList={projectSfxList}
+                          customSfxMap={customSfxMap}
+                          onSelectAudio={(newVal) => handleAssignBlockAudio(idx, newVal)}
+                          onCustomUrl={() => {
+                            const customUrl = window.prompt(
+                              "กรุณาระบุลิงก์ไฟล์เสียง/เพลงภายนอก (MP3/WAV/Direct URL):"
+                            );
+                            if (customUrl && customUrl.trim()) {
+                              handleAssignBlockAudio(idx, `url:${customUrl.trim()}`);
+                            }
+                          }}
+                          onOpenSfxTab={() => window.open(`/projects/${projectId}/sfx`, "_blank")}
+                          onPreviewAudio={(val) => handlePreviewAudioBinding(val)}
+                          isOpen={activeMediaPicker?.blockIdx === idx && activeMediaPicker.type === "audio"}
+                          onToggle={() =>
+                            setActiveMediaPicker((prev) =>
+                              prev?.blockIdx === idx && prev?.type === "audio"
+                                ? null
+                                : { blockIdx: idx, type: "audio" }
+                            )
+                          }
+                          onClose={() => setActiveMediaPicker(null)}
+                        />
                       </div>
 
                       {/* Right: Action Buttons Toolbar (In normal flow with flex-shrink-0 - NEVER overlapping!) */}

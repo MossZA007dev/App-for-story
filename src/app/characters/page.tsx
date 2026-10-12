@@ -183,7 +183,37 @@ function getClanTheme(char: CharacterItem): ClanTheme {
     };
   }
 
-  // 5. Night's Watch (Obsidian/Crow Shield)
+  // 5. House Martell (Frame Group 14: Dorne Sun Orange #FF8830 with Sun and Spear)
+  if (
+    factionLower.includes("martell") ||
+    nameLower.includes("martell") ||
+    factionLower.includes("มาร์เทล") ||
+    factionLower.includes("dorne") ||
+    factionLower.includes("ดอร์น") ||
+    factionLower.includes("sun") ||
+    factionLower.includes("สุริยัน")
+  ) {
+    return {
+      fill: "#FF8830",
+      fillOpacity: 0.97,
+      bannerUrl: "/images/banners/clan_martell.png",
+      titleColor: "text-amber-950 font-black drop-shadow-sm",
+      subtitleColor: "text-amber-900 font-bold",
+      roleColor: "text-amber-950 font-black drop-shadow-sm",
+      loreColor: "text-amber-950/80 italic",
+      badgeBg: "bg-amber-950 shadow-sm",
+      badgeText: "text-amber-300 font-black",
+      genderBg: "bg-black/20",
+      genderText: "text-amber-950 font-bold",
+      dividerBorder: "border-amber-950/20",
+      editBtnBg: "bg-amber-950 hover:bg-black",
+      editBtnText: "text-amber-300 hover:text-white",
+      deleteBtnBg: "bg-black/20 hover:bg-red-950/60",
+      deleteBtnText: "text-red-950 hover:text-red-100",
+    };
+  }
+
+  // 6. Night's Watch (Obsidian/Crow Shield)
   if (
     factionLower.includes("watch") ||
     factionLower.includes("night's watch") ||
@@ -496,9 +526,6 @@ export default function CharactersDashboardPage() {
               </button>
             </div>
           )}
-
-          {/* Cinematic Vignette */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-black/35 pointer-events-none" />
         </div>
 
         {/* Layer 2: Medieval Clan Banner (Exact Figma Frame 30/38/33/34) */}

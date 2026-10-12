@@ -34,7 +34,7 @@ interface CharacterData {
   roleReason: string;
   faction: string;
   background: string;
-  characterType?: "self" | "friend" | "canon";
+  characterType?: "self" | "friend" | "canon" | "narrator";
   realNickname?: string;
   avatarUrl?: string;
   status: "alive" | "dead" | "missing" | "captive";
@@ -366,6 +366,8 @@ export default function CharacterBiblePage({
                         className={`relative group/avatar w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden border-2 shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer ${
                           char.characterType === "self"
                             ? "border-amber-400 bg-amber-950/60 text-amber-300 hover:ring-2 hover:ring-amber-400/50"
+                            : char.characterType === "narrator"
+                            ? "border-amber-500/80 bg-amber-950/40 text-amber-300 hover:ring-2 hover:ring-amber-400/50"
                             : char.characterType === "friend"
                             ? "border-sky-400 bg-sky-950/60 text-sky-300 hover:ring-2 hover:ring-sky-400/50"
                             : "border-slate-500 bg-slate-800 text-slate-300 hover:ring-2 hover:ring-slate-400/50"
@@ -379,6 +381,8 @@ export default function CharacterBiblePage({
                             alt={char.name}
                             className="w-full h-full object-cover"
                           />
+                        ) : char.characterType === "narrator" ? (
+                          <span className="text-xl select-none">📜</span>
                         ) : (
                           <span className="font-heading font-bold text-sm uppercase">
                             {(char.realNickname || char.name).slice(0, 2)}
@@ -397,6 +401,11 @@ export default function CharacterBiblePage({
                         {char.characterType === "self" && (
                           <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 font-thai">
                             👑 ตัวฉันเอง (Self)
+                          </span>
+                        )}
+                        {char.characterType === "narrator" && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 font-thai">
+                            📜 ผู้บรรยาย (Narrator)
                           </span>
                         )}
                         {char.characterType === "friend" && (

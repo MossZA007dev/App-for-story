@@ -119,7 +119,7 @@ interface PartItem {
 interface CharacterItem {
   id: string;
   name: string;
-  characterType?: "self" | "friend" | "canon";
+  characterType?: "self" | "friend" | "canon" | "narrator";
   realNickname?: string;
   avatarUrl?: string;
   currentMbti?: string;
@@ -2293,12 +2293,24 @@ export default function NovelReaderPage({
                 }
 
                 // Determine Avatar Attributes
-                const isSelf = block.speaker?.characterType === "self";
-                const isFriend = block.speaker?.characterType === "friend";
-                const avatarUrl = block.speaker?.avatarUrl;
-                const displayName =
-                  block.speaker?.realNickname || block.speaker?.name || block.speakerName || "ผู้พูด";
-                const mbti = block.speaker?.currentMbti;
+                const isNarrator =
+                  block.isNarrator ||
+                  block.type === "narration" ||
+                  block.speaker?.characterType === "narrator" ||
+                  block.speaker?.name === "ผู้บรรยาย";
+                const isSelf = !isNarrator && block.speaker?.characterType === "self";
+                const isFriend = !isNarrator && block.speaker?.characterType === "friend";
+
+                const narrChar = isNarrator
+                  ? characters.find((c) => c.characterType === "narrator" || c.name === "ผู้บรรยาย")
+                  : null;
+                const avatarUrl = isNarrator
+                  ? (narrChar?.avatarUrl || (block.speaker?.characterType === "narrator" ? block.speaker?.avatarUrl : ""))
+                  : block.speaker?.avatarUrl;
+                const displayName = isNarrator
+                  ? (narrChar?.realNickname || narrChar?.name || "ผู้บรรยาย")
+                  : (block.speaker?.realNickname || block.speaker?.name || block.speakerName || "ผู้พูด");
+                const mbti = isNarrator ? (narrChar?.currentMbti || "") : block.speaker?.currentMbti;
 
                 // Avatar Icon Component
                 const AvatarIcon = () => (
@@ -2306,13 +2318,15 @@ export default function NovelReaderPage({
                     className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden border-2 shadow-md transition-transform hover:scale-110 ${
                       isActive
                         ? "border-amber-400 ring-2 ring-amber-400 bg-amber-500/30 text-amber-200 scale-105"
+                        : isNarrator
+                        ? "border-amber-500/80 bg-amber-950/40 text-amber-300"
                         : isSelf
                         ? "border-amber-400 ring-2 ring-amber-400/40 bg-amber-950/60 text-amber-300"
                         : isFriend
                         ? "border-sky-400 ring-2 ring-sky-400/40 bg-sky-950/60 text-sky-300"
                         : "border-slate-500 bg-slate-800 text-slate-300"
                     }`}
-                    title={`${displayName} (${isSelf ? (block.isNarrator ? "ผู้บรรยาย" : "ตัวละครของฉัน") : isFriend ? "เพื่อน" : "ตัวละคร"})`}
+                    title={`${displayName} (${isNarrator ? "ผู้บรรยาย" : isSelf ? "ตัวละครของฉัน" : isFriend ? "เพื่อน" : "ตัวละคร"})`}
                   >
                     {avatarUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -2321,6 +2335,8 @@ export default function NovelReaderPage({
                         alt={displayName}
                         className="w-full h-full object-cover"
                       />
+                    ) : isNarrator ? (
+                      <span className="text-base select-none" title="ผู้บรรยาย">📜</span>
                     ) : (
                       <span className="font-heading font-bold text-xs uppercase">
                         {displayName.slice(0, 2)}
@@ -2350,10 +2366,16 @@ export default function NovelReaderPage({
                         <div className="flex items-center gap-2">
                           <span
                             className={`text-xs font-thai font-bold ${
-                              isSelf ? "text-amber-400" : isFriend ? "text-sky-400" : "text-slate-300"
+                              isNarrator
+                                ? "text-amber-300"
+                                : isSelf
+                                ? "text-amber-400"
+                                : isFriend
+                                ? "text-sky-400"
+                                : "text-slate-300"
                             }`}
                           >
-                            {isSelf ? "👑 " : ""}{displayName}
+                            {isNarrator ? "📜 " : isSelf ? "👑 " : ""}{displayName}
                           </span>
                           {block.isNarrator && (
                             <span className="text-[10px] font-thai text-amber-300/80 bg-amber-500/10 border border-amber-500/25 px-1.5 py-0.2 rounded font-semibold">

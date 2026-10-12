@@ -1,7 +1,7 @@
 export interface CharacterMeta {
   id?: string;
   name: string;
-  characterType?: "self" | "friend" | "canon";
+  characterType?: "self" | "friend" | "canon" | "narrator";
   realNickname?: string;
   avatarUrl?: string;
   currentMbti?: string;
@@ -71,6 +71,14 @@ export function parseClaudeScript(
 
   const selfChar = characters.find((c) => c.characterType === "self") || null;
   const friendChars = characters.filter((c) => c.characterType === "friend");
+  const narratorChar = characters.find(
+    (c) => c.characterType === "narrator" || c.name === "ผู้บรรยาย" || c.name === "Narrator"
+  ) || {
+    id: "narrator",
+    name: "ผู้บรรยาย",
+    realNickname: "ผู้บรรยาย",
+    characterType: "narrator" as const,
+  };
 
   let dialogueTurn = 0;
 
@@ -145,8 +153,8 @@ export function parseClaudeScript(
       blocks.push({
         id: `narr-${index}`,
         type: "narration",
-        speaker: selfChar,
-        speakerName: selfChar?.realNickname || selfChar?.name || "ผู้บรรยาย",
+        speaker: narratorChar,
+        speakerName: narratorChar.realNickname || narratorChar.name || "ผู้บรรยาย",
         isNarrator: true,
         side: "left",
         text: narrText,
@@ -254,11 +262,11 @@ export function parseClaudeScript(
     }
 
     // 6. Descriptive scene narration (pure descriptive line without colons)
-    const narratorName = selfChar?.realNickname || selfChar?.name || "ผู้บรรยาย";
+    const narratorName = narratorChar.realNickname || narratorChar.name || "ผู้บรรยาย";
     blocks.push({
       id: `narr-${index}`,
       type: "narration",
-      speaker: selfChar,
+      speaker: narratorChar,
       speakerName: narratorName,
       isNarrator: true,
       side: "left",

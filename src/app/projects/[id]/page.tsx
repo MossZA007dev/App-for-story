@@ -75,7 +75,7 @@ import {
 interface CharacterSummary {
   id: string;
   name: string;
-  characterType?: "self" | "friend" | "canon";
+  characterType?: "self" | "friend" | "canon" | "narrator";
   realNickname?: string;
   chosenRole?: string;
   currentMbti?: string;
@@ -281,23 +281,39 @@ export default function StoryWorkspacePage({
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const pollCycleCountRef = useRef<number>(0);
 
+  const getNarratorChar = () => {
+    return (
+      characters.find((c) => c.characterType === "narrator" || c.name === "ผู้บรรยาย") || {
+        id: `narrator-${projectId}`,
+        name: "ผู้บรรยาย",
+        realNickname: "ผู้บรรยาย",
+        characterType: "narrator" as const,
+        chosenRole: "ผู้บรรยายเรื่องราว",
+        currentMbti: "",
+        avatarUrl: "",
+      }
+    );
+  };
+
   const handleOpenAvatarModal = (char: CharacterSummary | any) => {
     if (!char) return;
+    const isNarr = char.isNarrator || char.characterType === "narrator" || char.name === "ผู้บรรยาย";
     const charName = char.name || char.speakerName || "";
-    const matchedChar =
-      characters.find(
-        (c) =>
-          (char.id && c.id === char.id) ||
-          (charName && c.name.toLowerCase() === charName.toLowerCase()) ||
-          (char.realNickname && c.realNickname && c.realNickname.toLowerCase() === char.realNickname.toLowerCase())
-      ) || char;
+    const matchedChar = isNarr
+      ? getNarratorChar()
+      : characters.find(
+          (c) =>
+            (char.id && c.id === char.id) ||
+            (charName && c.name.toLowerCase() === charName.toLowerCase()) ||
+            (char.realNickname && c.realNickname && c.realNickname.toLowerCase() === char.realNickname.toLowerCase())
+        ) || char;
 
     setAvatarModalChar({
-      id: matchedChar.id || `char-${Date.now()}`,
-      name: matchedChar.name || charName || "ตัวละคร",
+      id: matchedChar.id || (isNarr ? `narrator-${projectId}` : `char-${Date.now()}`),
+      name: matchedChar.name || (isNarr ? "ผู้บรรยาย" : charName || "ตัวละคร"),
       realNickname: matchedChar.realNickname || char.realNickname,
-      characterType: matchedChar.characterType || char.characterType,
-      chosenRole: matchedChar.chosenRole,
+      characterType: (isNarr ? "narrator" : matchedChar.characterType) || char.characterType,
+      chosenRole: matchedChar.chosenRole || (isNarr ? "ผู้บรรยายเรื่องราว" : undefined),
       avatarUrl: matchedChar.avatarUrl || char.avatarUrl,
     });
     setAvatarModalOpen(true);
@@ -314,9 +330,28 @@ export default function StoryWorkspacePage({
     const oldName = updatedInfo?.oldName;
     const oldNickname = updatedInfo?.oldNickname;
 
+    const isNarratorTarget =
+      charId.startsWith("narrator-") ||
+      avatarModalChar?.characterType === "narrator" ||
+      avatarModalChar?.name === "ผู้บรรยาย";
+
     // 1. Update characters state
-    setCharacters((prev) =>
-      prev.map((c) =>
+    setCharacters((prev) => {
+      const exists = prev.some((c) => c.id === charId);
+      if (!exists && isNarratorTarget) {
+        return [
+          ...prev,
+          {
+            id: charId,
+            name: newName || "ผู้บรรยาย",
+            realNickname: newNickname || "ผู้บรรยาย",
+            characterType: "narrator" as const,
+            chosenRole: newRole || "ผู้บรรยายเรื่องราว",
+            avatarUrl: newAvatarUrl,
+          } as any,
+        ];
+      }
+      return prev.map((c) =>
         c.id === charId
           ? {
               ...c,
@@ -326,13 +361,14 @@ export default function StoryWorkspacePage({
               ...(newRole !== undefined ? { chosenRole: newRole } : {}),
             }
           : c
-      )
-    );
+      );
+    });
 
     // 2. Update dialogue blocks state so all speech cards immediately display new avatar, name, and nickname
     setDialogueBlocks((prev) =>
       prev.map((b) => {
         const isTarget =
+          (isNarratorTarget && (b.isNarrator || b.type === "narration" || b.speaker?.characterType === "narrator" || b.speaker?.name === "ผู้บรรยาย")) ||
           b.speaker?.id === charId ||
           (oldName && b.speaker?.name?.toLowerCase() === oldName.toLowerCase()) ||
           (oldNickname && b.speaker?.realNickname?.toLowerCase() === oldNickname.toLowerCase()) ||
@@ -1363,12 +1399,15 @@ export default function StoryWorkspacePage({
 
   const handleUpdateBlockSpeaker = (index: number, targetKey: string) => {
     if (targetKey === "__change_avatar__") {
-      const curSpeaker = dialogueBlocks[index]?.speaker;
-      const char = characters.find(
-        (c) =>
-          (curSpeaker?.id && c.id === curSpeaker.id) ||
-          c.name.toLowerCase() === (curSpeaker?.name || "").toLowerCase()
-      ) || curSpeaker;
+      const curBlock = dialogueBlocks[index];
+      const isNarr = curBlock?.isNarrator || curBlock?.type === "narration" || curBlock?.speaker?.characterType === "narrator" || curBlock?.speaker?.name === "ผู้บรรยาย";
+      const char = isNarr
+        ? getNarratorChar()
+        : characters.find(
+            (c) =>
+              (curBlock?.speaker?.id && c.id === curBlock?.speaker.id) ||
+              c.name.toLowerCase() === (curBlock?.speaker?.name || "").toLowerCase()
+          ) || curBlock?.speaker;
       if (char) {
         handleOpenAvatarModal(char);
       } else {
@@ -1401,13 +1440,14 @@ export default function StoryWorkspacePage({
       if (!cur) return prev;
 
       if (targetKey === "narrator") {
+        const narr = getNarratorChar();
         next[index] = {
           ...cur,
           type: "narration",
           isNarrator: true,
           side: "left",
-          speaker: characters.find((c) => c.characterType === "self") || null,
-          speakerName: characters.find((c) => c.characterType === "self")?.realNickname || "ผู้บรรยาย",
+          speaker: narr,
+          speakerName: narr.realNickname || narr.name || "ผู้บรรยาย",
         };
       } else if (targetKey === "sound") {
         next[index] = {
@@ -1827,13 +1867,14 @@ export default function StoryWorkspacePage({
         originalIndex: 0,
       };
     } else {
+      const narr = getNarratorChar();
       newBlock = {
         id: newId,
         type: "narration",
         isNarrator: true,
         side: "left",
-        speaker: selfChar,
-        speakerName: selfChar?.realNickname || "ผู้บรรยาย",
+        speaker: narr,
+        speakerName: narr.realNickname || narr.name || "ผู้บรรยาย",
         text: "คำบรรยายฉากและบรรยากาศ...",
         originalIndex: 0,
       };
@@ -3651,16 +3692,28 @@ export default function StoryWorkspacePage({
                 }
 
                 // Determine Attributes
-                const isSelf = block.speaker?.characterType === "self";
-                const isFriend = block.speaker?.characterType === "friend";
-                const avatarUrl = block.speaker?.avatarUrl;
-                const displayName =
-                  block.speaker?.realNickname || block.speaker?.name || block.speakerName || "ผู้พูด";
-                const mbti = block.speaker?.currentMbti;
+                const isNarrator =
+                  block.isNarrator ||
+                  block.type === "narration" ||
+                  block.speaker?.characterType === "narrator" ||
+                  block.speaker?.name === "ผู้บรรยาย";
+                const isSelf = !isNarrator && block.speaker?.characterType === "self";
+                const isFriend = !isNarrator && block.speaker?.characterType === "friend";
+
+                const narrChar = isNarrator ? getNarratorChar() : null;
+                const avatarUrl = isNarrator
+                  ? (narrChar?.avatarUrl || (block.speaker?.characterType === "narrator" ? block.speaker?.avatarUrl : ""))
+                  : block.speaker?.avatarUrl;
+                const displayName = isNarrator
+                  ? (narrChar?.realNickname || narrChar?.name || "ผู้บรรยาย")
+                  : (block.speaker?.realNickname || block.speaker?.name || block.speakerName || "ผู้พูด");
+                const mbti = isNarrator ? (narrChar?.currentMbti || "") : block.speaker?.currentMbti;
 
                 // Avatar Icon Component (Clickable to change profile picture!)
                 const AvatarIcon = () => {
-                  const charObj = block.speaker?.id
+                  const charObj = isNarrator
+                    ? getNarratorChar()
+                    : block.speaker?.id
                     ? characters.find((c) => c.id === block.speaker?.id) || block.speaker
                     : characters.find(
                         (c) =>
@@ -3680,13 +3733,15 @@ export default function StoryWorkspacePage({
                         }
                       }}
                       className={`relative group/avatar w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden border-2 shadow-md hover:scale-110 active:scale-95 transition-all cursor-pointer ${
-                        isSelf
+                        isNarrator
+                          ? "border-amber-500/80 bg-amber-950/40 text-amber-300 hover:ring-2 hover:ring-amber-400/50"
+                          : isSelf
                           ? "border-amber-400 bg-amber-950/60 text-amber-300 hover:ring-2 hover:ring-amber-400/50"
                           : isFriend
                           ? "border-sky-400 bg-sky-950/60 text-sky-300 hover:ring-2 hover:ring-sky-400/50"
                           : "border-slate-500 bg-slate-800 text-slate-300 hover:ring-2 hover:ring-slate-400/50"
                       }`}
-                      title={`คลิกเพื่อเปลี่ยนรูปโปรไฟล์ของ ${displayName}`}
+                      title={`คลิกเพื่อเปลี่ยนรูปโปรไฟล์และตั้งค่าของ ${displayName}`}
                     >
                       {avatarUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -3695,6 +3750,8 @@ export default function StoryWorkspacePage({
                           alt={displayName}
                           className="w-full h-full object-cover"
                         />
+                      ) : isNarrator ? (
+                        <span className="text-base select-none" title="ผู้บรรยาย">📜</span>
                       ) : (
                         <span className="font-heading font-bold text-xs uppercase">
                           {displayName.slice(0, 2)}
@@ -3727,16 +3784,22 @@ export default function StoryWorkspacePage({
                       <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                         <select
                           value={
-                            block.isNarrator
+                            isNarrator
                               ? "narrator"
                               : block.speaker?.id || block.speaker?.name || "narrator"
                           }
                           onChange={(e) => handleUpdateBlockSpeaker(idx, e.target.value)}
                           className={`bg-slate-900 border border-slate-700 rounded-lg px-2 py-0.5 text-[11px] font-thai font-bold focus:outline-none cursor-pointer max-w-[170px] sm:max-w-[210px] truncate ${
-                            isSelf ? "text-amber-400" : isFriend ? "text-sky-400" : "text-slate-300"
+                            isNarrator
+                              ? "text-amber-300"
+                              : isSelf
+                              ? "text-amber-400"
+                              : isFriend
+                              ? "text-sky-400"
+                              : "text-slate-300"
                           }`}
                         >
-                          <option value="narrator">📜 ผู้บรรยาย (Narrator)</option>
+                          <option value="narrator">📜 {isNarrator ? displayName : "ผู้บรรยาย (Narrator)"}</option>
                           <option value="sound">⚡ เสียงประกอบ (Sound FX)</option>
                           <optgroup label="ตัวละครในเรื่อง">
                             {characters.map((c) => (

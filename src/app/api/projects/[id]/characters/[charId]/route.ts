@@ -15,7 +15,7 @@ const UpdateCharacterSchema = z.object({
   roleReason: z.string().optional(),
   faction: z.string().optional(),
   background: z.string().optional(),
-  characterType: z.enum(["self", "friend", "canon"]).optional(),
+  characterType: z.enum(["self", "friend", "canon", "narrator"]).optional(),
   realNickname: z.string().optional(),
   avatarUrl: z.string().optional(),
   status: z.enum(["alive", "dead", "missing", "captive"]).optional(),
@@ -80,7 +80,33 @@ export async function PUT(
     const body = await req.json();
     const validated = UpdateCharacterSchema.parse(body);
 
-    const oldChar = db.select().from(characters).where(eq(characters.id, charId)).get();
+    let oldChar = db.select().from(characters).where(eq(characters.id, charId)).get();
+    if (!oldChar) {
+      if (charId.startsWith("narrator-") || charId === "narrator") {
+        const now = new Date().toISOString();
+        db.insert(characters)
+          .values({
+            id: charId,
+            projectId,
+            name: validated.name || "ผู้บรรยาย",
+            realNickname: validated.realNickname || "ผู้บรรยาย",
+            characterType: "narrator",
+            chosenRole: validated.chosenRole || "ผู้บรรยายเรื่องราว",
+            faction: "ผู้บันทึกประวัติศาสตร์",
+            background: "ผู้รู้แจ้งเห็นจริงที่คอยถ่ายทอดเรื่องราวและบรรยากาศของโลก",
+            status: "alive",
+            avatarUrl: validated.avatarUrl || "",
+            visualSheet: "{}",
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+        oldChar = db.select().from(characters).where(eq(characters.id, charId)).get();
+      } else {
+        return NextResponse.json({ error: "ไม่พบข้อมูลตัวละคร" }, { status: 404 });
+      }
+    }
+
     if (!oldChar) {
       return NextResponse.json({ error: "ไม่พบข้อมูลตัวละคร" }, { status: 404 });
     }

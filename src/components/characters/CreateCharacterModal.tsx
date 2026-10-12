@@ -21,7 +21,7 @@ interface CharacterData {
   id?: string;
   name?: string;
   realNickname?: string;
-  characterType?: "self" | "friend" | "canon";
+  characterType?: "self" | "friend" | "canon" | "narrator";
   startMbti?: string;
   currentMbti?: string;
   gender?: string;

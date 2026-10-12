@@ -15,7 +15,7 @@ const CharacterCreateSchema = z.object({
   roleReason: z.string().optional().default(""),
   faction: z.string().optional().default(""),
   background: z.string().optional().default(""),
-  characterType: z.enum(["self", "friend", "canon"]).default("friend"),
+  characterType: z.enum(["self", "friend", "canon", "narrator"]).default("friend"),
   realNickname: z.string().optional().default(""),
   avatarUrl: z.string().optional().default(""),
   status: z.enum(["alive", "dead", "missing", "captive"]).default("alive"),
@@ -41,7 +41,37 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const charList = db.select().from(characters).where(eq(characters.projectId, id)).all();
+    let charList = db.select().from(characters).where(eq(characters.projectId, id)).all();
+
+    // Auto-create dedicated Narrator character for this project if not exists
+    const hasNarrator = charList.some(
+      (c) => c.characterType === "narrator" || c.name === "ผู้บรรยาย"
+    );
+    if (!hasNarrator && id) {
+      try {
+        const now = new Date().toISOString();
+        db.insert(characters)
+          .values({
+            id: `narrator-${id}`,
+            projectId: id,
+            name: "ผู้บรรยาย",
+            realNickname: "ผู้บรรยาย",
+            characterType: "narrator",
+            chosenRole: "ผู้บรรยายเรื่องราว",
+            faction: "ผู้บันทึกประวัติศาสตร์",
+            background: "ผู้รู้แจ้งเห็นจริงที่คอยถ่ายทอดเรื่องราวและบรรยากาศของโลก",
+            status: "alive",
+            avatarUrl: "",
+            visualSheet: "{}",
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+        charList = db.select().from(characters).where(eq(characters.projectId, id)).all();
+      } catch (err) {
+        console.warn("Failed to auto-create narrator character:", err);
+      }
+    }
 
     const enriched = charList.map((c) => {
       const charAbilities = db.select().from(abilities).where(eq(abilities.characterId, c.id)).all();

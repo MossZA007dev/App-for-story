@@ -46,7 +46,7 @@ interface PartItem {
 interface CharacterItem {
   id: string;
   name: string;
-  characterType?: "self" | "friend" | "canon";
+  characterType?: "self" | "friend" | "canon" | "narrator";
   realNickname?: string;
   startMbti?: string;
   currentMbti?: string;

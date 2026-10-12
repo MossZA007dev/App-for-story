@@ -22,7 +22,7 @@ export interface AvatarCharacterInfo {
   id: string;
   name: string;
   realNickname?: string;
-  characterType?: "self" | "friend" | "canon";
+  characterType?: "self" | "friend" | "canon" | "narrator";
   chosenRole?: string;
   avatarUrl?: string;
 }
@@ -233,6 +233,8 @@ export function CharacterAvatarModal({
               className={`w-16 h-16 rounded-full flex items-center justify-center overflow-hidden border-2 shadow-xl ${
                 character.characterType === "self"
                   ? "border-amber-400 bg-amber-950/60 text-amber-300"
+                  : character.characterType === "narrator"
+                  ? "border-amber-500/80 bg-amber-950/40 text-amber-300"
                   : character.characterType === "friend"
                   ? "border-sky-400 bg-sky-950/60 text-sky-300"
                   : "border-slate-500 bg-slate-800 text-slate-300"
@@ -245,6 +247,8 @@ export function CharacterAvatarModal({
                   alt={liveDisplayName}
                   className="w-full h-full object-cover"
                 />
+              ) : character.characterType === "narrator" ? (
+                <span className="text-2xl select-none">📜</span>
               ) : (
                 <span className="font-heading font-bold text-xl uppercase tracking-wider">
                   {initials}
@@ -312,6 +316,8 @@ export function CharacterAvatarModal({
                 className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
                   character.characterType === "self"
                     ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                    : character.characterType === "narrator"
+                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
                     : character.characterType === "friend"
                     ? "bg-sky-500/20 text-sky-300 border border-sky-500/40"
                     : "bg-slate-800 text-slate-400 border border-slate-700"
@@ -319,6 +325,8 @@ export function CharacterAvatarModal({
               >
                 {character.characterType === "self"
                   ? "👑 ตัวฉันเอง"
+                  : character.characterType === "narrator"
+                  ? "📜 ผู้บรรยาย (Narrator)"
                   : character.characterType === "friend"
                   ? "🧑‍🤝‍🧑 เพื่อนในกลุ่ม"
                   : "⚔️ ตัวละครในเรื่อง"}

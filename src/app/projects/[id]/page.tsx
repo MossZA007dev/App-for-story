@@ -46,6 +46,8 @@ import {
   Volume1,
   Youtube,
   Camera,
+  ChevronDown,
+  GripVertical,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
@@ -148,6 +150,31 @@ export default function StoryWorkspacePage({
   const [activeSceneId, setActiveSceneId] = useState<string>("");
   const [activeScene, setActiveScene] = useState<SceneItem | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Scene Dropdown & Drag-and-Drop Reordering State
+  const [isSceneDropdownOpen, setIsSceneDropdownOpen] = useState(false);
+  const sceneDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [draggingSceneIdx, setDraggingSceneIdx] = useState<number | null>(null);
+  const [dragOverSceneIdx, setDragOverSceneIdx] = useState<number | null>(null);
+  const [isReorderingScenes, setIsReorderingScenes] = useState(false);
+
+  // Close scene dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        sceneDropdownRef.current &&
+        !sceneDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsSceneDropdownOpen(false);
+      }
+    };
+    if (isSceneDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isSceneDropdownOpen]);
 
   // Editable Dialogue Beats State
   const [dialogueBlocks, setDialogueBlocks] = useState<DialogueBlock[]>([]);
@@ -666,6 +693,116 @@ export default function StoryWorkspacePage({
     setActiveSceneId(sceneId);
     setIsRawMarkdownMode(false);
     setStreamingText("");
+  };
+
+  // Reorder Scenes via Drag & Drop or Move Buttons
+  const handleReorderScenes = async (sourceIdx: number, targetIdx: number) => {
+    if (!currentPart || !currentPart.scenes || sourceIdx === targetIdx) return;
+    const sceneList = [...currentPart.scenes];
+    if (
+      sourceIdx < 0 ||
+      sourceIdx >= sceneList.length ||
+      targetIdx < 0 ||
+      targetIdx >= sceneList.length
+    ) {
+      return;
+    }
+
+    const [movedScene] = sceneList.splice(sourceIdx, 1);
+    sceneList.splice(targetIdx, 0, movedScene);
+
+    // Assign new 1-based order
+    const updatedSceneList = sceneList.map((sc, idx) => ({
+      ...sc,
+      order: idx + 1,
+    }));
+
+    // 1. Optimistically update local parts state
+    setParts((prevParts) =>
+      prevParts.map((p) => {
+        if (p.id !== activePartId) return p;
+        return {
+          ...p,
+          scenes: updatedSceneList,
+        };
+      })
+    );
+
+    // 2. If active scene was reordered, keep its updated reference
+    const newActive = updatedSceneList.find((s) => s.id === activeSceneId);
+    if (newActive) {
+      setActiveScene(newActive);
+    }
+
+    setIsReorderingScenes(true);
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/parts/${activePartId}/scenes/reorder`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sceneIds: updatedSceneList.map((s) => s.id),
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "ไม่สามารถสลับลำดับฉากได้");
+      }
+
+      toast.success(
+        `สลับลำดับเป็น "ฉาก ${targetIdx + 1}: ${movedScene.title}" เรียบร้อยแล้ว`
+      );
+    } catch (err: any) {
+      console.error("Failed to reorder scenes:", err);
+      toast.error(err.message || "เกิดข้อผิดพลาดในการบันทึกลำดับฉาก");
+      // Revert from backend if failed
+      loadProjectData();
+    } finally {
+      setIsReorderingScenes(false);
+      setDraggingSceneIdx(null);
+      setDragOverSceneIdx(null);
+    }
+  };
+
+  const handleSceneDragStart = (e: React.DragEvent, idx: number) => {
+    e.dataTransfer.setData("text/plain", idx.toString());
+    e.dataTransfer.effectAllowed = "move";
+    setDraggingSceneIdx(idx);
+  };
+
+  const handleSceneDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverSceneIdx !== idx) {
+      setDragOverSceneIdx(idx);
+    }
+  };
+
+  const handleSceneDragLeave = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    if (dragOverSceneIdx === idx) {
+      setDragOverSceneIdx(null);
+    }
+  };
+
+  const handleSceneDrop = (e: React.DragEvent, targetIdx: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const sourceIdxStr = e.dataTransfer.getData("text/plain");
+    const sourceIdx = sourceIdxStr ? parseInt(sourceIdxStr, 10) : draggingSceneIdx;
+    setDraggingSceneIdx(null);
+    setDragOverSceneIdx(null);
+    if (sourceIdx === null || isNaN(sourceIdx)) return;
+    handleReorderScenes(sourceIdx, targetIdx);
+  };
+
+  const handleSceneDragEnd = () => {
+    setDraggingSceneIdx(null);
+    setDragOverSceneIdx(null);
   };
 
   // 3. Audio Controller
@@ -3029,21 +3166,29 @@ export default function StoryWorkspacePage({
             <span>+ เพิ่มภาคใหม่ (SS)</span>
           </button>
 
-          {/* Scene / Episode Dropdown */}
+          {/* Scene / Episode Dropdown with Drag-and-Drop Reordering */}
           {currentPart && currentPart.scenes.length > 0 && (
-            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-sm">
-              <FileText className="w-4 h-4 text-amber-400" />
-              <select
-                value={activeSceneId}
-                onChange={(e) => handleSelectScene(e.target.value)}
-                className="bg-transparent text-xs font-bold text-white focus:outline-none font-thai max-w-[220px] truncate cursor-pointer"
+            <div
+              ref={sceneDropdownRef}
+              className="relative flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 shadow-sm"
+            >
+              {/* Trigger Button */}
+              <button
+                type="button"
+                onClick={() => setIsSceneDropdownOpen((prev) => !prev)}
+                className="flex items-center gap-1.5 text-xs font-bold text-white hover:text-amber-300 transition-colors font-thai focus:outline-none max-w-[200px] sm:max-w-[240px] truncate"
+                title="คลิกเพื่อเลือกฉาก หรือลากสลับลำดับฉาก"
               >
-                {currentPart.scenes.map((s) => (
-                  <option key={s.id} value={s.id} className="bg-slate-900">
-                    ฉาก {s.order}: {s.title}
-                  </option>
-                ))}
-              </select>
+                <FileText className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <span className="truncate">
+                  {activeScene ? `ฉาก ${activeScene.order}: ${activeScene.title}` : "เลือกฉาก"}
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 flex-shrink-0 ${
+                    isSceneDropdownOpen ? "rotate-180 text-amber-400" : ""
+                  }`}
+                />
+              </button>
 
               {/* Edit active scene title button */}
               <button
@@ -3054,6 +3199,176 @@ export default function StoryWorkspacePage({
               >
                 <Edit3 className="w-3.5 h-3.5" />
               </button>
+
+              {/* Floating Reorderable Scene Dropdown Popover */}
+              {isSceneDropdownOpen && (
+                <div className="absolute top-full left-0 mt-2 z-50 w-80 sm:w-96 rounded-2xl bg-slate-950/95 backdrop-blur-xl border border-slate-700/90 shadow-2xl p-2.5 font-thai animate-in fade-in zoom-in-95 duration-150">
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-2 py-1.5 border-b border-slate-800/80 mb-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+                      <span>ฉากใน {currentPart.title || `ภาค ${currentPart.number}`}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-normal">
+                        {currentPart.scenes.length} ฉาก
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 text-[10px] font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+                      <GripVertical className="w-3 h-3 text-amber-400" />
+                      <span>ลาก ⠿ เพื่อสลับลำดับ</span>
+                    </div>
+                  </div>
+
+                  {/* Scene List with Drag and Drop */}
+                  <div className="max-h-80 overflow-y-auto space-y-1.5 pr-0.5 custom-scrollbar">
+                    {currentPart.scenes.map((s, idx) => {
+                      const isActive = s.id === activeSceneId;
+                      const isDragging = draggingSceneIdx === idx;
+                      const isDragOver = dragOverSceneIdx === idx && draggingSceneIdx !== idx;
+
+                      return (
+                        <div
+                          key={s.id}
+                          draggable
+                          onDragStart={(e) => handleSceneDragStart(e, idx)}
+                          onDragOver={(e) => handleSceneDragOver(e, idx)}
+                          onDragLeave={(e) => handleSceneDragLeave(e, idx)}
+                          onDrop={(e) => handleSceneDrop(e, idx)}
+                          onDragEnd={handleSceneDragEnd}
+                          onClick={() => {
+                            if (s.id !== activeSceneId) {
+                              handleSelectScene(s.id);
+                            }
+                            setIsSceneDropdownOpen(false);
+                          }}
+                          className={`group relative flex items-center gap-2 p-2 rounded-xl border transition-all cursor-pointer ${
+                            isDragging
+                              ? "opacity-40 scale-[0.98] border-dashed border-amber-400 bg-amber-500/10"
+                              : isDragOver
+                              ? "border-amber-400 ring-2 ring-amber-400/30 bg-amber-500/15 scale-[1.01]"
+                              : isActive
+                              ? "bg-amber-500/15 border-amber-500/40 text-amber-200 shadow-sm"
+                              : "bg-slate-900/80 hover:bg-slate-850 hover:border-slate-600 border-slate-800/80 text-slate-200"
+                          }`}
+                        >
+                          {/* Drag Handle */}
+                          <div
+                            className="p-1 rounded text-slate-500 group-hover:text-amber-400 hover:bg-slate-800 cursor-grab active:cursor-grabbing transition-colors flex-shrink-0"
+                            title="คลิกลากเพื่อย้ายตำแหน่ง"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <GripVertical className="w-3.5 h-3.5" />
+                          </div>
+
+                          {/* Order Badge */}
+                          <span
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0 font-mono ${
+                              isActive
+                                ? "bg-amber-400 text-slate-950 shadow-sm"
+                                : "bg-slate-800 text-slate-300 border border-slate-700"
+                            }`}
+                          >
+                            ฉาก {s.order}
+                          </span>
+
+                          {/* Title & Location */}
+                          <div className="flex-1 min-w-0 pr-1">
+                            <p
+                              className={`text-xs font-semibold truncate ${
+                                isActive ? "text-amber-200" : "text-white group-hover:text-amber-300"
+                              }`}
+                            >
+                              {s.title}
+                            </p>
+                            {s.location && (
+                              <p className="text-[10px] text-slate-400 truncate flex items-center gap-1 mt-0.5">
+                                <MapPin className="w-2.5 h-2.5 text-slate-500 flex-shrink-0" />
+                                <span>{s.location}</span>
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Up / Down Move Quick Buttons (Accessible for click / touch devices) */}
+                          <div
+                            className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity flex-shrink-0 mr-1"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              disabled={idx === 0 || isReorderingScenes}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleReorderScenes(idx, idx - 1);
+                              }}
+                              className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-20 transition-all"
+                              title="ย้ายขึ้นไปก่อนหน้านี้"
+                            >
+                              <ArrowUp className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === currentPart.scenes.length - 1 || isReorderingScenes}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleReorderScenes(idx, idx + 1);
+                              }}
+                              className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-20 transition-all"
+                              title="ย้ายลงไปถัดไป"
+                            >
+                              <ArrowDown className="w-3 h-3" />
+                            </button>
+                          </div>
+
+                          {/* Active Checkmark or Quick Edit */}
+                          {isActive ? (
+                            <div className="p-1 rounded-full bg-amber-400/20 text-amber-400 flex-shrink-0">
+                              <Check className="w-3.5 h-3.5" />
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenEditSceneModal(s.id);
+                                setIsSceneDropdownOpen(false);
+                              }}
+                              title="แก้ไขชื่อฉากนี้"
+                              className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-all flex-shrink-0"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Dropdown Footer Actions */}
+                  <div className="pt-2 mt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSceneDropdownOpen(false);
+                        setShowNewSceneModal(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-amber-300 hover:text-white hover:bg-amber-500/20 font-bold transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>เพิ่มฉากใหม่</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSceneDropdownOpen(false);
+                        handleOpenEditSceneModal(activeSceneId);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>จัดการชื่อฉาก</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Figma-Style Live Sync Badge */}
               <div
@@ -5541,9 +5856,14 @@ export default function StoryWorkspacePage({
               {/* Scene Switcher inside modal */}
               {currentPart && currentPart.scenes.length > 1 && (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-300">
-                    เลือกฉากที่ต้องการแก้ไข
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-300">
+                      เลือกฉากที่ต้องการแก้ไข
+                    </label>
+                    <span className="text-[10px] text-amber-400 font-medium bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                      💡 ลาก ⠿ สลับลำดับฉากได้ที่เมนูด้านบน
+                    </span>
+                  </div>
                   <select
                     value={editSceneModalId}
                     onChange={(e) => {

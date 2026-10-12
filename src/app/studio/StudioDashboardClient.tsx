@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { CreateCharacterModal } from "@/components/characters/CreateCharacterModal";
 import { toast } from "sonner";
-import type { SagaProjectItem } from "@/lib/projects/getProjects";
+import type { SagaProjectItem } from "@/types/project";
 
 interface StudioDashboardClientProps {
   initialProjects?: SagaProjectItem[];
@@ -260,6 +260,12 @@ export default function StudioDashboardClient({
                           src={project.coverImage || "/images/saga-got-cover.jpg"}
                           alt={project.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            if (!target.src.includes("saga-got-cover.jpg")) {
+                              target.src = "/images/saga-got-cover.jpg";
+                            }
+                          }}
                         />
                       </div>
 

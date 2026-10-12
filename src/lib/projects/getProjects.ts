@@ -1,23 +1,11 @@
-import { db } from "@/lib/db";
+import { db, imagesDir } from "@/lib/db";
 import { projects, characters, parts, scenes, images } from "@/lib/db/schema";
 import { desc } from "drizzle-orm";
+import fs from "fs";
+import path from "path";
 
-export interface SagaProjectItem {
-  id: string;
-  title: string;
-  universe: string;
-  timelineScope?: string | null;
-  theme?: string | null;
-  worldNotes?: string | null;
-  coverImage?: string;
-  characterCount: number;
-  partCount: number;
-  completedParts: number;
-  sceneCount: number;
-  totalWordCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
+import type { SagaProjectItem } from "@/types/project";
+export type { SagaProjectItem };
 
 export function getAllProjectsEnriched(): SagaProjectItem[] {
   try {
@@ -87,6 +75,19 @@ export function getAllProjectsEnriched(): SagaProjectItem[] {
       const charCount = charsCountByProject.get(proj.id) || 0;
       const coverImg = coverByProject.get(proj.id);
 
+      let finalCover = proj.coverImage || coverImg || "/images/saga-got-cover.jpg";
+      if (finalCover.startsWith("/api/images/")) {
+        try {
+          const fname = decodeURIComponent(finalCover.replace("/api/images/", ""));
+          const fpath = path.join(imagesDir, path.basename(fname));
+          if (!fs.existsSync(fpath)) {
+            finalCover = "/images/saga-got-cover.jpg";
+          }
+        } catch {
+          finalCover = "/images/saga-got-cover.jpg";
+        }
+      }
+
       return {
         ...proj,
         characterCount: charCount,
@@ -94,7 +95,7 @@ export function getAllProjectsEnriched(): SagaProjectItem[] {
         completedParts: pStats.completed,
         sceneCount: pStats.sceneCount,
         totalWordCount: pStats.totalWords,
-        coverImage: proj.coverImage || coverImg || "/images/saga-got-cover.jpg",
+        coverImage: finalCover,
       };
     });
   } catch (error) {

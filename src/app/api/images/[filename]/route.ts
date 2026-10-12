@@ -2,19 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { storage } from "@/lib/storage";
 import path from "path";
 
+import fs from "fs";
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ filename: string }> }
 ) {
   try {
     const { filename } = await params;
-    const buffer = await storage.getImage(filename);
+    let buffer = await storage.getImage(filename);
+    let ext = path.extname(filename).toLowerCase();
+
+    if (!buffer) {
+      try {
+        const fallbackPath = path.join(process.cwd(), "public", "images", "saga-got-cover.jpg");
+        if (fs.existsSync(fallbackPath)) {
+          buffer = await fs.promises.readFile(fallbackPath);
+          ext = ".jpg";
+        }
+      } catch (err) {
+        console.warn("Image fallback error:", err);
+      }
+    }
 
     if (!buffer) {
       return new NextResponse("Image not found", { status: 404 });
     }
 
-    const ext = path.extname(filename).toLowerCase();
     let contentType = "image/png";
     if (ext === ".jpg" || ext === ".jpeg" || ext === ".jfif") contentType = "image/jpeg";
     else if (ext === ".webp") contentType = "image/webp";

@@ -11,7 +11,7 @@ import {
   Search,
 } from "lucide-react";
 import { CollaboratorModal } from "@/components/collaboration/CollaboratorModal";
-import type { SagaProjectItem } from "@/lib/projects/getProjects";
+import type { SagaProjectItem } from "@/types/project";
 
 interface SagasDashboardClientProps {
   initialProjects?: SagaProjectItem[];
@@ -269,7 +269,10 @@ export default function SagasDashboardClient({ initialProjects = [] }: SagasDash
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 rounded-[20px]"
                       style={{ borderRadius: "20px" }}
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src = "/images/saga-got-cover.jpg";
+                        const target = e.currentTarget;
+                        if (!target.src.includes("saga-got-cover.jpg")) {
+                          target.src = "/images/saga-got-cover.jpg";
+                        }
                       }}
                     />
 

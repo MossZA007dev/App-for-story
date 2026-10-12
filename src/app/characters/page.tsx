@@ -47,12 +47,31 @@ interface ProjectItem {
   timelineScope?: string;
 }
 
-// Clan Heraldic Banner URLs matching exact Figma Frames (Frame 30, Frame 38, Frame 33, Frame 34)
-function getClanBannerUrl(char: CharacterItem): string {
+// Clan Heraldic Themes & Banner URLs matching exact Figma Frames (Frame 30, Frame 38, Frame 33, Frame 34)
+interface ClanTheme {
+  fill: string;
+  fillOpacity: number;
+  bannerUrl: string;
+  titleColor: string;
+  subtitleColor: string;
+  roleColor: string;
+  loreColor: string;
+  badgeBg: string;
+  badgeText: string;
+  genderBg: string;
+  genderText: string;
+  dividerBorder: string;
+  editBtnBg: string;
+  editBtnText: string;
+  deleteBtnBg: string;
+  deleteBtnText: string;
+}
+
+function getClanTheme(char: CharacterItem): ClanTheme {
   const factionLower = (char.faction || "").toLowerCase();
   const nameLower = (char.name || "").toLowerCase();
 
-  // 1. House Stark (Frame 30: Beige/Green Direwolf)
+  // 1. House Stark (Frame 30: Beige/Green Direwolf, Lower Fill: #7B9070)
   if (
     factionLower.includes("stark") ||
     nameLower.includes("stark") ||
@@ -60,10 +79,27 @@ function getClanBannerUrl(char: CharacterItem): string {
     factionLower.includes("สตาร์ค") ||
     factionLower.includes("หมาป่า")
   ) {
-    return "/images/banners/clan_stark.png";
+    return {
+      fill: "#7B9070",
+      fillOpacity: 0.97,
+      bannerUrl: "/images/banners/clan_stark.png",
+      titleColor: "text-white font-black drop-shadow-sm",
+      subtitleColor: "text-slate-100 font-bold",
+      roleColor: "text-amber-200 font-black drop-shadow-sm",
+      loreColor: "text-slate-200 italic",
+      badgeBg: "bg-slate-950/80 shadow-sm",
+      badgeText: "text-amber-300 font-black",
+      genderBg: "bg-black/25",
+      genderText: "text-slate-100 font-bold",
+      dividerBorder: "border-white/20",
+      editBtnBg: "bg-slate-950 hover:bg-slate-900",
+      editBtnText: "text-amber-300 hover:text-white",
+      deleteBtnBg: "bg-black/25 hover:bg-red-950/60",
+      deleteBtnText: "text-red-200 hover:text-red-100",
+    };
   }
 
-  // 2. House Lannister (Frame 38: Crimson/Gold Rampant Lion)
+  // 2. House Lannister (Frame 38: Crimson #86090A with Golden Lion)
   if (
     factionLower.includes("lannister") ||
     nameLower.includes("lannister") ||
@@ -71,10 +107,27 @@ function getClanBannerUrl(char: CharacterItem): string {
     factionLower.includes("แลนนิสเตอร์") ||
     factionLower.includes("สิงโต")
   ) {
-    return "/images/banners/clan_lannister.png";
+    return {
+      fill: "#86090A",
+      fillOpacity: 0.97,
+      bannerUrl: "/images/banners/clan_lannister.png",
+      titleColor: "text-amber-100 font-black drop-shadow-sm",
+      subtitleColor: "text-rose-200 font-bold",
+      roleColor: "text-amber-300 font-black drop-shadow-sm",
+      loreColor: "text-rose-200/90 italic",
+      badgeBg: "bg-black/60 shadow-sm",
+      badgeText: "text-amber-300 font-black",
+      genderBg: "bg-black/30",
+      genderText: "text-rose-100 font-bold",
+      dividerBorder: "border-amber-400/25",
+      editBtnBg: "bg-black/60 hover:bg-black/90",
+      editBtnText: "text-amber-300 hover:text-amber-200",
+      deleteBtnBg: "bg-black/30 hover:bg-rose-950/60",
+      deleteBtnText: "text-rose-300 hover:text-rose-100",
+    };
   }
 
-  // 3. House Targaryen (Frame 33: Black/Crimson 3-Headed Dragon)
+  // 3. House Targaryen (Frame 33: Black #0E0D13 with Crimson 3-Headed Dragon)
   if (
     factionLower.includes("targaryen") ||
     nameLower.includes("targaryen") ||
@@ -82,10 +135,27 @@ function getClanBannerUrl(char: CharacterItem): string {
     factionLower.includes("ทาร์แกเรียน") ||
     factionLower.includes("มังกร")
   ) {
-    return "/images/banners/clan_targaryen.png";
+    return {
+      fill: "#0E0D13",
+      fillOpacity: 0.98,
+      bannerUrl: "/images/banners/clan_targaryen.png",
+      titleColor: "text-white font-black drop-shadow-sm",
+      subtitleColor: "text-slate-300 font-bold",
+      roleColor: "text-red-400 font-black drop-shadow-sm",
+      loreColor: "text-slate-400 italic",
+      badgeBg: "bg-red-950/70 border border-red-900/60 shadow-sm",
+      badgeText: "text-red-300 font-black",
+      genderBg: "bg-white/10",
+      genderText: "text-slate-200 font-bold",
+      dividerBorder: "border-red-900/40",
+      editBtnBg: "bg-red-950/80 hover:bg-red-900 border border-red-800/50",
+      editBtnText: "text-red-200 hover:text-white",
+      deleteBtnBg: "bg-white/10 hover:bg-red-950/60",
+      deleteBtnText: "text-red-400 hover:text-red-200",
+    };
   }
 
-  // 4. House Tyrell (Frame 34: Green/Gold Blooming Rose)
+  // 4. House Tyrell (Frame 34: Forest Green #016701 with Golden Blooming Rose)
   if (
     factionLower.includes("tyrell") ||
     nameLower.includes("tyrell") ||
@@ -93,7 +163,24 @@ function getClanBannerUrl(char: CharacterItem): string {
     factionLower.includes("ไทเรล") ||
     factionLower.includes("กุหลาบ")
   ) {
-    return "/images/banners/clan_tyrell.png";
+    return {
+      fill: "#016701",
+      fillOpacity: 0.97,
+      bannerUrl: "/images/banners/clan_tyrell.png",
+      titleColor: "text-amber-100 font-black drop-shadow-sm",
+      subtitleColor: "text-emerald-100 font-bold",
+      roleColor: "text-amber-300 font-black drop-shadow-sm",
+      loreColor: "text-emerald-100/90 italic",
+      badgeBg: "bg-black/50 shadow-sm",
+      badgeText: "text-amber-300 font-black",
+      genderBg: "bg-black/25",
+      genderText: "text-emerald-100 font-bold",
+      dividerBorder: "border-emerald-300/25",
+      editBtnBg: "bg-black/50 hover:bg-black/80",
+      editBtnText: "text-amber-300 hover:text-amber-200",
+      deleteBtnBg: "bg-black/25 hover:bg-black/50",
+      deleteBtnText: "text-red-300 hover:text-red-100",
+    };
   }
 
   // 5. Night's Watch (Obsidian/Crow Shield)
@@ -103,21 +190,89 @@ function getClanBannerUrl(char: CharacterItem): string {
     factionLower.includes("วอทช์") ||
     factionLower.includes("อีกา")
   ) {
-    return "/images/banners/clan_watch.png";
+    return {
+      fill: "#181F2A",
+      fillOpacity: 0.98,
+      bannerUrl: "/images/banners/clan_watch.png",
+      titleColor: "text-white font-black drop-shadow-sm",
+      subtitleColor: "text-slate-300 font-bold",
+      roleColor: "text-sky-300 font-black drop-shadow-sm",
+      loreColor: "text-slate-400 italic",
+      badgeBg: "bg-slate-900/90 border border-slate-700/60 shadow-sm",
+      badgeText: "text-sky-300 font-black",
+      genderBg: "bg-white/10",
+      genderText: "text-slate-300 font-bold",
+      dividerBorder: "border-slate-700/50",
+      editBtnBg: "bg-slate-900 hover:bg-slate-800 border border-slate-700/60",
+      editBtnText: "text-sky-300 hover:text-white",
+      deleteBtnBg: "bg-white/10 hover:bg-red-950/60",
+      deleteBtnText: "text-red-400 hover:text-red-200",
+    };
   }
 
-  // 6. Protagonist / Self (Golden Royal Crown Banner)
+  // 6. Protagonist / Self (Golden Royal Crown Banner #854D0E)
   if (char.characterType === "self") {
-    return "/images/banners/clan_me.png";
+    return {
+      fill: "#854D0E",
+      fillOpacity: 0.97,
+      bannerUrl: "/images/banners/clan_me.png",
+      titleColor: "text-amber-100 font-black drop-shadow-sm",
+      subtitleColor: "text-amber-200 font-bold",
+      roleColor: "text-amber-300 font-black drop-shadow-sm",
+      loreColor: "text-amber-200/90 italic",
+      badgeBg: "bg-black/60 shadow-sm",
+      badgeText: "text-amber-300 font-black",
+      genderBg: "bg-black/30",
+      genderText: "text-amber-100 font-bold",
+      dividerBorder: "border-amber-400/30",
+      editBtnBg: "bg-black/60 hover:bg-black/90",
+      editBtnText: "text-amber-300 hover:text-white",
+      deleteBtnBg: "bg-black/30 hover:bg-black/60",
+      deleteBtnText: "text-red-300 hover:text-red-200",
+    };
   }
 
-  // 7. Squad / Friend (Allied Sky Shield Banner)
+  // 7. Squad / Friend (Allied Sky Shield Banner #0369A1)
   if (char.characterType === "friend") {
-    return "/images/banners/clan_squad.png";
+    return {
+      fill: "#0369A1",
+      fillOpacity: 0.97,
+      bannerUrl: "/images/banners/clan_squad.png",
+      titleColor: "text-white font-black drop-shadow-sm",
+      subtitleColor: "text-sky-100 font-bold",
+      roleColor: "text-sky-200 font-black drop-shadow-sm",
+      loreColor: "text-sky-100/90 italic",
+      badgeBg: "bg-black/50 shadow-sm",
+      badgeText: "text-sky-300 font-black",
+      genderBg: "bg-black/25",
+      genderText: "text-white font-bold",
+      dividerBorder: "border-sky-300/30",
+      editBtnBg: "bg-black/60 hover:bg-black/90",
+      editBtnText: "text-sky-200 hover:text-white",
+      deleteBtnBg: "bg-black/25 hover:bg-black/50",
+      deleteBtnText: "text-red-300 hover:text-red-200",
+    };
   }
 
-  // Default Medieval Banner (Frame 30 Stark)
-  return "/images/banners/clan_stark.png";
+  // Default / Canon Medieval (Figma Frame 30 Rectangle 7 #89867B)
+  return {
+    fill: "#89867B",
+    fillOpacity: 0.97,
+    bannerUrl: "/images/banners/clan_stark.png",
+    titleColor: "text-slate-950 font-black",
+    subtitleColor: "text-slate-900 font-bold",
+    roleColor: "text-amber-950 font-black",
+    loreColor: "text-slate-800 italic",
+    badgeBg: "bg-slate-950 shadow-sm",
+    badgeText: "text-amber-300 font-black",
+    genderBg: "bg-black/15",
+    genderText: "text-slate-950 font-bold",
+    dividerBorder: "border-black/15",
+    editBtnBg: "bg-slate-950 hover:bg-slate-900",
+    editBtnText: "text-amber-300 hover:text-white",
+    deleteBtnBg: "bg-red-950/20 hover:bg-red-900/40",
+    deleteBtnText: "text-red-950",
+  };
 }
 
 export default function CharactersDashboardPage() {
@@ -306,6 +461,8 @@ export default function CharactersDashboardPage() {
   // Frame 30 (Top Banner) + Rectangle 7 (Bottom Plate)
   // =========================================================================
   const renderFigmaCharacterCard = (char: CharacterItem) => {
+    const clanTheme = getClanTheme(char);
+
     return (
       <div
         key={char.id}
@@ -348,7 +505,7 @@ export default function CharactersDashboardPage() {
         <div className="absolute top-0 left-2.5 sm:left-3.5 z-30 pointer-events-none filter drop-shadow-[0_4px_14px_rgba(0,0,0,0.7)]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={getClanBannerUrl(char)}
+            src={clanTheme.bannerUrl}
             alt={char.faction || "Clan Banner"}
             className="w-[72px] sm:w-[80px] md:w-[84px] h-auto object-contain transition-transform duration-300 group-hover:-translate-y-0.5"
           />
@@ -364,32 +521,32 @@ export default function CharactersDashboardPage() {
           <Camera className="w-4 h-4" />
         </button>
 
-        {/* Layer 3: Bottom Plate (Exact Rectangle 7 from Figma: path M0 0H189.727H319.46L417 83.3871V110H0V0Z) */}
-        <div className="relative w-full z-20">
+        {/* Layer 3: Bottom Plate (Exact Figma Rectangle 7: width 417 / 427 = 97.66%, height 110, path M0 0H319.46L417 83.3871V110H0V0Z) */}
+        <div className="relative w-[97.66%] self-start z-20">
           {/* Vector SVG Plate */}
           <svg
             viewBox="0 0 417 110"
             preserveAspectRatio="none"
-            className="absolute inset-0 w-full h-full drop-shadow-[0_4px_12.4px_rgba(0,0,0,0.4)] pointer-events-none"
+            className="absolute inset-0 w-full h-full drop-shadow-[0_4px_12.4px_rgba(0,0,0,0.24)] pointer-events-none"
           >
             <path
               d="M0 0H319.46L417 83.3871V110H0V0Z"
-              fill="#89867B"
-              fillOpacity="0.97"
+              fill={clanTheme.fill}
+              fillOpacity={clanTheme.fillOpacity}
               shapeRendering="crispEdges"
             />
           </svg>
 
           {/* Character Info on Plate */}
-          <div className="relative z-10 px-3.5 pt-2.5 pb-2.5 space-y-1.5 text-slate-950 font-thai">
-            {/* Top row: Name & MBTI/Gender Badges */}
-            <div className="flex items-center justify-between gap-1.5 pr-7">
-              <div className="min-w-0">
-                <h3 className="font-heading font-black text-base sm:text-lg text-slate-950 tracking-tight leading-tight truncate">
+          <div className="relative z-10 px-3 sm:px-3.5 pt-2 pb-2.5 space-y-1 sm:space-y-1.5 font-thai">
+            {/* Top row: Name & Badges (Safely bounded before the diagonal cut starts at 76.6% -> pr-[26%]) */}
+            <div className="flex items-center justify-between gap-1.5 pr-[26%]">
+              <div className="min-w-0 flex-1">
+                <h3 className={`font-heading font-black text-sm sm:text-base md:text-lg tracking-tight leading-tight truncate ${clanTheme.titleColor}`}>
                   {char.name}
                 </h3>
                 {char.realNickname && char.realNickname !== char.name && (
-                  <p className="text-[10px] text-slate-800 font-bold truncate leading-none">
+                  <p className={`text-[10px] font-bold truncate leading-none mt-0.5 ${clanTheme.subtitleColor}`}>
                     ({char.realNickname})
                   </p>
                 )}
@@ -397,32 +554,32 @@ export default function CharactersDashboardPage() {
 
               <div className="flex items-center gap-1 flex-shrink-0">
                 {char.currentMbti && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-black bg-slate-950 text-amber-300 shadow-sm">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-black ${clanTheme.badgeBg} ${clanTheme.badgeText}`}>
                     {char.currentMbti}
                   </span>
                 )}
                 {char.gender && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-black/15 text-slate-950">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${clanTheme.genderBg} ${clanTheme.genderText}`}>
                     {char.gender}
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Middle row: Faction & Role */}
-            <div className="flex items-center justify-between text-[11px] gap-2 pt-0.5">
-              <div className="truncate font-semibold text-slate-900">
-                <span className="text-slate-800 font-medium">ฝ่าย: </span>
-                <span className="font-black text-slate-950">{char.faction || "กลุ่มอิสระ"}</span>
+            {/* Middle row: Faction & Role (Safely bounded before diagonal slope at y≈45 -> pr-[15%]) */}
+            <div className="flex items-center justify-between text-[11px] gap-2 pt-0.5 pr-[15%]">
+              <div className={`truncate font-semibold ${clanTheme.subtitleColor}`}>
+                <span className="font-medium opacity-80">ฝ่าย: </span>
+                <span className="font-black">{char.faction || "กลุ่มอิสระ"}</span>
               </div>
-              <div className="truncate text-right font-semibold text-slate-900 flex-shrink-0 max-w-[130px]">
-                <span className="text-amber-950 font-black">{char.chosenRole || "ตัวละครสำคัญ"}</span>
+              <div className={`truncate text-right font-black flex-shrink-0 max-w-[125px] ${clanTheme.roleColor}`}>
+                {char.chosenRole || "ตัวละครสำคัญ"}
               </div>
             </div>
 
-            {/* Bottom row: Lore snippet & Action Buttons */}
-            <div className="flex items-center justify-between pt-1 border-t border-black/15">
-              <span className="text-[10px] text-slate-800 italic truncate max-w-[155px]">
+            {/* Bottom row: Lore snippet & Action Buttons (Below y=83.3871, full plate width available) */}
+            <div className={`flex items-center justify-between pt-1 border-t ${clanTheme.dividerBorder}`}>
+              <span className={`text-[10px] truncate max-w-[145px] ${clanTheme.loreColor}`}>
                 &ldquo;{char.background || "ตัวละครในมหากาพย์"}&rdquo;
               </span>
 
@@ -433,7 +590,7 @@ export default function CharactersDashboardPage() {
                     e.stopPropagation();
                     openEditModal(char);
                   }}
-                  className="px-2.5 py-1 rounded bg-slate-950 hover:bg-slate-900 text-amber-300 hover:text-white text-[10px] font-bold font-thai shadow-sm transition-colors flex items-center gap-1"
+                  className={`px-2.5 py-1 rounded text-[10px] font-bold font-thai shadow-sm transition-colors flex items-center gap-1 ${clanTheme.editBtnBg} ${clanTheme.editBtnText}`}
                   title="แก้ไขข้อมูลตัวละคร"
                 >
                   <Edit3 className="w-3 h-3" />
@@ -446,7 +603,7 @@ export default function CharactersDashboardPage() {
                     e.stopPropagation();
                     handleDeleteCharacter(char.id, char.name);
                   }}
-                  className="p-1 rounded bg-red-950/20 hover:bg-red-900/40 text-red-950 text-[10px] transition-colors"
+                  className={`p-1 rounded text-[10px] transition-colors ${clanTheme.deleteBtnBg} ${clanTheme.deleteBtnText}`}
                   title="ลบตัวละคร"
                 >
                   <Trash2 className="w-3 h-3" />

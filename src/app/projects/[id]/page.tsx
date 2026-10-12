@@ -2190,6 +2190,55 @@ export default function StoryWorkspacePage({
     toast.success(`จับคู่อัตโนมัติ ${Object.keys(distributed).length} ภาพ กระจายตามบทพูดเรียบร้อย!`);
   };
 
+  // Clear all dialogue beats in the active scene with confirmation & undo
+  const handleClearAllDialogue = () => {
+    if (dialogueBlocks.length === 0 && !editableMarkdown.trim()) {
+      toast.info("ไม่มีบทสนทนาในฉากนี้ให้ล้าง");
+      return;
+    }
+
+    const count = dialogueBlocks.length;
+    const confirmMsg =
+      count > 0
+        ? `คุณต้องการล้างบทสนทนาทั้งหมดในฉากนี้ (${count} ประโยค) ใช่หรือไม่?\n\n(คุณสามารถกดยกเลิก "เลิกทำ (Undo)" ได้จากกล่องแจ้งเตือนทันที)`
+        : `คุณต้องการล้างเนื้อหาบทในฉากนี้ทั้งหมดใช่หรือไม่?`;
+
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+
+    const prevBlocks = [...dialogueBlocks];
+    const prevBindings = { ...localDialogueBindings };
+    const prevMarkdown = editableMarkdown;
+    const prevActiveIndex = activeBlockIndex;
+
+    setDialogueBlocks([]);
+    setEditableMarkdown("");
+    setLocalDialogueBindings({});
+    setActiveBlockIndex(0);
+    setHasUnsavedChanges(true);
+
+    toast.success(
+      count > 0
+        ? `ล้างบทสนทนาทั้งหมดในฉากนี้เรียบร้อยแล้ว (${count} ประโยค)`
+        : "ล้างบทในฉากนี้เรียบร้อยแล้ว",
+      {
+        duration: 8000,
+        action: {
+          label: "เลิกทำ (Undo)",
+          onClick: () => {
+            setDialogueBlocks(prevBlocks);
+            setLocalDialogueBindings(prevBindings);
+            setEditableMarkdown(prevMarkdown);
+            setActiveBlockIndex(prevActiveIndex);
+            setHasUnsavedChanges(true);
+            toast.info("กู้คืนบทสนทนาทั้งหมดเรียบร้อยแล้ว");
+          },
+        },
+      }
+    );
+  };
+
   // Auto-register new characters discovered from Claude script into the project DB
   const autoRegisterNewCharacters = async (detectedNames: string[]) => {
     let currentChars = [...characters];
@@ -3617,6 +3666,17 @@ export default function StoryWorkspacePage({
                 >
                   <Shield className="w-3.5 h-3.5 text-amber-400" />
                 </button>
+
+                <div className="w-px h-4 bg-slate-800 mx-0.5" />
+
+                <button
+                  disabled={dialogueBlocks.length === 0 && !editableMarkdown.trim()}
+                  onClick={handleClearAllDialogue}
+                  className="p-1 rounded-lg bg-slate-900 hover:bg-red-950/60 text-slate-400 hover:text-red-400 border border-slate-800 hover:border-red-800/50 text-xs transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                  title="ล้างบทสนทนาทั้งหมดในฉากนี้ (Clear All)"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                </button>
               </div>
             </div>
           </div>
@@ -4498,18 +4558,31 @@ export default function StoryWorkspacePage({
 
             {/* Bottom Actions Row */}
             <div className="flex items-center justify-between gap-3 pt-1">
-              <button
-                onClick={() => handleSaveAll(false)}
-                disabled={isSavingScene}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all active:scale-95"
-              >
-                {isSavingScene ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleSaveAll(false)}
+                  disabled={isSavingScene}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all active:scale-95"
+                >
+                  {isSavingScene ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  )}
+                  <span>{isSavingScene ? "กำลังบันทึก..." : "บันทึกการแก้ไขทั้งหมด"}</span>
+                </button>
+
+                {(dialogueBlocks.length > 0 || editableMarkdown.trim().length > 0) && (
+                  <button
+                    onClick={handleClearAllDialogue}
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-red-950/20 hover:bg-red-950/50 text-red-400 hover:text-red-300 border border-red-900/40 hover:border-red-700/60 text-xs font-thai font-semibold transition-all active:scale-95 shadow-sm"
+                    title="ล้างบทสนทนาทั้งหมดในฉากนี้"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                    <span>ล้างบททั้งหมด</span>
+                  </button>
                 )}
-                <span>{isSavingScene ? "กำลังบันทึก..." : "บันทึกการแก้ไขทั้งหมด"}</span>
-              </button>
+              </div>
 
               <Link
                 href={`/projects/${projectId}/read${activeScene ? `?sceneId=${activeScene.id}` : ""}`}

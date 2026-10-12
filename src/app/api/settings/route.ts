@@ -5,6 +5,9 @@ import { z } from "zod";
 const SettingsUpdateSchema = z.object({
   anthropicApiKey: z.string().optional(),
   anthropicModel: z.string().optional(),
+  geminiApiKey: z.string().optional(),
+  geminiModel: z.string().optional(),
+  textAiProvider: z.enum(["claude", "gemini"]).optional(),
   imageProvider: z.string().optional(),
   imageApiKey: z.string().optional(),
   defaultSceneWords: z.number().min(300).max(5000).optional(),
@@ -20,6 +23,9 @@ export async function GET() {
     const maskedAnthropicKey = settings.anthropicApiKey
       ? `••••••••${settings.anthropicApiKey.slice(-4)}`
       : "";
+    const maskedGeminiKey = settings.geminiApiKey
+      ? `••••••••${settings.geminiApiKey.slice(-4)}`
+      : "";
     const maskedImageKey = settings.imageApiKey
       ? `••••••••${settings.imageApiKey.slice(-4)}`
       : "";
@@ -27,8 +33,10 @@ export async function GET() {
     return NextResponse.json({
       ...settings,
       anthropicApiKey: maskedAnthropicKey,
+      geminiApiKey: maskedGeminiKey,
       imageApiKey: maskedImageKey,
       hasAnthropicKey: !!settings.anthropicApiKey,
+      hasGeminiKey: !!settings.geminiApiKey,
       hasImageKey: !!settings.imageApiKey,
     });
   } catch (error) {
@@ -50,6 +58,9 @@ export async function POST(req: NextRequest) {
     if (validated.anthropicApiKey && validated.anthropicApiKey.startsWith("••••")) {
       delete updatePayload.anthropicApiKey;
     }
+    if (validated.geminiApiKey && validated.geminiApiKey.startsWith("••••")) {
+      delete updatePayload.geminiApiKey;
+    }
     if (validated.imageApiKey && validated.imageApiKey.startsWith("••••")) {
       delete updatePayload.imageApiKey;
     }
@@ -61,8 +72,10 @@ export async function POST(req: NextRequest) {
       settings: {
         ...updated,
         anthropicApiKey: updated.anthropicApiKey ? `••••••••${updated.anthropicApiKey.slice(-4)}` : "",
+        geminiApiKey: updated.geminiApiKey ? `••••••••${updated.geminiApiKey.slice(-4)}` : "",
         imageApiKey: updated.imageApiKey ? `••••••••${updated.imageApiKey.slice(-4)}` : "",
         hasAnthropicKey: !!updated.anthropicApiKey,
+        hasGeminiKey: !!updated.geminiApiKey,
         hasImageKey: !!updated.imageApiKey,
       },
     });

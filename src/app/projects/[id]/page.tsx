@@ -179,6 +179,9 @@ export default function StoryWorkspacePage({
   const [showAiImageModal, setShowAiImageModal] = useState(false);
   const [aiImagePromptInput, setAiImagePromptInput] = useState("");
   const [isGeneratingAiImage, setIsGeneratingAiImage] = useState(false);
+  const [selectedAvatarCharIds, setSelectedAvatarCharIds] = useState<string[]>([]);
+  const [useAvatarReferences, setUseAvatarReferences] = useState(true);
+  const [aiImageSize, setAiImageSize] = useState<"1024x1024" | "1792x1024" | "1024x1792">("1024x1024");
   const [cropModalData, setCropModalData] = useState<{
     isOpen: boolean;
     imageSrc: string;
@@ -1167,6 +1170,45 @@ export default function StoryWorkspacePage({
   };
 
   // AI Image Generator
+  const handleOpenAiImageModal = () => {
+    const charsWithAvatar = characters.filter((c) => !!c.avatarUrl);
+    let presentNames: string[] = [];
+    try {
+      if (activeScene?.charactersPresent?.startsWith("[")) {
+        presentNames = JSON.parse(activeScene.charactersPresent);
+      } else if (activeScene?.charactersPresent) {
+        presentNames = activeScene.charactersPresent.split(",").map((s) => s.trim());
+      }
+    } catch {}
+
+    const defaultSelected = charsWithAvatar
+      .filter((c) =>
+        presentNames.length > 0
+          ? presentNames.includes(c.name) ||
+            (c.realNickname && presentNames.includes(c.realNickname)) ||
+            presentNames.includes(c.id)
+          : true
+      )
+      .map((c) => c.id);
+
+    setSelectedAvatarCharIds(
+      defaultSelected.length > 0 ? defaultSelected : charsWithAvatar.map((c) => c.id)
+    );
+    setUseAvatarReferences(true);
+
+    const charNamesStr = (defaultSelected.length > 0 ? defaultSelected : charsWithAvatar.map((c) => c.id))
+      .map((id) => characters.find((c) => c.id === id)?.realNickname || characters.find((c) => c.id === id)?.name)
+      .filter(Boolean)
+      .join(", ");
+
+    const initialPrompt = `${activeScene?.title || ""}${activeScene?.location ? `, ${activeScene.location}` : ""}${
+      charNamesStr ? `, มี ${charNamesStr} อยู่ในฉาก` : ""
+    }, cinematic lighting, photorealistic dramatic film still`;
+
+    setAiImagePromptInput(initialPrompt);
+    setShowAiImageModal(true);
+  };
+
   const handleGenerateAiImage = async () => {
     if (!aiImagePromptInput.trim()) {
       toast.error("กรุณาระบุ Prompt คำอธิบายภาพ");
@@ -1181,15 +1223,22 @@ export default function StoryWorkspacePage({
         body: JSON.stringify({
           sceneId: activeSceneId,
           prompt: aiImagePromptInput,
+          characterIds: useAvatarReferences ? selectedAvatarCharIds : [],
+          useAvatarReferences,
           kind: "scene",
-          size: "1024x1024",
+          size: aiImageSize,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "สร้างภาพ AI ไม่สำเร็จ");
 
-      toast.success("สร้างภาพ AI สำเร็จและเพิ่มเข้าคลังภาพของฉากนี้แล้ว!");
+      if (data.referencedCharacters && data.referencedCharacters.length > 0) {
+        toast.success(`✨ สร้างภาพ AI สำเร็จ! โดยวิเคราะห์และอิงใบหน้าของ: ${data.referencedCharacters.join(", ")}`);
+      } else {
+        toast.success("✨ สร้างภาพ AI สำเร็จและเพิ่มเข้าคลังภาพของฉากนี้แล้ว!");
+      }
+
       setShowAiImageModal(false);
       setAiImagePromptInput("");
       if (activeSceneId) loadSceneDetails(activeSceneId);
@@ -2880,16 +2929,11 @@ export default function StoryWorkspacePage({
                   </button>
 
                   <button
-                    onClick={() => {
-                      setAiImagePromptInput(
-                        `${activeScene?.title || ""}, ${activeScene?.location || ""}, dark fantasy cinematic lighting`
-                      );
-                      setShowAiImageModal(true);
-                    }}
+                    onClick={handleOpenAiImageModal}
                     className="px-2.5 py-1 rounded-full text-xs font-bold bg-black/80 hover:bg-black text-amber-300 font-thai flex items-center gap-1.5 backdrop-blur-md border border-amber-500/30 shadow transition-all active:scale-95"
                   >
                     <Sparkles className="w-3 h-3 text-amber-400" />
-                    <span>สร้างด้วย AI</span>
+                    <span>สร้างด้วย AI (Gemini)</span>
                   </button>
                 </div>
 
@@ -2934,16 +2978,11 @@ export default function StoryWorkspacePage({
                     <span>+ อัปโหลดรูปภาพจากเครื่อง</span>
                   </button>
                   <button
-                    onClick={() => {
-                      setAiImagePromptInput(
-                        `${activeScene?.title || ""}, ${activeScene?.location || ""}, dark fantasy cinematic lighting`
-                      );
-                      setShowAiImageModal(true);
-                    }}
+                    onClick={handleOpenAiImageModal}
                     className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 font-bold text-xs font-thai flex items-center gap-2 transition-all"
                   >
                     <Sparkles className="w-4 h-4" />
-                    <span>สั่งให้ AI วาดรูป</span>
+                    <span>สั่งให้ AI วาดรูป (Gemini + อิงรูปโปรไฟล์)</span>
                   </button>
                 </div>
               </div>
@@ -4389,15 +4428,15 @@ export default function StoryWorkspacePage({
       />
 
       {/* ========================================================================= */}
-      {/* MODAL 1: AI Image Generator Modal                                        */}
+      {/* MODAL 1: AI Image Generator Modal (with Avatar Face References)           */}
       {/* ========================================================================= */}
       {showAiImageModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-          <div className="cinematic-card w-full max-w-lg rounded-2xl p-6 border-slate-700 space-y-4 bg-slate-950 shadow-2xl">
+          <div className="cinematic-card w-full max-w-xl rounded-2xl p-6 border-slate-700 space-y-4 bg-slate-950 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-amber-400" />
-                <span>สั่ง AI สร้างภาพประกอบประจำฉาก</span>
+                <span>สั่ง AI สร้างภาพประจำฉาก (Gemini / Imagen 3)</span>
               </h3>
               <button
                 onClick={() => setShowAiImageModal(false)}
@@ -4407,17 +4446,140 @@ export default function StoryWorkspacePage({
               </button>
             </div>
 
-            <div className="space-y-3 font-thai">
-              <label className="text-xs font-semibold text-slate-300">
-                คำอธิบายภาพ (Prompt):
-              </label>
-              <textarea
-                rows={4}
-                value={aiImagePromptInput}
-                onChange={(e) => setAiImagePromptInput(e.target.value)}
-                placeholder="เช่น กองทัพบาราเธียนแตกพ่ายบนชายหาดแบล็กวอเตอร์ เปลวไฟสีเขียวสว่างวาบ..."
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-400"
-              />
+            <div className="space-y-4 font-thai">
+              {/* Character Profile Avatars Reference Selector */}
+              <div className="p-3.5 rounded-xl border border-sky-900/60 bg-sky-950/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-sky-300">
+                    <Camera className="w-4 h-4 text-sky-400" />
+                    <span>ใช้อ้างอิงรูปโปรไฟล์ของเพื่อน (Face & Identity Reference)</span>
+                  </div>
+                  <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={useAvatarReferences}
+                      onChange={(e) => setUseAvatarReferences(e.target.checked)}
+                      className="accent-sky-400 rounded"
+                    />
+                    <span>เปิดใช้ภาพอ้างอิง</span>
+                  </label>
+                </div>
+
+                {useAvatarReferences && (
+                  <div>
+                    {characters.filter((c) => !!c.avatarUrl).length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-[11px] text-slate-400">
+                          เลือกตัวละครที่ต้องการให้ Gemini ดึงรูปหน้าโปรไฟล์มาผสานเข้ากับตัวละครในฉากนี้:
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {characters
+                            .filter((c) => !!c.avatarUrl)
+                            .map((char) => {
+                              const isSelected = selectedAvatarCharIds.includes(char.id);
+                              return (
+                                <button
+                                  type="button"
+                                  key={char.id}
+                                  onClick={() => {
+                                    setSelectedAvatarCharIds((prev) =>
+                                      isSelected ? prev.filter((id) => id !== char.id) : [...prev, char.id]
+                                    );
+                                  }}
+                                  className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all ${
+                                    isSelected
+                                      ? "border-sky-400 bg-sky-500/20 text-white shadow-[0_0_10px_rgba(56,189,248,0.2)]"
+                                      : "border-slate-800 bg-slate-900/50 text-slate-400 hover:border-slate-700 opacity-60"
+                                  }`}
+                                >
+                                  <img
+                                    src={char.avatarUrl}
+                                    alt={char.name}
+                                    className="w-8 h-8 rounded-full object-cover border border-slate-600 flex-shrink-0"
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-bold truncate text-white">
+                                      {char.realNickname || char.name}
+                                    </p>
+                                    <p className="text-[10px] text-sky-300/80 truncate">
+                                      {char.chosenRole || "ตัวละคร"}
+                                    </p>
+                                  </div>
+                                  <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[10px] ${
+                                    isSelected ? "border-sky-400 bg-sky-400 text-slate-950 font-bold" : "border-slate-600"
+                                  }`}>
+                                    {isSelected ? "✓" : ""}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] text-slate-400 flex items-center gap-2">
+                        <Users className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                        <span>ยังไม่มีตัวละครที่มีรูปโปรไฟล์ (คุณสามารถเพิ่มรูปให้เพื่อนในแถบตัวละครเพื่อให้อ้างอิงหน้าได้)</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Prompt Textarea */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300">
+                  คำอธิบายภาพ (Prompt):
+                </label>
+                <textarea
+                  rows={4}
+                  value={aiImagePromptInput}
+                  onChange={(e) => setAiImagePromptInput(e.target.value)}
+                  placeholder="เช่น กองทัพบาราเธียนแตกพ่ายบนชายหาดแบล็กวอเตอร์ เปลวไฟสีเขียวสว่างวาบ..."
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-400"
+                />
+              </div>
+
+              {/* Image Size / Aspect Ratio Selection */}
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-semibold text-slate-300">
+                  สัดส่วนภาพ:
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAiImageSize("1024x1024")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium border transition-all ${
+                      aiImageSize === "1024x1024"
+                        ? "border-amber-400 bg-amber-500/20 text-amber-300"
+                        : "border-slate-800 bg-slate-900 text-slate-400"
+                    }`}
+                  >
+                    1:1 (จัตุรัส)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAiImageSize("1792x1024")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium border transition-all ${
+                      aiImageSize === "1792x1024"
+                        ? "border-amber-400 bg-amber-500/20 text-amber-300"
+                        : "border-slate-800 bg-slate-900 text-slate-400"
+                    }`}
+                  >
+                    16:9 (แนวนอนหนัง)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAiImageSize("1024x1792")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium border transition-all ${
+                      aiImageSize === "1024x1792"
+                        ? "border-amber-400 bg-amber-500/20 text-amber-300"
+                        : "border-slate-800 bg-slate-900 text-slate-400"
+                    }`}
+                  >
+                    9:16 (แนวตั้ง)
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
@@ -4433,7 +4595,7 @@ export default function StoryWorkspacePage({
                 className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai shadow transition-all disabled:opacity-50 flex items-center gap-1.5"
               >
                 {isGeneratingAiImage ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                <span>{isGeneratingAiImage ? "กำลังวาดภาพ..." : "สร้างภาพทันที"}</span>
+                <span>{isGeneratingAiImage ? "กำลังวิเคราะห์และวาดภาพ..." : "สร้างภาพทันที"}</span>
               </button>
             </div>
           </div>

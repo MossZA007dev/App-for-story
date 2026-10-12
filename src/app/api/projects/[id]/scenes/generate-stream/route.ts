@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { assembleStoryPrompt } from "@/lib/ai/storyPipeline";
 import { getAnthropicClient } from "@/lib/ai/anthropic";
+import { getGeminiClient } from "@/lib/ai/gemini";
+import { getAppSettings } from "@/lib/settings";
 import { z } from "zod";
 
 const GenerateStreamSchema = z.object({
@@ -37,30 +39,55 @@ export async function POST(
       existingContent: validated.existingContent,
     });
 
-    const { client } = await getAnthropicClient();
-
-    // Create Claude stream
-    const anthropicStream = client.messages.stream({
-      model,
-      max_tokens: 4096,
-      temperature,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-    });
+    const settings = await getAppSettings();
+    const useGemini =
+      settings.textAiProvider === "gemini" ||
+      (!settings.anthropicApiKey && !!settings.geminiApiKey);
 
     const encoder = new TextEncoder();
     const customReadableStream = new ReadableStream({
       async start(controller) {
         try {
-          for await (const chunk of anthropicStream) {
-            if (
-              chunk.type === "content_block_delta" &&
-              chunk.delta.type === "text_delta"
-            ) {
-              const text = chunk.delta.text;
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
+          if (useGemini) {
+            // Google Gemini streaming
+            const { ai, model: geminiModel } = await getGeminiClient();
+            const geminiStream = await ai.models.generateContentStream({
+              model: geminiModel || "gemini-2.5-flash",
+              config: {
+                systemInstruction: systemPrompt,
+                temperature,
+              },
+              contents: [userPrompt],
+            });
+
+            for await (const chunk of geminiStream) {
+              const text = chunk.text;
+              if (text) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
+              }
+            }
+          } else {
+            // Anthropic Claude streaming
+            const { client } = await getAnthropicClient();
+            const anthropicStream = client.messages.stream({
+              model,
+              max_tokens: 4096,
+              temperature,
+              system: systemPrompt,
+              messages: [{ role: "user", content: userPrompt }],
+            });
+
+            for await (const chunk of anthropicStream) {
+              if (
+                chunk.type === "content_block_delta" &&
+                chunk.delta.type === "text_delta"
+              ) {
+                const text = chunk.delta.text;
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
+              }
             }
           }
+
           controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
           controller.close();
         } catch (streamError) {

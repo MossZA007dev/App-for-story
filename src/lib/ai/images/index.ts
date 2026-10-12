@@ -69,6 +69,33 @@ export class OpenAIImageProvider implements ImageProvider {
   }
 }
 
+import { generateGeminiImage } from "@/lib/ai/gemini";
+
+export class GeminiImageProvider implements ImageProvider {
+  name = "gemini";
+
+  async generateImage(options: GenerateImageOptions): Promise<GeneratedImageOutput> {
+    let aspectRatio: "1:1" | "16:9" | "4:3" | "3:4" | "9:16" = "1:1";
+    if (options.size === "1792x1024") aspectRatio = "16:9";
+    else if (options.size === "1024x1792") aspectRatio = "9:16";
+
+    const result = await generateGeminiImage({
+      prompt: options.prompt,
+      negativePrompt: options.negativePrompt,
+      aspectRatio,
+    });
+
+    return {
+      buffer: result.buffer,
+      url: result.url,
+      filePath: result.filePath,
+      seed: options.seed,
+      provider: "gemini",
+      revisedPrompt: result.revisedPrompt,
+    };
+  }
+}
+
 // Fallback/Mock provider for local testing without spending API credits
 export class MockImageProvider implements ImageProvider {
   name = "mock";
@@ -115,11 +142,19 @@ export async function getImageProvider(customProviderName?: string): Promise<Ima
   const settings = await getAppSettings();
   const providerName = customProviderName || settings.imageProvider || "openai";
 
+  if (providerName === "gemini") {
+    return new GeminiImageProvider();
+  }
   if (providerName === "mock") {
     return new MockImageProvider();
   }
   if (providerName === "openai") {
     return new OpenAIImageProvider();
+  }
+
+  // Default to Gemini if OpenAI key missing but Gemini key exists
+  if (!settings.imageApiKey && settings.geminiApiKey) {
+    return new GeminiImageProvider();
   }
 
   // Default to OpenAI provider

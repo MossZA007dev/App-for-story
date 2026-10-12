@@ -169,6 +169,9 @@ export const appSettings = sqliteTable("app_settings", {
   id: text("id").primaryKey(), // "global"
   anthropicApiKey: text("anthropic_api_key").default(""),
   anthropicModel: text("anthropic_model").default("claude-3-5-sonnet-20241022"),
+  geminiApiKey: text("gemini_api_key").default(""),
+  geminiModel: text("gemini_model").default("gemini-2.5-flash"),
+  textAiProvider: text("text_ai_provider").default("claude"),
   imageProvider: text("image_provider").default("openai"),
   imageApiKey: text("image_api_key").default(""),
   defaultSceneWords: integer("default_scene_words").default(1200),

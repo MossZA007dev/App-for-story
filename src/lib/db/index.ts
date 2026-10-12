@@ -311,6 +311,15 @@ export function initDatabase() {
   try {
     sqlite.exec("ALTER TABLE projects ADD COLUMN sfx_initialized INTEGER DEFAULT 0");
   } catch {}
+  try {
+    sqlite.exec("ALTER TABLE app_settings ADD COLUMN gemini_api_key TEXT DEFAULT ''");
+  } catch {}
+  try {
+    sqlite.exec("ALTER TABLE app_settings ADD COLUMN gemini_model TEXT DEFAULT 'gemini-2.5-flash'");
+  } catch {}
+  try {
+    sqlite.exec("ALTER TABLE app_settings ADD COLUMN text_ai_provider TEXT DEFAULT 'claude'");
+  } catch {}
 
   // Auto-seed if database has 0 projects
   try {

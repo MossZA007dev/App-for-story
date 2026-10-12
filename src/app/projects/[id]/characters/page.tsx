@@ -109,9 +109,23 @@ export default function CharacterBiblePage({
     setAvatarModalOpen(true);
   };
 
-  const handleAvatarSuccess = (charId: string, newAvatarUrl: string) => {
+  const handleAvatarSuccess = (
+    charId: string,
+    newAvatarUrl: string,
+    updatedInfo?: { name: string; realNickname?: string; chosenRole?: string }
+  ) => {
     setCharacters((prev) =>
-      prev.map((c) => (c.id === charId ? { ...c, avatarUrl: newAvatarUrl } : c))
+      prev.map((c) =>
+        c.id === charId
+          ? {
+              ...c,
+              avatarUrl: newAvatarUrl,
+              ...(updatedInfo?.name ? { name: updatedInfo.name } : {}),
+              ...(updatedInfo?.realNickname !== undefined ? { realNickname: updatedInfo.realNickname } : {}),
+              ...(updatedInfo?.chosenRole !== undefined ? { chosenRole: updatedInfo.chosenRole } : {}),
+            }
+          : c
+      )
     );
   };
 

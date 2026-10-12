@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { characters, abilities, changeLogs } from "@/lib/db/schema";
+import { characters, abilities, changeLogs, scenes, parts, collaborators } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import crypto from "crypto";
 import { z } from "zod";
@@ -76,9 +76,14 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; charId: string }> }
 ) {
   try {
-    const { charId } = await params;
+    const { id: projectId, charId } = await params;
     const body = await req.json();
     const validated = UpdateCharacterSchema.parse(body);
+
+    const oldChar = db.select().from(characters).where(eq(characters.id, charId)).get();
+    if (!oldChar) {
+      return NextResponse.json({ error: "ไม่พบข้อมูลตัวละคร" }, { status: 404 });
+    }
 
     const now = new Date().toISOString();
     const updateData: Record<string, unknown> = {
@@ -111,6 +116,101 @@ export async function PUT(
             gainedAtPart: ab.gainedAtPart || 1,
           })
           .run();
+      }
+    }
+
+    // SYNC DATA ACROSS THE PROJECT:
+    // If name or realNickname or avatarUrl changed, sync with collaborators and scenes!
+    const oldName = oldChar.name;
+    const newName = validated.name || oldChar.name;
+    const oldNickname = oldChar.realNickname || "";
+    const newNickname = validated.realNickname !== undefined ? validated.realNickname : oldNickname;
+
+    // 1. Sync Collaborators
+    try {
+      db.update(collaborators)
+        .set({
+          ...(validated.name ? { name: validated.name } : {}),
+          ...(validated.realNickname !== undefined ? { nickname: validated.realNickname } : {}),
+          ...(validated.avatarUrl !== undefined ? { avatarUrl: validated.avatarUrl } : {}),
+        })
+        .where(eq(collaborators.characterId, charId))
+        .run();
+    } catch (collabErr) {
+      console.warn("Could not sync collaborator:", collabErr);
+    }
+
+    // 2. Sync Scenes (charactersPresent & contentMarkdown dialogues)
+    if ((oldName !== newName && validated.name) || (oldNickname !== newNickname && validated.realNickname !== undefined)) {
+      try {
+        const projectParts = db.select().from(parts).where(eq(parts.projectId, projectId)).all();
+        for (const part of projectParts) {
+          const partScenes = db.select().from(scenes).where(eq(scenes.partId, part.id)).all();
+          for (const sc of partScenes) {
+            let updatedContent = sc.contentMarkdown || "";
+            let updatedChars = sc.charactersPresent || "";
+            let changed = false;
+
+            // Sync charactersPresent
+            if (updatedChars) {
+              if (oldName !== newName && validated.name) {
+                if (updatedChars.startsWith("[")) {
+                  try {
+                    const parsed: string[] = JSON.parse(updatedChars);
+                    const mapped = parsed.map((n) => (n === oldName ? newName : n));
+                    updatedChars = JSON.stringify(mapped);
+                    changed = true;
+                  } catch {}
+                } else {
+                  const partsArr = updatedChars.split(",").map((s) => s.trim());
+                  const mapped = partsArr.map((n) => (n === oldName ? newName : n));
+                  updatedChars = mapped.join(", ");
+                  changed = true;
+                }
+              }
+              if (oldNickname && newNickname && oldNickname !== newNickname) {
+                if (updatedChars.startsWith("[")) {
+                  try {
+                    const parsed: string[] = JSON.parse(updatedChars);
+                    const mapped = parsed.map((n) => (n === oldNickname ? newNickname : n));
+                    updatedChars = JSON.stringify(mapped);
+                    changed = true;
+                  } catch {}
+                } else {
+                  const partsArr = updatedChars.split(",").map((s) => s.trim());
+                  const mapped = partsArr.map((n) => (n === oldNickname ? newNickname : n));
+                  updatedChars = mapped.join(", ");
+                  changed = true;
+                }
+              }
+            }
+
+            // Sync contentMarkdown dialogues
+            if (updatedContent && oldName !== newName && validated.name) {
+              const escOld = oldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              const reg1 = new RegExp(`^(\\*{0,2})${escOld}(\\*{0,2})([:：])`, "gm");
+              const reg2 = new RegExp(`^(\\*{0,2})${escOld}(\\*{0,2})\\s*(\\()`, "gm");
+              const nextContent = updatedContent.replace(reg1, `$1${newName}$2$3`).replace(reg2, `$1${newName}$2 $3`);
+              if (nextContent !== updatedContent) {
+                updatedContent = nextContent;
+                changed = true;
+              }
+            }
+
+            if (changed) {
+              db.update(scenes)
+                .set({
+                  contentMarkdown: updatedContent,
+                  charactersPresent: updatedChars,
+                  updatedAt: now,
+                })
+                .where(eq(scenes.id, sc.id))
+                .run();
+            }
+          }
+        }
+      } catch (sceneErr) {
+        console.warn("Could not sync scenes for character rename:", sceneErr);
       }
     }
 

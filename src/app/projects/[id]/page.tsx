@@ -303,31 +303,89 @@ export default function StoryWorkspacePage({
     setAvatarModalOpen(true);
   };
 
-  const handleAvatarSuccess = (charId: string, newAvatarUrl: string) => {
+  const handleAvatarSuccess = (
+    charId: string,
+    newAvatarUrl: string,
+    updatedInfo?: { name: string; realNickname?: string; chosenRole?: string; oldName?: string; oldNickname?: string }
+  ) => {
+    const newName = updatedInfo?.name;
+    const newNickname = updatedInfo?.realNickname;
+    const newRole = updatedInfo?.chosenRole;
+    const oldName = updatedInfo?.oldName;
+    const oldNickname = updatedInfo?.oldNickname;
+
     // 1. Update characters state
     setCharacters((prev) =>
-      prev.map((c) => (c.id === charId ? { ...c, avatarUrl: newAvatarUrl } : c))
+      prev.map((c) =>
+        c.id === charId
+          ? {
+              ...c,
+              avatarUrl: newAvatarUrl,
+              ...(newName ? { name: newName } : {}),
+              ...(newNickname !== undefined ? { realNickname: newNickname } : {}),
+              ...(newRole !== undefined ? { chosenRole: newRole } : {}),
+            }
+          : c
+      )
     );
 
-    // 2. Update dialogue blocks state so all speech cards immediately display new avatar
+    // 2. Update dialogue blocks state so all speech cards immediately display new avatar, name, and nickname
     setDialogueBlocks((prev) =>
       prev.map((b) => {
         const isTarget =
           b.speaker?.id === charId ||
+          (oldName && b.speaker?.name?.toLowerCase() === oldName.toLowerCase()) ||
+          (oldNickname && b.speaker?.realNickname?.toLowerCase() === oldNickname.toLowerCase()) ||
           (avatarModalChar && b.speaker?.name?.toLowerCase() === avatarModalChar.name.toLowerCase()) ||
           (avatarModalChar?.realNickname && b.speaker?.realNickname?.toLowerCase() === avatarModalChar.realNickname.toLowerCase());
 
-        if (isTarget && b.speaker) {
+        if (isTarget) {
+          const updatedSpeaker = b.speaker
+            ? {
+                ...b.speaker,
+                avatarUrl: newAvatarUrl,
+                ...(newName ? { name: newName } : {}),
+                ...(newNickname !== undefined ? { realNickname: newNickname } : {}),
+                ...(newRole !== undefined ? { chosenRole: newRole } : {}),
+              }
+            : b.speaker;
+
+          const updatedSpeakerName = newNickname || newName || b.speakerName;
+
           return {
             ...b,
-            speaker: {
-              ...b.speaker,
-              avatarUrl: newAvatarUrl,
-            },
+            speaker: updatedSpeaker,
+            speakerName: updatedSpeakerName,
           };
         }
         return b;
       })
+    );
+
+    // 3. Update editableMarkdown in current scene if name changed
+    if (oldName && newName && oldName !== newName) {
+      setEditableMarkdown((prev) => {
+        if (!prev) return prev;
+        const escOld = oldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const reg1 = new RegExp(`^(\\*{0,2})${escOld}(\\*{0,2})([:：])`, "gm");
+        const reg2 = new RegExp(`^(\\*{0,2})${escOld}(\\*{0,2})\\s*(\\()`, "gm");
+        return prev.replace(reg1, `$1${newName}$2$3`).replace(reg2, `$1${newName}$2 $3`);
+      });
+      setHasUnsavedChanges(true);
+    }
+
+    // 4. Update collaborators state
+    setCollaborators((prev) =>
+      prev.map((collab) =>
+        collab.characterId === charId
+          ? {
+              ...collab,
+              avatarUrl: newAvatarUrl,
+              ...(newName ? { name: newName } : {}),
+              ...(newNickname !== undefined ? { nickname: newNickname } : {}),
+            }
+          : collab
+      )
     );
   };
 

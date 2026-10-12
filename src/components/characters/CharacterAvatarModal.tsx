@@ -11,6 +11,8 @@ import {
   Check,
   Sparkles,
   Loader2,
+  Edit3,
+  User,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -23,12 +25,20 @@ export interface AvatarCharacterInfo {
   avatarUrl?: string;
 }
 
+export interface UpdatedCharacterInfo {
+  name: string;
+  realNickname?: string;
+  chosenRole?: string;
+  oldName?: string;
+  oldNickname?: string;
+}
+
 interface CharacterAvatarModalProps {
   isOpen: boolean;
   onClose: () => void;
   character: AvatarCharacterInfo | null;
   projectId: string;
-  onSuccess: (charId: string, newAvatarUrl: string) => void;
+  onSuccess: (charId: string, newAvatarUrl: string, updatedInfo?: UpdatedCharacterInfo) => void;
 }
 
 export function CharacterAvatarModal({
@@ -41,6 +51,9 @@ export function CharacterAvatarModal({
   const [activeTab, setActiveTab] = useState<"upload" | "url" | "gallery">("upload");
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [urlInput, setUrlInput] = useState<string>("");
+  const [nameInput, setNameInput] = useState<string>("");
+  const [nicknameInput, setNicknameInput] = useState<string>("");
+  const [roleInput, setRoleInput] = useState<string>("");
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [projectImages, setProjectImages] = useState<Array<{ id: string; filePath: string; caption?: string }>>([]);
@@ -52,6 +65,9 @@ export function CharacterAvatarModal({
       const currentUrl = character.avatarUrl || "";
       setPreviewUrl(currentUrl);
       setUrlInput(currentUrl.startsWith("http") || currentUrl.startsWith("/") ? currentUrl : "");
+      setNameInput(character.name || "");
+      setNicknameInput(character.realNickname || "");
+      setRoleInput(character.chosenRole || "");
       setActiveTab("upload");
 
       // Load project images for gallery tab
@@ -76,8 +92,8 @@ export function CharacterAvatarModal({
 
   if (!isOpen || !character) return null;
 
-  const displayName = character.realNickname || character.name || "ตัวละคร";
-  const initials = displayName.slice(0, 2).toUpperCase();
+  const liveDisplayName = nicknameInput.trim() || nameInput.trim() || "ตัวละคร";
+  const initials = liveDisplayName.slice(0, 2).toUpperCase();
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -120,13 +136,13 @@ export function CharacterAvatarModal({
       return;
     }
     setPreviewUrl(trimmed);
-    toast.info("เลือกใช้ลิงก์รูปภาพนี้แล้ว กด 'บันทึกรูปโปรไฟล์' เพื่อยืนยัน");
+    toast.info("เลือกใช้ลิงก์รูปภาพนี้แล้ว กด 'บันทึก' เพื่อยืนยัน");
   };
 
   const handleSelectGalleryImage = (filePath: string) => {
     setPreviewUrl(filePath);
     setUrlInput(filePath);
-    toast.info("เลือกภาพจากคลังแล้ว กด 'บันทึกรูปโปรไฟล์' เพื่อยืนยัน");
+    toast.info("เลือกภาพจากคลังแล้ว กด 'บันทึก' เพื่อยืนยัน");
   };
 
   const handleRemoveAvatar = () => {
@@ -136,23 +152,45 @@ export function CharacterAvatarModal({
   };
 
   const handleSave = async () => {
+    const finalName = nameInput.trim() || character.name;
+    const finalNickname = nicknameInput.trim();
+    const finalRole = roleInput.trim();
+
+    if (!finalName && !finalNickname) {
+      toast.error("กรุณาระบุชื่อตัวละครหรือชื่อเล่น");
+      return;
+    }
+
     try {
       setIsSaving(true);
       const res = await fetch(`/api/projects/${projectId}/characters/${character.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ avatarUrl: previewUrl }),
+        body: JSON.stringify({
+          name: finalName,
+          realNickname: finalNickname,
+          chosenRole: finalRole,
+          avatarUrl: previewUrl,
+        }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "บันทึกรูปโปรไฟล์ไม่สำเร็จ");
+      if (!res.ok) throw new Error(data.error || "บันทึกข้อมูลไม่สำเร็จ");
 
-      toast.success(`อัปเดตรูปโปรไฟล์ของ "${displayName}" เรียบร้อยแล้ว!`);
-      onSuccess(character.id, previewUrl);
+      const savedDisplayName = finalNickname || finalName;
+      toast.success(`อัปเดตและซิงค์ข้อมูลของ "${savedDisplayName}" เรียบร้อยแล้ว!`);
+
+      onSuccess(character.id, previewUrl, {
+        name: finalName,
+        realNickname: finalNickname,
+        chosenRole: finalRole,
+        oldName: character.name,
+        oldNickname: character.realNickname || "",
+      });
       onClose();
     } catch (err: any) {
       console.error(err);
-      toast.error(err.message || "เกิดข้อผิดพลาดในการบันทึกรูปโปรไฟล์");
+      toast.error(err.message || "เกิดข้อผิดพลาดในการบันทึกข้อมูลตัวละคร");
     } finally {
       setIsSaving(false);
     }
@@ -169,10 +207,10 @@ export function CharacterAvatarModal({
             </div>
             <div>
               <h2 className="text-base font-bold text-white tracking-wide">
-                ตั้งค่ารูปโปรไฟล์ตัวละคร
+                ตั้งค่าและแก้ไขตัวละคร
               </h2>
               <p className="text-xs text-slate-400">
-                สำหรับแสดงบนการ์ดบทพูดในหน้าเขียน Studio และโหมดอ่าน Visual Novel
+                เปลี่ยนชื่อ รูปโปรไฟล์ และซิงค์บทพูดอัตโนมัติทั่วทั้งเรื่อง
               </p>
             </div>
           </div>
@@ -184,12 +222,12 @@ export function CharacterAvatarModal({
           </button>
         </div>
 
-        {/* Character Preview Header Banner */}
-        <div className="px-6 py-5 bg-gradient-to-b from-slate-800/40 to-transparent flex items-center gap-5 border-b border-slate-800/60">
+        {/* Character Preview & Name Editing Header Banner */}
+        <div className="px-6 py-4 bg-gradient-to-b from-slate-800/40 to-transparent flex items-start gap-4 border-b border-slate-800/60">
           {/* Avatar Circle Preview */}
-          <div className="relative group/circle flex-shrink-0">
+          <div className="relative group/circle flex-shrink-0 mt-1">
             <div
-              className={`w-20 h-20 rounded-full flex items-center justify-center overflow-hidden border-2 shadow-xl ${
+              className={`w-16 h-16 rounded-full flex items-center justify-center overflow-hidden border-2 shadow-xl ${
                 character.characterType === "self"
                   ? "border-amber-400 bg-amber-950/60 text-amber-300"
                   : character.characterType === "friend"
@@ -201,11 +239,11 @@ export function CharacterAvatarModal({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={previewUrl}
-                  alt={displayName}
+                  alt={liveDisplayName}
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <span className="font-heading font-bold text-2xl uppercase tracking-wider">
+                <span className="font-heading font-bold text-xl uppercase tracking-wider">
                   {initials}
                 </span>
               )}
@@ -222,19 +260,39 @@ export function CharacterAvatarModal({
             )}
           </div>
 
-          {/* Character Meta */}
-          <div className="space-y-1 min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-lg font-bold text-white truncate">
-                {character.name}
-              </h3>
-              {character.realNickname && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 font-medium">
-                  ({character.realNickname})
-                </span>
-              )}
+          {/* Character Meta & Name Editing Inputs */}
+          <div className="space-y-2 min-w-0 flex-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="space-y-0.5">
+                <label className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
+                  <Edit3 className="w-3 h-3 text-amber-400" />
+                  <span>ชื่อในเรื่อง / บทพูด</span>
+                </label>
+                <input
+                  type="text"
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  placeholder="เช่น เน็ด, อีฟ"
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none font-thai shadow-inner"
+                />
+              </div>
+
+              <div className="space-y-0.5">
+                <label className="text-[11px] font-bold text-sky-300 flex items-center gap-1">
+                  <User className="w-3 h-3 text-sky-400" />
+                  <span>ชื่อเล่น / เพื่อนในกลุ่ม</span>
+                </label>
+                <input
+                  type="text"
+                  value={nicknameInput}
+                  onChange={(e) => setNicknameInput(e.target.value)}
+                  placeholder="เช่น มอส, อีฟ, นนท์"
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-sky-400 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none font-thai shadow-inner"
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-2 text-xs">
+
+            <div className="flex items-center gap-2 text-xs flex-wrap">
               <span
                 className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
                   character.characterType === "self"
@@ -250,28 +308,29 @@ export function CharacterAvatarModal({
                   ? "🧑‍🤝‍🧑 เพื่อนในกลุ่ม"
                   : "⚔️ ตัวละครในเรื่อง"}
               </span>
+
               {character.chosenRole && (
-                <span className="text-slate-400 truncate">
+                <span className="text-slate-400 text-[11px] truncate">
                   • {character.chosenRole}
                 </span>
               )}
+
+              <span className="text-[10px] text-amber-400/90 font-thai flex items-center gap-1">
+                <Sparkles className="w-2.5 h-2.5" />
+                <span>แก้ชื่อจะซิงค์ไปยังบทพูดในฉากให้อัตโนมัติ</span>
+              </span>
             </div>
-            <p className="text-[11px] text-slate-400">
-              {previewUrl
-                ? "✨ ตัวละครมีรูปโปรไฟล์พร้อมใช้งานแล้ว"
-                : "ℹ️ ปัจจุบันแสดงตัวอักษรย่อ สามารถอัปโหลดรูปภาพหรือใส่ลิงก์ด้านล่าง"}
-            </p>
           </div>
         </div>
 
-        {/* Tab Selection */}
-        <div className="flex border-b border-slate-800 bg-slate-950/60 px-6 pt-3 gap-2">
+        {/* Tab Selector */}
+        <div className="flex border-b border-slate-800 bg-slate-950/60 px-6">
           <button
             onClick={() => setActiveTab("upload")}
-            className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-t-xl transition-all border-b-2 ${
+            className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all ${
               activeTab === "upload"
-                ? "border-amber-400 text-amber-300 bg-slate-900"
-                : "border-transparent text-slate-400 hover:text-white"
+                ? "border-amber-400 text-amber-400 bg-amber-500/5"
+                : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
             <Upload className="w-3.5 h-3.5" />
@@ -279,10 +338,10 @@ export function CharacterAvatarModal({
           </button>
           <button
             onClick={() => setActiveTab("url")}
-            className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-t-xl transition-all border-b-2 ${
+            className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all ${
               activeTab === "url"
-                ? "border-amber-400 text-amber-300 bg-slate-900"
-                : "border-transparent text-slate-400 hover:text-white"
+                ? "border-amber-400 text-amber-400 bg-amber-500/5"
+                : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
             <LinkIcon className="w-3.5 h-3.5" />
@@ -290,10 +349,10 @@ export function CharacterAvatarModal({
           </button>
           <button
             onClick={() => setActiveTab("gallery")}
-            className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-t-xl transition-all border-b-2 ${
+            className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all ${
               activeTab === "gallery"
-                ? "border-amber-400 text-amber-300 bg-slate-900"
-                : "border-transparent text-slate-400 hover:text-white"
+                ? "border-amber-400 text-amber-400 bg-amber-500/5"
+                : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
             <ImageIcon className="w-3.5 h-3.5" />
@@ -301,142 +360,160 @@ export function CharacterAvatarModal({
           </button>
         </div>
 
-        {/* Tab Body */}
+        {/* Tab Content Area */}
         <div className="p-6 overflow-y-auto space-y-4 flex-1">
-          {/* TAB 1: FILE UPLOAD */}
+          {/* TAB 1: Upload File */}
           {activeTab === "upload" && (
             <div className="space-y-4">
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/png,image/jpeg,image/webp,image/gif"
                 onChange={handleFileUpload}
                 className="hidden"
               />
+
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-3 ${
-                  isUploading
-                    ? "border-amber-500/60 bg-amber-500/5 cursor-wait"
-                    : "border-slate-700 hover:border-amber-400/80 bg-slate-950/60 hover:bg-slate-900/60"
-                }`}
+                className="border-2 border-dashed border-slate-700 hover:border-amber-400/80 rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all bg-slate-950/40 hover:bg-slate-950/80 group"
               >
-                {isUploading ? (
-                  <div className="flex flex-col items-center gap-2 text-amber-400">
-                    <Loader2 className="w-8 h-8 animate-spin" />
-                    <span className="text-xs font-bold">กำลังอัปโหลดรูปภาพ...</span>
-                  </div>
-                ) : (
-                  <>
-                    <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-md">
-                      <Upload className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-white">
-                        คลิกเพื่อเลือกไฟล์รูปภาพจากเครื่อง
-                      </p>
-                      <p className="text-xs text-slate-400 mt-1">
-                        รองรับ PNG, JPG, JPEG, GIF, WebP (แนะนำรูปสี่เหลี่ยมจัตุรัส หรือภาพใบหน้าบุคคล)
-                      </p>
-                    </div>
-                    <span className="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700">
-                      เลือกไฟล์
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
+                <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-3 group-hover:scale-110 transition-transform">
+                  {isUploading ? (
+                    <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
+                  ) : (
+                    <Upload className="w-6 h-6" />
+                  )}
+                </div>
+                <h4 className="text-sm font-bold text-white mb-1">
+                  {isUploading ? "กำลังอัปโหลดไฟล์..." : "คลิกเพื่อเลือกไฟล์รูปภาพจากเครื่อง"}
+                </h4>
+                <p className="text-xs text-slate-400 max-w-xs">
+                  รองรับ PNG, JPG, JPEG, GIF, WebP (แนะนำรูปสี่เหลี่ยมจัตุรัส หรือภาพใบหน้าบุคคล)
+                </p>
 
-          {/* TAB 2: DIRECT URL */}
-          {activeTab === "url" && (
-            <div className="space-y-3">
-              <label className="block text-xs font-bold text-slate-300">
-                วางลิงก์รูปภาพ (Direct Image / GIF URL):
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="https://example.com/avatar.jpg หรือ .gif"
-                  className="flex-1 bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-colors"
-                />
                 <button
                   type="button"
-                  onClick={handleApplyUrl}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold transition-colors whitespace-nowrap"
+                  disabled={isUploading}
+                  className="mt-4 px-4 py-1.5 rounded-lg bg-slate-800 group-hover:bg-amber-500 group-hover:text-slate-950 text-slate-200 text-xs font-semibold transition-all shadow"
                 >
-                  ดูตัวอย่าง
+                  เลือกไฟล์
                 </button>
               </div>
-              <p className="text-[11px] text-slate-400">
-                สามารถนำลิงก์รูปภาพจากอินเทอร์เน็ต เช่น Pinterest, Discord, Imgur, หรือ Giphy มาใส่ได้ทันที
-              </p>
             </div>
           )}
 
-          {/* TAB 3: PROJECT GALLERY */}
+          {/* TAB 2: Direct URL */}
+          {activeTab === "url" && (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300">
+                  วางลิงก์รูปภาพ (Direct Image URL):
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    placeholder="https://example.com/avatar.png"
+                    className="flex-1 bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyUrl}
+                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-bold border border-slate-700 transition-colors"
+                  >
+                    ดูตัวอย่าง
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  * ต้องเป็นลิงก์ไฟล์รูปภาพโดยตรงที่ขึ้นต้นด้วย http:// หรือ https://
+                </p>
+              </div>
+
+              {urlInput && (
+                <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full overflow-hidden bg-slate-800 border border-slate-700 flex-shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={urlInput}
+                      alt="URL preview"
+                      className="w-full h-full object-cover"
+                      onError={() => toast.error("ไม่สามารถโหลดภาพจาก URL นี้ได้ กรุณาตรวจสอบลิงก์")}
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-slate-300 font-mono truncate">{urlInput}</p>
+                    <p className="text-[11px] text-emerald-400 flex items-center gap-1 mt-0.5">
+                      <Check className="w-3 h-3" />
+                      <span>พร้อมใช้ภาพนี้</span>
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: Project Gallery */}
           {activeTab === "gallery" && (
             <div className="space-y-3">
+              <p className="text-xs text-slate-400">
+                เลือกรูปภาพที่มีอยู่ในคลังภาพของโปรเจกต์นี้มาใช้เป็นรูปโปรไฟล์:
+              </p>
+
               {loadingImages ? (
-                <div className="py-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                <div className="h-40 flex items-center justify-center text-slate-500 text-xs gap-2">
                   <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-                  <span>กำลังโหลดภาพในโปรเจกต์...</span>
+                  <span>กำลังโหลดภาพในคลัง...</span>
                 </div>
-              ) : projectImages.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-xs bg-slate-950/40 rounded-xl border border-dashed border-slate-800">
-                  <p>ยังไม่มีรูปภาพในโปรเจกต์นี้</p>
-                  <p className="text-slate-500 text-[11px] mt-1">
-                    คุณสามารถอัปโหลดในแท็บ &quot;อัปโหลดรูปภาพ&quot; หรือใส่ลิงก์ได้เลย
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 max-h-60 overflow-y-auto p-1">
+              ) : projectImages.length > 0 ? (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-56 overflow-y-auto pr-1">
                   {projectImages.map((img) => {
                     const isSelected = previewUrl === img.filePath;
                     return (
-                      <button
+                      <div
                         key={img.id}
-                        type="button"
                         onClick={() => handleSelectGalleryImage(img.filePath)}
-                        className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all group/item ${
+                        className={`relative aspect-square rounded-xl overflow-hidden border-2 cursor-pointer group transition-all ${
                           isSelected
-                            ? "border-amber-400 ring-2 ring-amber-400/50 scale-95"
-                            : "border-slate-800 hover:border-slate-600 hover:scale-105"
+                            ? "border-amber-400 ring-2 ring-amber-400/50 shadow-lg scale-95"
+                            : "border-slate-800 hover:border-slate-600"
                         }`}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={img.filePath}
-                          alt={img.caption || "ภาพในโปรเจกต์"}
-                          className="w-full h-full object-cover"
+                          alt={img.caption || "Gallery item"}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                         />
                         {isSelected && (
                           <div className="absolute inset-0 bg-amber-500/20 flex items-center justify-center">
-                            <Check className="w-6 h-6 text-amber-400 drop-shadow" />
+                            <div className="w-6 h-6 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center">
+                              <Check className="w-3.5 h-3.5 stroke-[3]" />
+                            </div>
                           </div>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
+                </div>
+              ) : (
+                <div className="h-32 flex flex-col items-center justify-center border border-slate-800 rounded-xl text-center text-slate-500 text-xs p-4">
+                  <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
+                  <span>ยังไม่มีรูปภาพในคลังของโปรเจกต์นี้</span>
                 </div>
               )}
             </div>
           )}
         </div>
 
-        {/* Modal Footer */}
-        <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between gap-3">
-          <div>
+        {/* Modal Footer Actions */}
+        <div className="px-6 py-4 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between">
+          <div className="text-xs text-slate-400">
             {previewUrl && (
-              <button
-                type="button"
-                onClick={handleRemoveAvatar}
-                className="text-xs text-red-400 hover:text-red-300 underline font-medium"
-              >
-                ลบรูปออก (ใช้ตัวย่อ &quot;{initials}&quot;)
-              </button>
+              <span className="text-emerald-400 flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" />
+                <span>เลือกรูปภาพแล้ว</span>
+              </span>
             )}
           </div>
 
@@ -458,12 +535,12 @@ export function CharacterAvatarModal({
               {isSaving ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>กำลังบันทึก...</span>
+                  <span>กำลังบันทึก & ซิงค์...</span>
                 </>
               ) : (
                 <>
                   <Check className="w-4 h-4" />
-                  <span>บันทึกรูปโปรไฟล์</span>
+                  <span>บันทึกและซิงค์ข้อมูล</span>
                 </>
               )}
             </button>

@@ -38,6 +38,7 @@ import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
 import { extractYouTubeVideoId } from "@/lib/audio/audioHelpers";
 import { PartModal } from "@/components/parts/PartModal";
+import { SceneAudioModal } from "@/components/audio/SceneAudioModal";
 import {
   parseSceneToDialogueBlocks,
   resolveImageForDialogueIndex,
@@ -239,6 +240,11 @@ export default function NovelReaderPage({
 
   // Part Modal (New Season / SS) State
   const [partModalOpen, setPartModalOpen] = useState(false);
+
+  // Scene Audio Modal & Quick YouTube Input State
+  const [showSceneAudioModal, setShowSceneAudioModal] = useState(false);
+  const [quickYtUrl, setQuickYtUrl] = useState("");
+  const [isSavingQuickYt, setIsSavingQuickYt] = useState(false);
 
   // Direct Screenshot Upload State
   const [isUploadingScreenshot, setIsUploadingScreenshot] = useState(false);
@@ -704,6 +710,120 @@ export default function NovelReaderPage({
     }
   };
 
+  // Set / Change Scene BGM (supports YouTube URL & direct audio links)
+  const handleSetSceneAudioUrl = async (url: string, title?: string) => {
+    if (!activeScene) {
+      toast.error("กรุณาเลือกฉากก่อนตั้งค่าเพลง");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/projects/${projectId}/scenes/${activeScene.id}/audio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bgmUrl: url.trim(),
+          bgmTitle: title?.trim() || "เพลงประกอบประจำฉาก",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "บันทึกเพลงไม่สำเร็จ");
+
+      const updatedScene = { ...activeScene, bgmUrl: data.bgmUrl, bgmTitle: data.bgmTitle };
+      setActiveScene(updatedScene);
+      setAllScenesList((prev) =>
+        prev.map((item) =>
+          item.scene.id === activeScene.id ? { ...item, scene: updatedScene } : item
+        )
+      );
+
+      const ytId = extractYouTubeVideoId(data.bgmUrl);
+      if (ytId) {
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.pause();
+          audioPlayerRef.current.currentTime = 0;
+        }
+        setActiveYouTubeVideoId(ytId);
+        setActiveYouTubeTitle(data.bgmTitle || "เพลงประจำฉาก");
+        setIsCustomAudioPlaying(true);
+        setAudioMode("custom");
+        setTimeout(() => {
+          youtubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "loadVideoById", args: [ytId] }),
+            "*"
+          );
+          youtubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "unMute", args: [] }),
+            "*"
+          );
+          youtubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({
+              event: "command",
+              func: "setVolume",
+              args: [Math.round((isMuted ? 0 : volume) * 100)],
+            }),
+            "*"
+          );
+          youtubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+            "*"
+          );
+        }, 200);
+      } else if (audioPlayerRef.current) {
+        if (youtubeIframeRef.current) {
+          youtubeIframeRef.current.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+            "*"
+          );
+          youtubeIframeRef.current.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
+            "*"
+          );
+          youtubeIframeRef.current.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "mute", args: [] }),
+            "*"
+          );
+        }
+        setActiveYouTubeVideoId(null);
+        setActiveYouTubeTitle(data.bgmTitle || "เพลงประจำฉาก");
+        audioPlayerRef.current.src = data.bgmUrl;
+        audioPlayerRef.current.volume = isMuted ? 0 : volume;
+        audioPlayerRef.current.play().catch(() => {});
+        setIsCustomAudioPlaying(true);
+        setAudioMode("custom");
+      }
+
+      ambientSound.stop();
+      setIsPlayingBgm(false);
+
+      toast.success(`เปลี่ยนเพลงประจำฉากเป็น "${data.bgmTitle}" สำเร็จและเริ่มเล่นทันที!`);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "บันทึกเพลงไม่สำเร็จ");
+    }
+  };
+
+  const handleQuickSaveYoutubeBgm = async () => {
+    if (!quickYtUrl.trim()) return;
+    try {
+      setIsSavingQuickYt(true);
+      let title = "เพลงประกอบ (YouTube)";
+      const ytId = extractYouTubeVideoId(quickYtUrl.trim());
+      if (ytId) {
+        try {
+          const res = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(quickYtUrl.trim())}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.title) title = data.title;
+          }
+        } catch {}
+      }
+      await handleSetSceneAudioUrl(quickYtUrl.trim(), title);
+      setQuickYtUrl("");
+    } finally {
+      setIsSavingQuickYt(false);
+    }
+  };
+
   const handleDeleteSceneBgm = async () => {
     if (!activeScene) return;
     try {
@@ -714,7 +834,24 @@ export default function NovelReaderPage({
 
       if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
+        audioPlayerRef.current.currentTime = 0;
       }
+      if (youtubeIframeRef.current) {
+        youtubeIframeRef.current.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+          "*"
+        );
+        youtubeIframeRef.current.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
+          "*"
+        );
+        youtubeIframeRef.current.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "mute", args: [] }),
+          "*"
+        );
+      }
+      setActiveYouTubeVideoId(null);
+      setActiveYouTubeTitle("");
       setIsCustomAudioPlaying(false);
 
       const updatedScene = { ...activeScene, bgmUrl: null, bgmTitle: null };
@@ -1482,35 +1619,114 @@ export default function NovelReaderPage({
                           </div>
                         </div>
 
-                        <label className="cursor-pointer block text-center py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium border border-slate-700 transition-colors">
+                        {/* Quick YouTube Link input */}
+                        <div className="flex items-center gap-1.5 p-1 bg-black/50 border border-slate-700/80 rounded-lg">
+                          <Youtube className="w-3.5 h-3.5 text-red-500 ml-1.5 flex-shrink-0" />
                           <input
-                            type="file"
-                            accept="audio/*"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) handleUploadSceneBgm(file);
+                            type="text"
+                            placeholder="วางลิงก์ YouTube เปลี่ยนเพลง..."
+                            value={quickYtUrl}
+                            onChange={(e) => setQuickYtUrl(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleQuickSaveYoutubeBgm();
+                              }
                             }}
+                            className="flex-1 bg-transparent px-1 py-0.5 text-[11px] text-white placeholder-slate-500 outline-none font-mono"
                           />
-                          {isUploadingBgm ? "กำลังอัปโหลด..." : "เปลี่ยนเพลงประจำฉาก (MP3/WAV)"}
-                        </label>
+                          <button
+                            type="button"
+                            onClick={handleQuickSaveYoutubeBgm}
+                            disabled={!quickYtUrl.trim() || isSavingQuickYt}
+                            className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-[10px] font-bold disabled:opacity-40 transition-colors flex-shrink-0"
+                          >
+                            {isSavingQuickYt ? "..." : "บันทึก"}
+                          </button>
+                        </div>
+
+                        {/* Change Options: Modal / MP3 Upload */}
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setShowSceneAudioModal(true)}
+                            className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-purple-950/60 hover:bg-purple-900/60 text-purple-300 text-[11px] font-bold border border-purple-800/60 transition-colors shadow-sm"
+                            title="เลือกจากคลังเพลงหรือตั้งค่าแบบละเอียด"
+                          >
+                            <Music className="w-3 h-3 text-purple-400" />
+                            <span>คลังเพลง / ละเอียด</span>
+                          </button>
+
+                          <label className="cursor-pointer flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium border border-slate-700 transition-colors">
+                            <input
+                              type="file"
+                              accept="audio/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleUploadSceneBgm(file);
+                              }}
+                            />
+                            <span>{isUploadingBgm ? "..." : "อัปโหลด MP3"}</span>
+                          </label>
+                        </div>
                       </div>
                     ) : (
                       <div className="space-y-2 pt-1">
                         <p className="text-[11px] text-slate-400">ยังไม่มีเพลงเฉพาะสำหรับฉากนี้</p>
-                        <label className="cursor-pointer flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors shadow">
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>{isUploadingBgm ? "กำลังอัปโหลด..." : "อัปโหลดเพลงประจำฉาก (MP3)"}</span>
+
+                        {/* Quick YouTube Link input */}
+                        <div className="flex items-center gap-1.5 p-1 bg-black/50 border border-slate-700/80 rounded-lg">
+                          <Youtube className="w-3.5 h-3.5 text-red-500 ml-1.5 flex-shrink-0" />
                           <input
-                            type="file"
-                            accept="audio/*"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) handleUploadSceneBgm(file);
+                            type="text"
+                            placeholder="วางลิงก์ YouTube ที่นี่..."
+                            value={quickYtUrl}
+                            onChange={(e) => setQuickYtUrl(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleQuickSaveYoutubeBgm();
+                              }
                             }}
+                            className="flex-1 bg-transparent px-1 py-0.5 text-[11px] text-white placeholder-slate-500 outline-none font-mono"
                           />
-                        </label>
+                          <button
+                            type="button"
+                            onClick={handleQuickSaveYoutubeBgm}
+                            disabled={!quickYtUrl.trim() || isSavingQuickYt}
+                            className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-[10px] font-bold disabled:opacity-40 transition-colors flex-shrink-0"
+                          >
+                            {isSavingQuickYt ? "..." : "บันทึก"}
+                          </button>
+                        </div>
+
+                        {/* Add Options: Modal / MP3 Upload */}
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setShowSceneAudioModal(true)}
+                            className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-gradient-to-r from-red-600 to-purple-600 hover:brightness-110 text-white text-[11px] font-bold shadow-md transition-all active:scale-95"
+                            title="เลือกจากคลังเพลงหรือค้นหา YouTube แบบละเอียด"
+                          >
+                            <Music className="w-3 h-3" />
+                            <span>คลังเพลง / ละเอียด</span>
+                          </button>
+
+                          <label className="cursor-pointer flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] transition-colors shadow">
+                            <Upload className="w-3 h-3" />
+                            <span>{isUploadingBgm ? "..." : "อัปโหลด MP3"}</span>
+                            <input
+                              type="file"
+                              accept="audio/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleUploadSceneBgm(file);
+                              }}
+                            />
+                          </label>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2440,6 +2656,19 @@ export default function NovelReaderPage({
         mode="create"
         nextPartNumber={parts.reduce((max, p) => Math.max(max, p.number || 0), 0) + 1}
         onSuccess={handlePartModalSuccess}
+      />
+
+      {/* Scene Audio URL & YouTube Modal for Reader */}
+      <SceneAudioModal
+        isOpen={showSceneAudioModal}
+        onClose={() => setShowSceneAudioModal(false)}
+        currentUrl={activeScene?.bgmUrl}
+        currentTitle={activeScene?.bgmTitle}
+        vaultMusicList={projectSfxList.filter((s) => s.category === "music")}
+        onSave={async (url, title) => {
+          await handleSetSceneAudioUrl(url, title);
+        }}
+        onDelete={activeScene?.bgmUrl ? handleDeleteSceneBgm : undefined}
       />
     </div>
   );

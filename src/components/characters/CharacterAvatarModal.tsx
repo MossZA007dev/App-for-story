@@ -13,8 +13,10 @@ import {
   Loader2,
   Edit3,
   User,
+  Crop,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AvatarCropModal } from "./AvatarCropModal";
 
 export interface AvatarCharacterInfo {
   id: string;
@@ -58,6 +60,7 @@ export function CharacterAvatarModal({
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [projectImages, setProjectImages] = useState<Array<{ id: string; filePath: string; caption?: string }>>([]);
   const [loadingImages, setLoadingImages] = useState<boolean>(false);
+  const [showCropModal, setShowCropModal] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -256,6 +259,18 @@ export function CharacterAvatarModal({
                 title="ลบรูปโปรไฟล์ (กลับไปใช้ตัวย่อ)"
               >
                 <Trash2 className="w-3 h-3" />
+              </button>
+            )}
+
+            {previewUrl && (
+              <button
+                type="button"
+                onClick={() => setShowCropModal(true)}
+                className="mt-1.5 px-2 py-0.5 rounded-md bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-[10px] font-bold flex items-center justify-center gap-1 transition-all w-full shadow-sm"
+                title="ปรับตำแหน่งและขยาย/ครอบตัดรูปโปรไฟล์"
+              >
+                <Crop className="w-3 h-3 text-sky-400" />
+                <span>ปรับตำแหน่ง</span>
               </button>
             )}
           </div>
@@ -547,6 +562,18 @@ export function CharacterAvatarModal({
           </div>
         </div>
       </div>
+
+      {showCropModal && previewUrl && (
+        <AvatarCropModal
+          isOpen={showCropModal}
+          onClose={() => setShowCropModal(false)}
+          imageSrc={previewUrl}
+          onCropComplete={(newUrl) => {
+            setPreviewUrl(newUrl);
+            setUrlInput(newUrl);
+          }}
+        />
+      )}
     </div>
   );
 }

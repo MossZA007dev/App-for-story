@@ -12,8 +12,10 @@ import {
   Shield,
   Flame,
   Trash2,
+  Crop,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AvatarCropModal } from "./AvatarCropModal";
 
 interface CharacterData {
   id?: string;
@@ -68,6 +70,7 @@ export function CreateCharacterModal({
   const [avatarUrl, setAvatarUrl] = useState(editCharacter?.avatarUrl || "");
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showCropModal, setShowCropModal] = useState(false);
 
   // Projects list for selecting target project
   const [projectsList, setProjectsList] = useState<ProjectOption[]>([]);
@@ -151,7 +154,8 @@ export function CreateCharacterModal({
           : "";
 
       setAvatarUrl(finalUrl);
-      toast.success("อัปโหลดรูปโปรไฟล์ของคุณเรียบร้อยแล้ว!");
+      setShowCropModal(true);
+      toast.success("อัปโหลดรูปสำเร็จ! สามารถปรับตำแหน่งรูปภาพได้เลย");
     } catch (err: unknown) {
       console.error(err);
       const msg = err instanceof Error ? err.message : "อัปโหลดรูปภาพล้มเหลว";
@@ -372,7 +376,7 @@ export function CreateCharacterModal({
                 </span>
               </div>
 
-              <div className="flex items-center gap-2 justify-center sm:justify-start">
+              <div className="flex items-center gap-2 justify-center sm:justify-start flex-wrap">
                 <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/40 transition-colors font-thai">
                   <Camera className="w-3.5 h-3.5" />
                   <span>{avatarUrl ? "เปลี่ยนรูปถ่าย" : "เลือกรูปจากเครื่อง (JPG/PNG)"}</span>
@@ -388,8 +392,19 @@ export function CreateCharacterModal({
                 {avatarUrl && (
                   <button
                     type="button"
+                    onClick={() => setShowCropModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 text-xs font-semibold border border-sky-500/40 transition-colors font-thai shadow-sm"
+                  >
+                    <Crop className="w-3.5 h-3.5" />
+                    <span>ปรับตำแหน่ง / ครอปรูป</span>
+                  </button>
+                )}
+
+                {avatarUrl && (
+                  <button
+                    type="button"
                     onClick={() => setAvatarUrl("")}
-                    className="text-[11px] text-red-400 hover:underline font-thai"
+                    className="text-[11px] text-red-400 hover:underline font-thai ml-1"
                   >
                     ลบรูป
                   </button>
@@ -536,6 +551,15 @@ export function CreateCharacterModal({
           </div>
         </form>
       </div>
+
+      {showCropModal && avatarUrl && (
+        <AvatarCropModal
+          isOpen={showCropModal}
+          onClose={() => setShowCropModal(false)}
+          imageSrc={typeof avatarUrl === "string" ? avatarUrl : (avatarUrl as any)?.url || ""}
+          onCropComplete={(newUrl) => setAvatarUrl(newUrl)}
+        />
+      )}
     </div>
   );
 }

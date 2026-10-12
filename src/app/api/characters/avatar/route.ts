@@ -23,10 +23,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, url: saved.url, filePath: saved.filePath });
     } else {
       const body = await req.json();
+
+      // Support direct base64 dataUrl from Canvas Crop
+      if (body.dataUrl || body.imageData) {
+        const raw = (body.dataUrl || body.imageData) as string;
+        const base64Str = raw.replace(/^data:image\/\w+;base64,/, "");
+        const buffer = Buffer.from(base64Str, "base64");
+        const filename = `avatar-${crypto.randomUUID()}.jpg`;
+
+        const saved = await storage.saveImage(buffer, filename, "image/jpeg");
+        return NextResponse.json({ success: true, url: saved.url, filePath: saved.filePath });
+      }
+
       const imageUrl = body.imageUrl;
 
       if (!imageUrl) {
-        return NextResponse.json({ error: "ต้องระบุ URL รูปภาพ" }, { status: 400 });
+        return NextResponse.json({ error: "ต้องระบุ URL รูปภาพ หรือข้อมูลรูปภาพ" }, { status: 400 });
       }
 
       // Download from URL and save locally

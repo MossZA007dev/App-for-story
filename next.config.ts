@@ -13,6 +13,9 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  experimental: {
+    allowedDevOrigins: ["*.trycloudflare.com"],
+  },
 };
 
 export default nextConfig;

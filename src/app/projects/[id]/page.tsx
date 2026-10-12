@@ -3121,7 +3121,7 @@ export default function StoryWorkspacePage({
       {/* ========================================================================= */}
       {/* 1. SCENE & AUDIO CONTROL RIBBON (Sleek, unified, easy-to-use)             */}
       {/* ========================================================================= */}
-      <div className="cinematic-card rounded-2xl p-3 sm:p-4 border-slate-700/60 flex flex-wrap items-center justify-between gap-3 bg-slate-950/80 shadow-xl">
+      <div className="cinematic-card rounded-2xl p-3 sm:p-4 border-slate-700/60 flex flex-wrap items-center justify-between gap-3 bg-slate-950/80 shadow-xl relative z-40">
         {/* Left: Part & Scene Selectors */}
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Part Dropdown & Controls */}
@@ -3170,13 +3170,13 @@ export default function StoryWorkspacePage({
           {currentPart && currentPart.scenes.length > 0 && (
             <div
               ref={sceneDropdownRef}
-              className="relative flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 shadow-sm"
+              className="relative z-50 flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 shadow-sm"
             >
               {/* Trigger Button */}
               <button
                 type="button"
                 onClick={() => setIsSceneDropdownOpen((prev) => !prev)}
-                className="flex items-center gap-1.5 text-xs font-bold text-white hover:text-amber-300 transition-colors font-thai focus:outline-none max-w-[200px] sm:max-w-[240px] truncate"
+                className="flex items-center gap-1.5 text-xs font-bold text-white hover:text-amber-300 transition-colors font-thai focus:outline-none max-w-[200px] sm:max-w-[240px] truncate cursor-pointer"
                 title="คลิกเพื่อเลือกฉาก หรือลากสลับลำดับฉาก"
               >
                 <FileText className="w-4 h-4 text-amber-400 flex-shrink-0" />
@@ -3202,16 +3202,18 @@ export default function StoryWorkspacePage({
 
               {/* Floating Reorderable Scene Dropdown Popover */}
               {isSceneDropdownOpen && (
-                <div className="absolute top-full left-0 mt-2 z-50 w-80 sm:w-96 rounded-2xl bg-slate-950/95 backdrop-blur-xl border border-slate-700/90 shadow-2xl p-2.5 font-thai animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute top-full left-0 mt-2 z-50 w-80 sm:w-[420px] rounded-2xl bg-slate-950/95 backdrop-blur-xl border border-slate-700/90 shadow-2xl p-2.5 font-thai animate-in fade-in zoom-in-95 duration-150">
                   {/* Header */}
-                  <div className="flex items-center justify-between px-2 py-1.5 border-b border-slate-800/80 mb-2">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
-                      <span>ฉากใน {currentPart.title || `ภาค ${currentPart.number}`}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-normal">
+                  <div className="flex items-center justify-between px-2 py-1.5 border-b border-slate-800/80 mb-2 gap-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-200 min-w-0 truncate">
+                      <span className="truncate" title={currentPart.title}>
+                        ฉากใน {currentPart.title || `ภาค ${currentPart.number}`}
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-normal flex-shrink-0">
                         {currentPart.scenes.length} ฉาก
                       </span>
                     </div>
-                    <div className="flex items-center gap-1 text-[10px] font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+                    <div className="flex items-center gap-1 text-[10px] font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md flex-shrink-0">
                       <GripVertical className="w-3 h-3 text-amber-400" />
                       <span>ลาก ⠿ เพื่อสลับลำดับ</span>
                     </div>
@@ -3260,7 +3262,7 @@ export default function StoryWorkspacePage({
 
                           {/* Order Badge */}
                           <span
-                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0 font-mono ${
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0 font-mono select-none pointer-events-none ${
                               isActive
                                 ? "bg-amber-400 text-slate-950 shadow-sm"
                                 : "bg-slate-800 text-slate-300 border border-slate-700"
@@ -3270,7 +3272,7 @@ export default function StoryWorkspacePage({
                           </span>
 
                           {/* Title & Location */}
-                          <div className="flex-1 min-w-0 pr-1">
+                          <div className="flex-1 min-w-0 pr-1 select-none pointer-events-none">
                             <p
                               className={`text-xs font-semibold truncate ${
                                 isActive ? "text-amber-200" : "text-white group-hover:text-amber-300"

@@ -231,10 +231,10 @@ export default function CharactersDashboardPage() {
       </div>
 
       {/* ========================================================================= */}
-      {/* 3. HORIZONTAL CHARACTER CARDS GRID (Matching 5 Cards in Screenshot)      */}
+      {/* 3. HORIZONTAL CHARACTER CARDS GRID                                        */}
       {/* ========================================================================= */}
-      <div className="pt-10 pb-16">
-        <div className="flex items-stretch gap-6 overflow-x-auto pb-6 pt-12 px-2 justify-center flex-wrap">
+      <div className="pt-8 pb-20">
+        <div className="flex items-stretch justify-center flex-wrap gap-x-6 gap-y-24 pt-16 pb-8 px-4 overflow-visible">
           {/* Existing Character Cards */}
           {displayedCharacters.map((char) => {
             const isSelf = char.characterType === "self";
@@ -242,33 +242,48 @@ export default function CharactersDashboardPage() {
             return (
               <div
                 key={char.id}
-                className="w-[250px] sm:w-[270px] min-h-[420px] rounded-3xl p-5 pt-16 relative flex flex-col items-center justify-between shadow-2xl transition-all duration-300 hover:-translate-y-2 group bg-[#D9D9D9] text-slate-900 border border-slate-300"
+                className="w-[250px] sm:w-[270px] min-h-[440px] rounded-3xl p-5 pt-20 relative flex flex-col items-center justify-between shadow-2xl transition-all duration-300 hover:-translate-y-2 group bg-[#D9D9D9] text-slate-900 border border-slate-300"
               >
-                {/* Protruding Circular Avatar Container (Matching Screenshot) */}
-                <div className="absolute -top-14 w-28 h-28 rounded-full overflow-hidden border-4 border-[#070A11] bg-[#4B5563] shadow-2xl flex items-center justify-center group-hover:scale-105 transition-transform">
-                  {char.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={typeof char.avatarUrl === "string" ? char.avatarUrl : (char.avatarUrl as any)?.url || ""}
-                      alt={char.realNickname || char.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-300 font-heading font-bold text-xl uppercase">
-                      {isSelf ? "👑" : "🧑‍🤝‍🧑"}
-                      <span className="text-sm mt-0.5">
-                        {(char.realNickname || char.name).slice(0, 2)}
-                      </span>
-                    </div>
-                  )}
+                {/* Protruding Circular Avatar Container with Hover Quick Edit */}
+                <div className="absolute -top-14 left-1/2 -translate-x-1/2 flex flex-col items-center z-20">
+                  <div
+                    onClick={() => openEditModal(char)}
+                    className={`relative w-28 h-28 rounded-full overflow-hidden border-4 ${
+                      isSelf
+                        ? "border-amber-400 ring-4 ring-amber-400/20"
+                        : "border-sky-400 ring-4 ring-sky-400/20"
+                    } bg-[#374151] shadow-2xl flex items-center justify-center cursor-pointer group-hover:scale-105 transition-all`}
+                    title="คลิกเพื่อแก้ไขตัวละครหรือปรับตำแหน่งรูป"
+                  >
+                    {char.avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={typeof char.avatarUrl === "string" ? char.avatarUrl : (char.avatarUrl as any)?.url || ""}
+                        alt={char.realNickname || char.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-300 font-heading font-bold text-xl uppercase">
+                        {isSelf ? "👑" : "🧑‍🤝‍🧑"}
+                        <span className="text-sm mt-0.5">
+                          {(char.realNickname || char.name).slice(0, 2)}
+                        </span>
+                      </div>
+                    )}
 
-                  {/* Corner Badge */}
+                    {/* Camera/Edit Hover Overlay */}
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
+                      <Camera className="w-6 h-6 drop-shadow" />
+                    </div>
+                  </div>
+
+                  {/* Badge floating OUTSIDE the photo (Never blocks the face!) */}
                   <span
-                    className={`absolute bottom-1 px-2 py-0.2 rounded-full text-[9px] font-bold font-mono text-white ${
-                      isSelf ? "bg-amber-600" : "bg-sky-600"
+                    className={`-mt-3.5 px-3 py-0.5 rounded-full text-[10px] font-bold font-mono text-white shadow-md z-30 border border-white/40 tracking-wider ${
+                      isSelf ? "bg-amber-600 shadow-amber-600/40" : "bg-sky-600 shadow-sky-600/40"
                     }`}
                   >
-                    {isSelf ? "ME" : "SQUAD"}
+                    {isSelf ? "👑 ME" : "🧑‍🤝‍🧑 SQUAD"}
                   </span>
                 </div>
 
@@ -350,10 +365,10 @@ export default function CharactersDashboardPage() {
           {/* Add New Character Card Slot ("+ สร้างตัวละครเพิ่ม") */}
           <div
             onClick={() => openCreateModal(activeTab)}
-            className="w-[250px] sm:w-[270px] min-h-[420px] rounded-3xl p-5 pt-16 relative flex flex-col items-center justify-center cursor-pointer border-2 border-dashed border-slate-700 hover:border-amber-400 bg-slate-900/40 hover:bg-slate-900/80 transition-all duration-300 group shadow-xl"
+            className="w-[250px] sm:w-[270px] min-h-[440px] rounded-3xl p-5 pt-20 relative flex flex-col items-center justify-center cursor-pointer border-2 border-dashed border-slate-700 hover:border-amber-400 bg-slate-900/40 hover:bg-slate-900/80 transition-all duration-300 group shadow-xl"
           >
             {/* Protruding Circle with Plus Icon */}
-            <div className="absolute -top-14 w-28 h-28 rounded-full border-4 border-[#070A11] bg-slate-800 group-hover:bg-amber-500/20 group-hover:border-amber-400/80 flex items-center justify-center shadow-2xl transition-all">
+            <div className="absolute -top-14 left-1/2 -translate-x-1/2 w-28 h-28 rounded-full border-4 border-slate-700 group-hover:border-amber-400 bg-slate-800 group-hover:bg-amber-500/20 flex items-center justify-center shadow-2xl transition-all z-20">
               <Plus className="w-10 h-10 text-slate-400 group-hover:text-amber-400 transition-colors" />
             </div>
 

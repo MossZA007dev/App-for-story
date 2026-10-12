@@ -35,7 +35,7 @@ interface CharacterData {
 interface CreateCharacterModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialType?: "self" | "friend";
+  initialType?: "self" | "friend" | "canon";
   initialProjectId?: string;
   editCharacter?: CharacterData | null;
   onSuccess?: () => void;
@@ -55,8 +55,8 @@ export function CreateCharacterModal({
   editCharacter,
   onSuccess,
 }: CreateCharacterModalProps) {
-  const [characterType, setCharacterType] = useState<"self" | "friend">(
-    (editCharacter?.characterType as "self" | "friend") || initialType
+  const [characterType, setCharacterType] = useState<"self" | "friend" | "canon">(
+    (editCharacter?.characterType as "self" | "friend" | "canon") || initialType
   );
   const [realNickname, setRealNickname] = useState(editCharacter?.realNickname || "");
   const [name, setName] = useState(editCharacter?.name || "");
@@ -82,7 +82,7 @@ export function CreateCharacterModal({
   useEffect(() => {
     if (isOpen) {
       if (editCharacter) {
-        setCharacterType((editCharacter.characterType as "self" | "friend") || "self");
+        setCharacterType((editCharacter.characterType as "self" | "friend" | "canon") || "self");
         setRealNickname(editCharacter.realNickname || "");
         setName(editCharacter.name || "");
         setStartMbti(editCharacter.currentMbti || editCharacter.startMbti || "INTJ");
@@ -178,10 +178,19 @@ export function CreateCharacterModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const effectiveNickname = String(realNickname || "").trim();
-    if (!effectiveNickname) {
-      toast.error("กรุณาระบุชื่อเล่นจริงของคุณหรือเพื่อน");
-      return;
+    const inputNickname = String(realNickname || "").trim();
+    const inputName = String(name || "").trim();
+
+    if (characterType === "canon") {
+      if (!inputName && !inputNickname) {
+        toast.error("กรุณาระบุชื่อตัวละครในหนัง");
+        return;
+      }
+    } else {
+      if (!inputNickname) {
+        toast.error("กรุณาระบุชื่อเล่นจริงของคุณหรือเพื่อน");
+        return;
+      }
     }
 
     if (!selectedProjectId) {
@@ -189,20 +198,27 @@ export function CreateCharacterModal({
       return;
     }
 
-    const resolvedName = String(name || "").trim() || effectiveNickname;
+    const effectiveNickname = inputNickname || inputName;
+    const resolvedName = inputName || inputNickname;
     const safeAvatarUrl =
       typeof avatarUrl === "string"
         ? avatarUrl.trim()
         : typeof (avatarUrl as any)?.url === "string"
         ? (avatarUrl as any).url.trim()
         : "";
-    const safeFaction = String(faction || "").trim() || "กลุ่มอิสระ";
+    const safeFaction = String(faction || "").trim() || (characterType === "canon" ? "ฝ่ายในเรื่อง" : "กลุ่มอิสระ");
     const safeRole =
       String(roleWish || "").trim() ||
-      (characterType === "self" ? "ตัวเอกผู้ข้ามมิติ" : "สหายร่วมชะตากรรม");
+      (characterType === "self"
+        ? "ตัวเอกผู้ข้ามมิติ"
+        : characterType === "canon"
+        ? "ตัวละครในจักรวาลเรื่อง"
+        : "สหายร่วมชะตากรรม");
     const safeBackground =
       String(background || "").trim() ||
-      "คนจากโลกปัจจุบันที่หลุดเข้ามาในโลกนี้พร้อมความทรงจำเดิม";
+      (characterType === "canon"
+        ? "ตัวละครสำคัญตามเนื้อเรื่องดั้งเดิม"
+        : "คนจากโลกปัจจุบันที่หลุดเข้ามาในโลกนี้พร้อมความทรงจำเดิม");
 
     try {
       setIsSubmitting(true);
@@ -232,7 +248,7 @@ export function CreateCharacterModal({
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "อัปเดตตัวละครไม่สำเร็จ");
 
-        toast.success(`บันทึกการแก้ไข "${effectiveNickname}" เรียบร้อยแล้ว!`);
+        toast.success(`บันทึกการแก้ไข "${resolvedName}" เรียบร้อยแล้ว!`);
       } else {
         // CREATE new character
         const res = await fetch(`/api/projects/${selectedProjectId}/characters`, {
@@ -258,6 +274,8 @@ export function CreateCharacterModal({
         toast.success(
           characterType === "self"
             ? `👑 บันทึกตัวละครของคุณ "${effectiveNickname}" เรียบร้อยแล้ว!`
+            : characterType === "canon"
+            ? `🎬 บันทึกตัวละครในหนัง "${resolvedName}" เรียบร้อยแล้ว!`
             : `🧑‍🤝‍🧑 เพิ่มเพื่อน "${effectiveNickname}" เข้ากลุ่มเรียบร้อยแล้ว!`
         );
       }
@@ -294,42 +312,57 @@ export function CreateCharacterModal({
             <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
             <h2 className="text-lg font-bold text-white font-heading tracking-wide">
               {isEditing
-                ? `✏️ แก้ไขข้อมูลตัวละคร: ${realNickname || editCharacter?.name}`
+                ? `✏️ แก้ไขข้อมูลตัวละคร: ${name || realNickname || editCharacter?.name}`
                 : characterType === "self"
                 ? "👑 สร้างตัวละครของคุณ (ตัวฉันเอง - ME)"
+                : characterType === "canon"
+                ? "🎬 เพิ่มตัวละครในหนัง / จักรวาล (MOVIE / CANON)"
                 : "🧑‍🤝‍🧑 เพิ่มเพื่อนในกลุ่มของคุณ (SQUAD FRIEND)"}
             </h2>
           </div>
           <p className="text-xs text-slate-400 font-thai">
             {isEditing
               ? "ปรับแต่งชื่อเล่น ชื่อในเรื่อง MBTI และรูปถ่ายโปรไฟล์ตัวละคร"
+              : characterType === "canon"
+              ? "ระบุชื่อตัวละครในภาพยนตร์ ฝ่าย/ตระกูล และอัปโหลดภาพโปสเตอร์/โปรไฟล์เพื่อใช้จัดหมวดหมู่และดำเนินเรื่อง"
               : "กรอกชื่อจริงของคุณ MBTI และอัปโหลดรูปตัวเอง เพื่อให้ AI นำคุณและเพื่อนๆ ข้ามมิติไปโลดแล่นในมหากาพย์"}
           </p>
         </div>
 
-        {/* Character Type Switcher (Me vs Friend) */}
+        {/* Character Type Switcher (Me vs Friend vs Canon) */}
         <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
           <button
             type="button"
             onClick={() => setCharacterType("self")}
-            className={`flex-1 py-2 rounded-lg text-xs font-thai font-semibold transition-all flex items-center justify-center gap-2 ${
+            className={`flex-1 py-2 rounded-lg text-xs font-thai font-semibold transition-all flex items-center justify-center gap-1.5 ${
               characterType === "self"
                 ? "bg-amber-500 text-slate-950 font-bold shadow-md"
                 : "text-slate-400 hover:text-white"
             }`}
           >
-            <span>👑 ตัวฉันเอง (Me Profile)</span>
+            <span>👑 ตัวฉันเอง (Me)</span>
           </button>
           <button
             type="button"
             onClick={() => setCharacterType("friend")}
-            className={`flex-1 py-2 rounded-lg text-xs font-thai font-semibold transition-all flex items-center justify-center gap-2 ${
+            className={`flex-1 py-2 rounded-lg text-xs font-thai font-semibold transition-all flex items-center justify-center gap-1.5 ${
               characterType === "friend"
                 ? "bg-sky-600 text-white font-bold shadow-md"
                 : "text-slate-400 hover:text-white"
             }`}
           >
-            <span>🧑‍🤝‍🧑 เพื่อนในกลุ่ม (Squad Friend)</span>
+            <span>🧑‍🤝‍🧑 เพื่อนในกลุ่ม (Squad)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setCharacterType("canon")}
+            className={`flex-1 py-2 rounded-lg text-xs font-thai font-semibold transition-all flex items-center justify-center gap-1.5 ${
+              characterType === "canon"
+                ? "bg-purple-600 text-white font-bold shadow-md"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            <span>🎬 ในหนัง (Canon)</span>
           </button>
         </div>
 
@@ -450,32 +483,66 @@ export function CreateCharacterModal({
 
           {/* Form Fields: Grid 1 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-300 font-thai">
-                ชื่อเล่นจริงในชีวิตจริง <span className="text-red-400">*</span>
-              </label>
-              <input
-                type="text"
-                placeholder={characterType === "self" ? "เช่น มอส, ก้อย, แบงค์" : "เช่น นนท์, บาส, ท็อป"}
-                value={realNickname}
-                onChange={(e) => setRealNickname(e.target.value)}
-                required
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-thai"
-              />
-            </div>
+            {characterType === "canon" ? (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-purple-300 font-thai flex items-center gap-1">
+                    <span>ชื่อตัวละครในหนัง / จักรวาล</span>
+                    <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="เช่น Arya Stark, Jaime Lannister, Harry Potter"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 font-thai"
+                  />
+                </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-300 font-thai">
-                ชื่อ/ฉายาในจักรวาลเรื่อง (In-universe Name)
-              </label>
-              <input
-                type="text"
-                placeholder={`เช่น Lord ${realNickname || "Moss"} of Winterfell (เว้นว่างได้)`}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-thai"
-              />
-            </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-300 font-thai">
+                    ชื่อเล่น / คำเรียกสั้นๆ (ถ้ามี)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="เช่น อารยา, เจมี่ (เว้นว่างได้)"
+                    value={realNickname}
+                    onChange={(e) => setRealNickname(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 font-thai"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-300 font-thai">
+                    ชื่อเล่นจริงในชีวิตจริง <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={characterType === "self" ? "เช่น มอส, ก้อย, แบงค์" : "เช่น นนท์, บาส, ท็อป"}
+                    value={realNickname}
+                    onChange={(e) => setRealNickname(e.target.value)}
+                    required
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-thai"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-300 font-thai">
+                    ชื่อ/ฉายาในจักรวาลเรื่อง (In-universe Name)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={`เช่น Lord ${realNickname || "Moss"} of Winterfell (เว้นว่างได้)`}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-thai"
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           {/* Form Fields: Grid 2 (MBTI & Gender) */}
@@ -532,11 +599,17 @@ export function CreateCharacterModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div className="space-y-1">
               <label className="text-xs font-semibold text-slate-300 font-thai">
-                ฝ่าย / สังกัดที่อยากสังกัด
+                {characterType === "canon"
+                  ? "ฝ่าย / สังกัด / หมวดหมู่ (Faction / Category)"
+                  : "ฝ่าย / สังกัดที่อยากสังกัด"}
               </label>
               <input
                 type="text"
-                placeholder="เช่น House Stark, Night's Watch, กลุ่มอิสระ"
+                placeholder={
+                  characterType === "canon"
+                    ? "เช่น House Stark, House Lannister, Night's Watch, Faceless Men"
+                    : "เช่น House Stark, Night's Watch, กลุ่มอิสระ"
+                }
                 value={faction}
                 onChange={(e) => setFaction(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-thai"
@@ -545,16 +618,38 @@ export function CreateCharacterModal({
 
             <div className="space-y-1">
               <label className="text-xs font-semibold text-slate-300 font-thai">
-                บทบาทที่อยากได้
+                {characterType === "canon" ? "บทบาทในเรื่อง / ตำแหน่ง" : "บทบาทที่อยากได้"}
               </label>
               <input
                 type="text"
-                placeholder="เช่น จอมวางแผน, นักรบเงา, ผู้รอดชีวิต"
+                placeholder={
+                  characterType === "canon"
+                    ? "เช่น นักฆ่าไร้หน้า, ผู้พิทักษ์แดนเหนือ, ลอร์ดผู้บัญชาการ"
+                    : "เช่น จอมวางแผน, นักรบเงา, ผู้รอดชีวิต"
+                }
                 value={roleWish}
                 onChange={(e) => setRoleWish(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-thai"
               />
             </div>
+          </div>
+
+          {/* Background / Description */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-slate-300 font-thai">
+              {characterType === "canon" ? "ปูมหลัง / ข้อมูลตัวละครย่อ" : "ข้อมูลภูมิหลังตัวละคร"}
+            </label>
+            <textarea
+              rows={2}
+              placeholder={
+                characterType === "canon"
+                  ? "เช่น บุตรสาวคนเล็กของเน็ด สตาร์ค ที่ได้รับการฝึกฝนวิชาจากสมาคมนักฆ่าไร้หน้า..."
+                  : "เช่น คนจากโลกปัจจุบันที่หลุดเข้ามาในโลกนี้พร้อมความทรงจำเดิม..."
+              }
+              value={background}
+              onChange={(e) => setBackground(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-thai resize-none"
+            />
           </div>
 
           {/* Action Buttons */}
@@ -570,7 +665,11 @@ export function CreateCharacterModal({
             <button
               type="submit"
               disabled={isSubmitting || isUploadingPhoto}
-              className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai transition-all shadow-lg disabled:opacity-50"
+              className={`inline-flex items-center gap-2 px-5 py-2 rounded-lg font-bold text-xs font-thai transition-all shadow-lg disabled:opacity-50 ${
+                characterType === "canon"
+                  ? "bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/30"
+                  : "bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/30"
+              }`}
             >
               <Check className="w-4 h-4" />
               <span>
@@ -580,6 +679,8 @@ export function CreateCharacterModal({
                   ? "บันทึกการแก้ไข"
                   : characterType === "self"
                   ? "บันทึกตัวละครของคุณ"
+                  : characterType === "canon"
+                  ? "บันทึกตัวละครในหนัง"
                   : "บันทึกตัวละครเพื่อน"}
               </span>
             </button>

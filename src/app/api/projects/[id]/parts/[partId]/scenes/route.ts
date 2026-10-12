@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { scenes, sceneVersions, images } from "@/lib/db/schema";
+import { scenes, episodes, sceneVersions, images } from "@/lib/db/schema";
 import { eq, asc, desc } from "drizzle-orm";
 import crypto from "crypto";
 import { z } from "zod";
 
 const CreateSceneSchema = z.object({
   title: z.string().min(1, "ต้องระบุชื่อฉาก"),
+  episodeId: z.string().optional(),
   location: z.string().optional().default(""),
   charactersPresent: z.array(z.string()).optional().default([]),
   contentMarkdown: z.string().optional().default(""),
@@ -56,6 +57,19 @@ export async function POST(
     const sceneId = crypto.randomUUID();
     const now = new Date().toISOString();
 
+    // Determine target episode for this scene
+    let targetEpisodeId = validated.episodeId;
+    if (!targetEpisodeId) {
+      const firstEp = db
+        .select({ id: episodes.id })
+        .from(episodes)
+        .where(eq(episodes.partId, partId))
+        .orderBy(asc(episodes.number))
+        .limit(1)
+        .get();
+      targetEpisodeId = firstEp?.id;
+    }
+
     // Find highest order in this part
     const lastScene = db
       .select({ order: scenes.order })
@@ -72,6 +86,7 @@ export async function POST(
       .values({
         id: sceneId,
         partId,
+        episodeId: targetEpisodeId,
         order: nextOrder,
         title: validated.title,
         location: validated.location,

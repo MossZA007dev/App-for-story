@@ -4,6 +4,7 @@ import * as schema from "./schema";
 import { seedDemoProject } from "./seed";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 
 // Ensure data folder and images folder exist
 const isVercel = Boolean(process.env.VERCEL);
@@ -157,9 +158,23 @@ export function initDatabase() {
       FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS episodes (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      part_id TEXT NOT NULL,
+      number INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      summary TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY(part_id) REFERENCES parts(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS scenes (
       id TEXT PRIMARY KEY,
       part_id TEXT NOT NULL,
+      episode_id TEXT,
       \`order\` INTEGER NOT NULL,
       title TEXT NOT NULL,
       location TEXT DEFAULT '',
@@ -320,6 +335,39 @@ export function initDatabase() {
   try {
     sqlite.exec("ALTER TABLE app_settings ADD COLUMN text_ai_provider TEXT DEFAULT 'claude'");
   } catch {}
+  try {
+    sqlite.exec("ALTER TABLE scenes ADD COLUMN episode_id TEXT");
+  } catch {}
+
+  // Auto-migrate: ensure every existing part has at least 1 episode, and link orphaned scenes to it
+  try {
+    const existingParts = sqlite.prepare("SELECT id, project_id, number, title FROM parts").all() as any[];
+    for (const p of existingParts) {
+      let ep = sqlite.prepare("SELECT id FROM episodes WHERE part_id = ? ORDER BY number ASC LIMIT 1").get(p.id) as { id: string } | undefined;
+      if (!ep) {
+        const epId = crypto.randomUUID();
+        const now = new Date().toISOString();
+        sqlite.prepare("INSERT INTO episodes (id, project_id, part_id, number, title, summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
+          epId,
+          p.project_id,
+          p.id,
+          1,
+          "ตอนที่ 1",
+          "",
+          now,
+          now
+        );
+        ep = { id: epId };
+      }
+      // Link any scenes in this part that do not have an episode_id yet
+      sqlite.prepare("UPDATE scenes SET episode_id = ? WHERE part_id = ? AND (episode_id IS NULL OR episode_id = '')").run(
+        ep.id,
+        p.id
+      );
+    }
+  } catch (err) {
+    console.warn("Episode migration error:", err);
+  }
 
   // Auto-seed if database has 0 projects
   try {

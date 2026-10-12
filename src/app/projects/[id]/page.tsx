@@ -119,6 +119,16 @@ interface SceneItem {
   bgmUrl?: string | null;
   bgmTitle?: string | null;
   lastEditedBy?: string | null;
+  episodeId?: string | null;
+}
+
+interface EpisodeItem {
+  id: string;
+  partId: string;
+  number: number;
+  title: string;
+  summary?: string | null;
+  scenes: SceneItem[];
 }
 
 interface PartItem {
@@ -129,6 +139,7 @@ interface PartItem {
   theme: string;
   peakSummary: string;
   status: "planned" | "drafting" | "done";
+  episodes?: EpisodeItem[];
   scenes: SceneItem[];
 }
 
@@ -147,9 +158,19 @@ export default function StoryWorkspacePage({
   const [parts, setParts] = useState<PartItem[]>([]);
   const [characters, setCharacters] = useState<CharacterSummary[]>([]);
   const [activePartId, setActivePartId] = useState<string>("");
+  const [activeEpisodeId, setActiveEpisodeId] = useState<string>("");
   const [activeSceneId, setActiveSceneId] = useState<string>("");
   const [activeScene, setActiveScene] = useState<SceneItem | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Episode Management State
+  const [showNewEpisodeModal, setShowNewEpisodeModal] = useState(false);
+  const [newEpisodeTitle, setNewEpisodeTitle] = useState("");
+  const [newEpisodeInitialSceneTitle, setNewEpisodeInitialSceneTitle] = useState("");
+  const [isCreatingEpisode, setIsCreatingEpisode] = useState(false);
+  const [showEditEpisodeModal, setShowEditEpisodeModal] = useState(false);
+  const [editEpisodeTitle, setEditEpisodeTitle] = useState("");
+  const [isEditingEpisode, setIsEditingEpisode] = useState(false);
 
   // Scene Dropdown & Drag-and-Drop Reordering State
   const [isSceneDropdownOpen, setIsSceneDropdownOpen] = useState(false);
@@ -541,9 +562,16 @@ export default function StoryWorkspacePage({
       if (data.parts && data.parts.length > 0) {
         const firstPart = data.parts[0];
         setActivePartId(firstPart.id);
-        if (firstPart.scenes && firstPart.scenes.length > 0) {
-          const firstScene = firstPart.scenes[0];
-          setActiveSceneId(firstScene.id);
+        const firstEp = firstPart.episodes && firstPart.episodes.length > 0 ? firstPart.episodes[0] : null;
+        if (firstEp) {
+          setActiveEpisodeId(firstEp.id);
+          if (firstEp.scenes && firstEp.scenes.length > 0) {
+            setActiveSceneId(firstEp.scenes[0].id);
+          } else if (firstPart.scenes && firstPart.scenes.length > 0) {
+            setActiveSceneId(firstPart.scenes[0].id);
+          }
+        } else if (firstPart.scenes && firstPart.scenes.length > 0) {
+          setActiveSceneId(firstPart.scenes[0].id);
         }
       }
     } catch (err) {
@@ -707,6 +735,18 @@ export default function StoryWorkspacePage({
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
 
+  // Computed Part, Episode & Scenes
+  const currentPart = parts.find((p) => p.id === activePartId);
+  const currentPartEpisodes = currentPart?.episodes || [];
+  const currentEpisode =
+    currentPartEpisodes.find((ep) => ep.id === activeEpisodeId) ||
+    currentPartEpisodes[0] ||
+    null;
+  const currentEpisodeScenes =
+    currentEpisode?.scenes && currentEpisode.scenes.length > 0
+      ? currentEpisode.scenes
+      : currentPart?.scenes || [];
+
   // Switch Active Part
   const handleSelectPart = (partId: string) => {
     if (hasUnsavedChanges && activeSceneId) {
@@ -714,13 +754,164 @@ export default function StoryWorkspacePage({
     }
     setActivePartId(partId);
     const p = parts.find((item) => item.id === partId);
-    if (p && p.scenes && p.scenes.length > 0) {
+    const firstEp = p?.episodes && p.episodes.length > 0 ? p.episodes[0] : null;
+    if (firstEp) {
+      setActiveEpisodeId(firstEp.id);
+      if (firstEp.scenes && firstEp.scenes.length > 0) {
+        setActiveSceneId(firstEp.scenes[0].id);
+      } else if (p && p.scenes && p.scenes.length > 0) {
+        setActiveSceneId(p.scenes[0].id);
+      } else {
+        setActiveSceneId("");
+        setActiveScene(null);
+        setSceneImages([]);
+        setDialogueBlocks([]);
+      }
+    } else if (p && p.scenes && p.scenes.length > 0) {
       setActiveSceneId(p.scenes[0].id);
     } else {
       setActiveSceneId("");
       setActiveScene(null);
       setSceneImages([]);
       setDialogueBlocks([]);
+    }
+  };
+
+  // Switch Active Episode
+  const handleSelectEpisode = (epId: string) => {
+    if (hasUnsavedChanges && activeSceneId) {
+      handleSaveAll(true);
+    }
+    setActiveEpisodeId(epId);
+    const ep = currentPart?.episodes?.find((item) => item.id === epId);
+    if (ep && ep.scenes && ep.scenes.length > 0) {
+      setActiveSceneId(ep.scenes[0].id);
+    } else {
+      setActiveSceneId("");
+      setActiveScene(null);
+      setSceneImages([]);
+      setDialogueBlocks([]);
+    }
+  };
+
+  // Create New Episode Handler
+  const handleCreateEpisode = async () => {
+    if (!activePartId) {
+      toast.error("กรุณาเลือกภาค (SS) ก่อน");
+      return;
+    }
+    try {
+      setIsCreatingEpisode(true);
+      const res = await fetch(`/api/projects/${projectId}/parts/${activePartId}/episodes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newEpisodeTitle.trim() || undefined,
+          initialSceneTitle: newEpisodeInitialSceneTitle.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "สร้างตอนใหม่ไม่สำเร็จ");
+
+      toast.success(data.message || "สร้างตอนใหม่ (EP) สำเร็จแล้ว!");
+      setShowNewEpisodeModal(false);
+      setNewEpisodeTitle("");
+      setNewEpisodeInitialSceneTitle("");
+
+      // Reload project and select new episode & scene
+      const projRes = await fetch(`/api/projects/${projectId}`);
+      if (projRes.ok) {
+        const projData = await projRes.json();
+        setParts(projData.parts || []);
+        setActiveEpisodeId(data.episode.id);
+        if (data.scene) {
+          setActiveSceneId(data.scene.id);
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "เกิดข้อผิดพลาดในการสร้างตอนใหม่");
+    } finally {
+      setIsCreatingEpisode(false);
+    }
+  };
+
+  // Edit / Delete Episode Handlers
+  const handleOpenEditEpisodeModal = () => {
+    if (!currentEpisode) return;
+    setEditEpisodeTitle(currentEpisode.title);
+    setShowEditEpisodeModal(true);
+  };
+
+  const handleUpdateEpisodeTitle = async () => {
+    const targetId = activeEpisodeId || currentEpisode?.id;
+    if (!targetId || !editEpisodeTitle.trim()) {
+      toast.error("กรุณาระบุชื่อตอน");
+      return;
+    }
+    try {
+      setIsEditingEpisode(true);
+      const res = await fetch(`/api/projects/${projectId}/episodes/${targetId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: editEpisodeTitle.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "แก้ไขชื่อตอนไม่สำเร็จ");
+
+      toast.success("บันทึกชื่อตอนเรียบร้อยแล้ว");
+      setShowEditEpisodeModal(false);
+
+      setParts((prev) =>
+        prev.map((p) => ({
+          ...p,
+          episodes: p.episodes?.map((ep) =>
+            ep.id === targetId ? { ...ep, title: editEpisodeTitle.trim() } : ep
+          ),
+        }))
+      );
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "เกิดข้อผิดพลาดในการแก้ไขชื่อตอน");
+    } finally {
+      setIsEditingEpisode(false);
+    }
+  };
+
+  const handleDeleteEpisode = async () => {
+    const targetEp = currentEpisode;
+    if (!targetEp || !currentPart) return;
+    if ((currentPart.episodes?.length || 0) <= 1) {
+      toast.error("ไม่สามารถลบตอนเดียวที่เหลืออยู่ในภาคนี้ได้");
+      return;
+    }
+    if (!confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบ "${targetEp.title}" และฉากย่อยทั้งหมดในตอนนี้?`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/projects/${projectId}/episodes/${targetEp.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("ลบตอนไม่สำเร็จ");
+      toast.success("ลบตอนเรียบร้อยแล้ว");
+      setShowEditEpisodeModal(false);
+
+      const projRes = await fetch(`/api/projects/${projectId}`);
+      if (projRes.ok) {
+        const projData = await projRes.json();
+        setParts(projData.parts || []);
+        const updatedPart = projData.parts?.find((p: any) => p.id === activePartId);
+        if (updatedPart && updatedPart.episodes?.length > 0) {
+          const nextEp = updatedPart.episodes[0];
+          setActiveEpisodeId(nextEp.id);
+          if (nextEp.scenes?.length > 0) {
+            setActiveSceneId(nextEp.scenes[0].id);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "เกิดข้อผิดพลาดในการลบตอน");
     }
   };
 
@@ -736,8 +927,8 @@ export default function StoryWorkspacePage({
 
   // Reorder Scenes via Drag & Drop or Move Buttons
   const handleReorderScenes = async (sourceIdx: number, targetIdx: number) => {
-    if (!currentPart || !currentPart.scenes || sourceIdx === targetIdx) return;
-    const sceneList = [...currentPart.scenes];
+    if (!currentPart || sourceIdx === targetIdx) return;
+    const sceneList = [...currentEpisodeScenes];
     if (
       sourceIdx < 0 ||
       sourceIdx >= sceneList.length ||
@@ -757,12 +948,23 @@ export default function StoryWorkspacePage({
     }));
 
     // 1. Optimistically update local parts state
+    const targetEpId = currentEpisode?.id || activeEpisodeId;
     setParts((prevParts) =>
       prevParts.map((p) => {
         if (p.id !== activePartId) return p;
         return {
           ...p,
-          scenes: updatedSceneList,
+          episodes: p.episodes?.map((ep) => {
+            if (ep.id !== targetEpId) return ep;
+            return {
+              ...ep,
+              scenes: updatedSceneList,
+            };
+          }),
+          scenes: p.scenes.map((sc) => {
+            const found = updatedSceneList.find((u) => u.id === sc.id);
+            return found || sc;
+          }),
         };
       })
     );
@@ -2849,6 +3051,7 @@ export default function StoryWorkspacePage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: newSceneTitle,
+          episodeId: activeEpisodeId || currentEpisode?.id || undefined,
           location: newSceneLocation,
           charactersPresent: newSceneSelectedChars,
           contentMarkdown: `"พวกเราต้องรีบไปจากที่นี่ก่อนที่ทหารจะมาถึง"`,
@@ -3058,7 +3261,6 @@ export default function StoryWorkspacePage({
   };
 
   // Compute Active Images & Captions (Dynamically resolves image/video bound to current dialogue beat)
-  const currentPart = parts.find((p) => p.id === activePartId);
   const resolvedMedia = resolveImageForDialogueIndex(
     activeBlockIndex,
     localDialogueBindings,
@@ -3162,23 +3364,22 @@ export default function StoryWorkspacePage({
       {/* 1. SCENE & AUDIO CONTROL RIBBON (Sleek, unified, easy-to-use)             */}
       {/* ========================================================================= */}
       <div className="cinematic-card rounded-2xl p-3 sm:p-4 border-slate-700/60 flex flex-wrap items-center justify-between gap-3 bg-slate-950/80 shadow-xl relative z-40">
-        {/* Left: Part & Scene Selectors */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Part Dropdown & Controls */}
-          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-sm">
-            <Layers className="w-4 h-4 text-amber-400" />
+        {/* Left: Part & Episode & Scene Selectors (3-Tier Hierarchy: SS -> EP -> Scene) */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* 1. Part / Season (SS) Selector */}
+          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 shadow-sm">
+            <Layers className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
             <select
               value={activePartId}
               onChange={(e) => handleSelectPart(e.target.value)}
-              className="bg-transparent text-xs font-bold text-white focus:outline-none font-thai cursor-pointer"
+              className="bg-transparent text-xs font-bold text-white focus:outline-none font-thai cursor-pointer max-w-[140px] sm:max-w-[180px] truncate"
             >
               {parts.map((p) => (
-                <option key={p.id} value={p.id} className="bg-slate-900">
+                <option key={p.id} value={p.id} className="bg-slate-900 text-white">
                   ภาค {p.number}: {p.title}
                 </option>
               ))}
             </select>
-            {/* Edit active part button */}
             <button
               type="button"
               onClick={() => {
@@ -3199,15 +3400,64 @@ export default function StoryWorkspacePage({
               setPartModalMode("create");
               setPartModalOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-amber-600/20 hover:from-amber-500/30 hover:to-amber-600/30 text-amber-300 hover:text-white border border-amber-500/40 text-xs font-thai font-bold transition-all shadow-sm active:scale-95"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 hover:text-white border border-amber-500/40 text-xs font-thai font-bold transition-all shadow-sm active:scale-95"
             title="เพิ่มภาคใหม่ / ซีซั่นใหม่ (SS)"
           >
             <Plus className="w-3.5 h-3.5 text-amber-400" />
             <span>+ เพิ่มภาคใหม่ (SS)</span>
           </button>
 
-          {/* Scene / Episode Dropdown with Drag-and-Drop Reordering */}
-          {currentPart && currentPart.scenes.length > 0 && (
+          {/* 2. Episode (EP) Selector */}
+          {currentPart && (
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-amber-500/40 rounded-xl px-2.5 py-1.5 shadow-sm">
+              <Film className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+              {currentPartEpisodes.length > 0 ? (
+                <select
+                  value={activeEpisodeId || currentEpisode?.id || ""}
+                  onChange={(e) => handleSelectEpisode(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-amber-200 focus:outline-none font-thai cursor-pointer max-w-[130px] sm:max-w-[160px] truncate"
+                >
+                  {currentPartEpisodes.map((ep) => (
+                    <option key={ep.id} value={ep.id} className="bg-slate-900 text-white">
+                      EP {ep.number}: {ep.title}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-xs font-bold text-slate-400 font-thai">ไม่มี EP</span>
+              )}
+
+              {currentEpisode && (
+                <button
+                  type="button"
+                  onClick={handleOpenEditEpisodeModal}
+                  title="แก้ไขชื่อตอนนี้ (EP)"
+                  className="p-1 rounded text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors ml-0.5"
+                >
+                  <Edit3 className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* New Episode (EP) Button */}
+          <button
+            type="button"
+            onClick={() => {
+              const nextNum = (currentPartEpisodes.length || 0) + 1;
+              setNewEpisodeTitle(`ตอนที่ ${nextNum}`);
+              setNewEpisodeInitialSceneTitle(`ฉากที่ 1: การเปิดม่านของตอนที่ ${nextNum}`);
+              setShowNewEpisodeModal(true);
+            }}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/25 to-amber-600/25 hover:from-amber-500/35 hover:to-amber-600/35 text-amber-300 hover:text-white border border-amber-400/50 text-xs font-thai font-bold transition-all shadow-sm active:scale-95"
+            title="เพิ่มตอนใหม่ (EP) ในภาคนี้"
+          >
+            <Plus className="w-3.5 h-3.5 text-amber-400" />
+            <span>+ เพิ่ม EP</span>
+          </button>
+
+          {/* 3. Sub-Scene Selector with Drag-and-Drop Reordering */}
+          {currentEpisodeScenes.length > 0 && (
             <div
               ref={sceneDropdownRef}
               className="relative z-50 flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 shadow-sm"
@@ -3216,10 +3466,10 @@ export default function StoryWorkspacePage({
               <button
                 type="button"
                 onClick={() => setIsSceneDropdownOpen((prev) => !prev)}
-                className="flex items-center gap-1.5 text-xs font-bold text-white hover:text-amber-300 transition-colors font-thai focus:outline-none max-w-[200px] sm:max-w-[240px] truncate cursor-pointer"
+                className="flex items-center gap-1.5 text-xs font-bold text-white hover:text-amber-300 transition-colors font-thai focus:outline-none max-w-[160px] sm:max-w-[210px] truncate cursor-pointer"
                 title="คลิกเพื่อเลือกฉาก หรือลากสลับลำดับฉาก"
               >
-                <FileText className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <FileText className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
                 <span className="truncate">
                   {activeScene ? `ฉาก ${activeScene.order}: ${activeScene.title}` : "เลือกฉาก"}
                 </span>
@@ -3234,10 +3484,10 @@ export default function StoryWorkspacePage({
               <button
                 type="button"
                 onClick={() => handleOpenEditSceneModal(activeSceneId)}
-                title="แก้ไขชื่อฉากนี้ / จัดการฉากในภาคนี้"
+                title="แก้ไขชื่อฉากนี้ / จัดการฉากในตอนนี้"
                 className="p-1 rounded text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors ml-0.5 flex-shrink-0"
               >
-                <Edit3 className="w-3.5 h-3.5" />
+                <Edit3 className="w-3 h-3" />
               </button>
 
               {/* Floating Reorderable Scene Dropdown Popover */}
@@ -3246,11 +3496,11 @@ export default function StoryWorkspacePage({
                   {/* Header */}
                   <div className="flex items-center justify-between px-2 py-1.5 border-b border-slate-800/80 mb-2 gap-2">
                     <div className="flex items-center gap-1.5 text-xs font-bold text-slate-200 min-w-0 truncate">
-                      <span className="truncate" title={currentPart.title}>
-                        ฉากใน {currentPart.title || `ภาค ${currentPart.number}`}
+                      <span className="truncate" title={currentEpisode?.title || currentPart?.title}>
+                        ฉากย่อยใน {currentEpisode?.title || currentPart?.title || "ตอนนี้"}
                       </span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-normal flex-shrink-0">
-                        {currentPart.scenes.length} ฉาก
+                        {currentEpisodeScenes.length} ฉากย่อย
                       </span>
                     </div>
                     <div className="flex items-center gap-1 text-[10px] font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md flex-shrink-0">
@@ -3261,7 +3511,7 @@ export default function StoryWorkspacePage({
 
                   {/* Scene List with Drag and Drop */}
                   <div className="max-h-80 overflow-y-auto space-y-1.5 pr-0.5 custom-scrollbar">
-                    {currentPart.scenes.map((s, idx) => {
+                    {currentEpisodeScenes.map((s, idx) => {
                       const isActive = s.id === activeSceneId;
                       const isDragging = draggingSceneIdx === idx;
                       const isDragOver = dragOverSceneIdx === idx && draggingSceneIdx !== idx;
@@ -3347,7 +3597,7 @@ export default function StoryWorkspacePage({
                             </button>
                             <button
                               type="button"
-                              disabled={idx === currentPart.scenes.length - 1 || isReorderingScenes}
+                              disabled={idx === currentEpisodeScenes.length - 1 || isReorderingScenes}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleReorderScenes(idx, idx + 1);
@@ -3389,12 +3639,14 @@ export default function StoryWorkspacePage({
                       type="button"
                       onClick={() => {
                         setIsSceneDropdownOpen(false);
+                        setNewSceneTitle(`ฉากที่ ${currentEpisodeScenes.length + 1}: `);
+                        setNewSceneLocation(activeScene?.location || "");
                         setShowNewSceneModal(true);
                       }}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-amber-300 hover:text-white hover:bg-amber-500/20 font-bold transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>เพิ่มฉากใหม่</span>
+                      <span>เพิ่มฉากย่อย</span>
                     </button>
 
                     <button
@@ -3405,7 +3657,7 @@ export default function StoryWorkspacePage({
                       }}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
                     >
-                      <Edit3 className="w-3.5 h-3.5" />
+                      <Edit3 className="w-3 h-3" />
                       <span>จัดการชื่อฉาก</span>
                     </button>
                   </div>
@@ -3445,13 +3697,18 @@ export default function StoryWorkspacePage({
             </div>
           )}
 
-          {/* New Scene Button */}
+          {/* New Sub-Scene Button */}
           <button
-            onClick={() => setShowNewSceneModal(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-thai font-bold transition-all shadow-sm active:scale-95"
+            onClick={() => {
+              setNewSceneTitle(`ฉากที่ ${currentEpisodeScenes.length + 1}: `);
+              setNewSceneLocation(activeScene?.location || "");
+              setShowNewSceneModal(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 text-xs font-thai font-bold transition-all shadow-sm active:scale-95"
+            title="เพิ่มฉากย่อยใหม่ในตอนนี้"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>+ เพิ่มฉากใหม่</span>
+            <span>+ เพิ่มฉากย่อย</span>
           </button>
         </div>
 
@@ -5523,13 +5780,178 @@ export default function StoryWorkspacePage({
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 2: Create New Scene Modal                                          */}
+      {/* MODAL 1.8: Create New Episode Modal (New EP)                              */}
+      {/* ========================================================================= */}
+      {showNewEpisodeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="cinematic-card w-full max-w-lg rounded-2xl p-6 border-slate-700 space-y-4 bg-slate-950 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center">
+                  <Film className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-heading text-lg font-bold text-white">
+                    เพิ่มตอนใหม่ (New Episode / EP)
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-thai">
+                    เพิ่มตอนใหม่ใน {currentPart?.title || "ภาคนี้"} (เช่น EP {(currentPartEpisodes.length || 0) + 1})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowNewEpisodeModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 font-thai">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                  <span>ชื่อตอน (EP Title) <span className="text-red-400">*</span></span>
+                  <span className="text-[10px] text-amber-400 font-mono">
+                    EP {(currentPartEpisodes.length || 0) + 1}
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  placeholder={`เช่น ตอนที่ ${(currentPartEpisodes.length || 0) + 1}: The Kingsroad`}
+                  value={newEpisodeTitle}
+                  onChange={(e) => setNewEpisodeTitle(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-bold"
+                  autoFocus
+                />
+              </div>
+
+              <div className="space-y-1 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                <label className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                  <span>ชื่อฉากย่อยที่ 1 ของตอนนี้ (ระบบสร้างให้อัตโนมัติ)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder={`ฉากที่ 1: การเปิดม่านของตอนที่ ${(currentPartEpisodes.length || 0) + 1}`}
+                  value={newEpisodeInitialSceneTitle}
+                  onChange={(e) => setNewEpisodeInitialSceneTitle(e.target.value)}
+                  className="w-full bg-slate-950/80 border border-amber-500/40 rounded-lg px-3 py-1.5 text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                onClick={() => setShowNewEpisodeModal(false)}
+                className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-thai"
+              >
+                ยกเลิก
+              </button>
+              <button
+                disabled={isCreatingEpisode}
+                onClick={handleCreateEpisode}
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 font-bold text-xs font-thai hover:brightness-110 shadow active:scale-95 disabled:opacity-50"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{isCreatingEpisode ? "กำลังสร้าง..." : `สร้างตอนใหม่ (EP ${(currentPartEpisodes.length || 0) + 1})`}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 1.9: Edit Episode Modal (Edit EP)                                   */}
+      {/* ========================================================================= */}
+      {showEditEpisodeModal && currentEpisode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="cinematic-card w-full max-w-md rounded-2xl p-6 border-slate-700 space-y-4 bg-slate-950 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center">
+                  <Film className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-heading text-lg font-bold text-white">
+                    แก้ไขชื่อตอน (EP {currentEpisode.number})
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-thai">
+                    เปลี่ยนชื่อตอนสำหรับ EP {currentEpisode.number} ใน {currentPart?.title}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowEditEpisodeModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 font-thai">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-300">
+                  ชื่อตอน (EP Title) <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editEpisodeTitle}
+                  onChange={(e) => setEditEpisodeTitle(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-bold"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-800">
+              {currentPartEpisodes.length > 1 ? (
+                <button
+                  type="button"
+                  onClick={handleDeleteEpisode}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-950/60 hover:bg-red-900 text-red-300 text-xs font-thai border border-red-500/30 transition-colors"
+                  title="ลบตอนนี้และฉากย่อยทั้งหมด"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>ลบตอนนี้</span>
+                </button>
+              ) : (
+                <div />
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowEditEpisodeModal(false)}
+                  className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-thai"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  disabled={isEditingEpisode}
+                  onClick={handleUpdateEpisodeTitle}
+                  className="px-5 py-2 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs font-thai hover:bg-amber-400 shadow active:scale-95 disabled:opacity-50"
+                >
+                  {isEditingEpisode ? "กำลังบันทึก..." : "บันทึกชื่อตอน"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 2: Create New Sub-Scene Modal (เพิ่มฉากย่อย)                           */}
       {/* ========================================================================= */}
       {showNewSceneModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
           <div className="cinematic-card w-full max-w-lg rounded-2xl p-6 border-slate-700 space-y-4 bg-slate-950 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="font-heading text-lg font-bold text-white">เพิ่มฉากใหม่ในเรื่อง (New EP)</h3>
+              <div>
+                <h3 className="font-heading text-lg font-bold text-white">
+                  เพิ่มฉากย่อยใหม่ (New Scene in EP {currentEpisode?.number || 1})
+                </h3>
+                <p className="text-[11px] text-slate-400 font-thai">
+                  เพิ่มฉากย่อยลงใน {currentEpisode?.title || "ตอนนี้"} ({currentPart?.title || "ภาคปัจจุบัน"})
+                </p>
+              </div>
               <button
                 onClick={() => setShowNewSceneModal(false)}
                 className="text-slate-400 hover:text-white"
@@ -5541,14 +5963,15 @@ export default function StoryWorkspacePage({
             <div className="space-y-3 font-thai">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-slate-300">
-                  ชื่อฉาก <span className="text-red-400">*</span>
+                  ชื่อฉากย่อย <span className="text-red-400">*</span>
                 </label>
                 <input
                   type="text"
                   placeholder="เช่น เผชิญหน้าสภาเงา, เพลิงไหม้ที่ท่าเรือ"
                   value={newSceneTitle}
                   onChange={(e) => setNewSceneTitle(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-semibold"
+                  autoFocus
                 />
               </div>
 
@@ -5609,9 +6032,9 @@ export default function StoryWorkspacePage({
               </button>
               <button
                 onClick={handleCreateScene}
-                className="px-5 py-2 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs font-thai hover:bg-amber-400 shadow"
+                className="px-5 py-2 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs font-thai hover:bg-amber-400 shadow active:scale-95"
               >
-                สร้างฉากใหม่
+                สร้างฉากย่อยใหม่
               </button>
             </div>
           </div>

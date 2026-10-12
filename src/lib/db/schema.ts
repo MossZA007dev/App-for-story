@@ -78,9 +78,21 @@ export const parts = sqliteTable("parts", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const episodes = sqliteTable("episodes", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  partId: text("part_id").notNull().references(() => parts.id, { onDelete: "cascade" }),
+  number: integer("number").notNull(), // EP 1, EP 2...
+  title: text("title").notNull(),
+  summary: text("summary").default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
 export const scenes = sqliteTable("scenes", {
   id: text("id").primaryKey(),
   partId: text("part_id").notNull().references(() => parts.id, { onDelete: "cascade" }),
+  episodeId: text("episode_id"),
   order: integer("order").notNull(),
   title: text("title").notNull(),
   location: text("location").default(""),

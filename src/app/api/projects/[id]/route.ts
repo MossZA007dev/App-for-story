@@ -4,6 +4,7 @@ import {
   projects,
   characters,
   parts,
+  episodes,
   scenes,
   continuityLedgers,
   abilities,
@@ -58,12 +59,19 @@ export async function GET(
       };
     });
 
-    // Parts with scenes
+    // Parts with episodes and scenes
     const projectParts = db
       .select()
       .from(parts)
       .where(eq(parts.projectId, id))
       .orderBy(asc(parts.number))
+      .all();
+
+    const projectEpisodes = db
+      .select()
+      .from(episodes)
+      .where(eq(episodes.projectId, id))
+      .orderBy(asc(episodes.number))
       .all();
 
     const partsWithScenes = projectParts.map((part) => {
@@ -73,8 +81,17 @@ export async function GET(
         .where(eq(scenes.partId, part.id))
         .orderBy(asc(scenes.order))
         .all();
+
+      const partEpisodes = projectEpisodes
+        .filter((ep) => ep.partId === part.id)
+        .map((ep) => ({
+          ...ep,
+          scenes: partScenes.filter((s) => s.episodeId === ep.id),
+        }));
+
       return {
         ...part,
+        episodes: partEpisodes,
         scenes: partScenes,
       };
     });

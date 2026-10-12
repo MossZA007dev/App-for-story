@@ -92,6 +92,7 @@ const getVideoTiming = (img?: { metadata?: string | null }) => {
 interface SceneItem {
   id: string;
   partId: string;
+  episodeId?: string | null;
   order: number;
   title: string;
   location: string;
@@ -1042,6 +1043,7 @@ export default function NovelReaderPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: `ฉากที่ ${nextOrder}: การเผชิญหน้าบทใหม่`,
+          episodeId: activeScene.episodeId || undefined,
           location: activeScene.location || "คิงส์แลนดิง (King's Landing)",
           charactersPresent: activeScene.charactersPresentParsed || [],
           contentMarkdown: `เสียงฝีเท้าหนักแน่นดังก้องขึ้นในความมืด...\n\n"พวกเราต้องเตรียมพร้อมสำหรับสิ่งที่จะเกิดขึ้นต่อไป"`,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { parts, scenes, sceneVersions, continuityLedgers } from "@/lib/db/schema";
+import { parts, episodes, scenes, sceneVersions, continuityLedgers } from "@/lib/db/schema";
 import { eq, desc, asc } from "drizzle-orm";
 import crypto from "crypto";
 
@@ -17,6 +17,13 @@ export async function GET(
       .orderBy(asc(parts.number))
       .all();
 
+    const projectEpisodes = db
+      .select()
+      .from(episodes)
+      .where(eq(episodes.projectId, projectId))
+      .orderBy(asc(episodes.number))
+      .all();
+
     const partsWithScenes = projectParts.map((part) => {
       const partScenes = db
         .select()
@@ -24,8 +31,17 @@ export async function GET(
         .where(eq(scenes.partId, part.id))
         .orderBy(asc(scenes.order))
         .all();
+
+      const partEpisodes = projectEpisodes
+        .filter((ep) => ep.partId === part.id)
+        .map((ep) => ({
+          ...ep,
+          scenes: partScenes.filter((s) => s.episodeId === ep.id),
+        }));
+
       return {
         ...part,
+        episodes: partEpisodes,
         scenes: partScenes,
       };
     });
@@ -88,7 +104,22 @@ export async function POST(
       })
       .run();
 
-    // 2. Automatically create initial Scene 1 for this new Part
+    // 2. Automatically create initial Episode 1 for this new Part
+    const epId = crypto.randomUUID();
+    db.insert(episodes)
+      .values({
+        id: epId,
+        projectId,
+        partId,
+        number: 1,
+        title: "ตอนที่ 1",
+        summary: "",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    // 3. Automatically create initial Scene 1 for this new Episode & Part
     const sceneId = crypto.randomUUID();
     const initialSceneTitle =
       body.initialSceneTitle && body.initialSceneTitle.trim()
@@ -101,6 +132,7 @@ export async function POST(
       .values({
         id: sceneId,
         partId,
+        episodeId: epId,
         order: 1,
         title: initialSceneTitle,
         location: "",
@@ -128,7 +160,7 @@ export async function POST(
       })
       .run();
 
-    // 3. Initialize Continuity Ledger for this new Part
+    // 4. Initialize Continuity Ledger for this new Part
     const initialLedgerData = {
       deaths: [],
       injuries_scars: [],
@@ -152,13 +184,16 @@ export async function POST(
       .run();
 
     const createdPart = db.select().from(parts).where(eq(parts.id, partId)).get();
+    const createdEpisode = db.select().from(episodes).where(eq(episodes.id, epId)).get();
     const createdScene = db.select().from(scenes).where(eq(scenes.id, sceneId)).get();
 
     return NextResponse.json({
       part: {
         ...createdPart,
+        episodes: createdEpisode ? [{ ...createdEpisode, scenes: createdScene ? [createdScene] : [] }] : [],
         scenes: createdScene ? [createdScene] : [],
       },
+      episode: createdEpisode,
       scene: createdScene,
       message: `สร้างภาคที่ ${nextNumber} (SS${nextNumber}) สำเร็จแล้ว`,
     });

@@ -33,6 +33,8 @@ import {
   RotateCcw,
   Layers,
   Camera,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
@@ -189,6 +191,44 @@ export default function NovelReaderPage({
   const [showAudioControls, setShowAudioControls] = useState(false);
   const [isUploadingBgm, setIsUploadingBgm] = useState(false);
   const [isCreatingNextEp, setIsCreatingNextEp] = useState(false);
+
+  // Fullscreen & Reading View State
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [imageFitMode, setImageFitMode] = useState<"cover" | "contain">("cover");
+
+  const handleToggleFullscreen = () => {
+    if (typeof document === "undefined") return;
+    if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {
+          setIsFullscreen(true);
+        });
+      } else if ((document.documentElement as any).webkitRequestFullscreen) {
+        (document.documentElement as any).webkitRequestFullscreen();
+      } else {
+        setIsFullscreen(true);
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      } else if ((document as any).webkitExitFullscreen) {
+        (document as any).webkitExitFullscreen();
+      }
+      setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement || (document as any).webkitFullscreenElement));
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
+    };
+  }, []);
 
   // Seamless Resume State Tracking
   const isPlaybackActiveRef = useRef<boolean>(false);
@@ -1235,21 +1275,27 @@ export default function NovelReaderPage({
     }
   }, [activeDialogueIndex, dialogueBindings, activeScene?.id, activeScene?.bgmUrl, activeScene?.bgmTitle, volume, isMuted, parsedBlocks.length]);
 
-  // Smoothly scroll active dialogue block into view
+  // Smoothly scroll active dialogue block into view (centered)
   useEffect(() => {
     if (activeDialogueIndex >= 0 && dialogueBlockRefs.current[activeDialogueIndex]) {
       dialogueBlockRefs.current[activeDialogueIndex]?.scrollIntoView({
         behavior: "smooth",
-        block: "nearest",
+        block: "center",
       });
     }
   }, [activeDialogueIndex]);
 
-  // Keyboard navigation for dialogue stepping (ArrowUp, ArrowDown, Spacebar)
+  // Keyboard navigation for dialogue stepping (ArrowUp, ArrowDown, Spacebar, F for Fullscreen)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const targetTag = (e.target as HTMLElement)?.tagName?.toLowerCase();
       if (targetTag === "input" || targetTag === "textarea" || targetTag === "select") {
+        return;
+      }
+
+      if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        handleToggleFullscreen();
         return;
       }
 
@@ -1316,11 +1362,78 @@ export default function NovelReaderPage({
   }
 
   return (
-    <div className="w-full min-h-screen bg-[#070A11] text-slate-100 pb-20 pt-2 px-4 sm:px-8 xl:px-10 space-y-5">
+    <div
+      className={`w-full bg-[#070A11] text-slate-100 flex flex-col ${
+        isFullscreen
+          ? "fixed inset-0 z-50 h-screen w-screen p-2.5 sm:p-4 overflow-hidden"
+          : "min-h-screen lg:h-screen lg:max-h-screen lg:overflow-hidden p-3 sm:p-4 lg:p-5 gap-3"
+      }`}
+    >
       {/* ========================================================================= */}
-      {/* 1. TOP HEADER & BREADCRUMBS WITH MUSIC PLAYER (182x38px Figma Widget)     */}
+      {/* 1. TOP HEADER (Fullscreen Bar vs Standard Header)                         */}
       {/* ========================================================================= */}
-      <div className="border-b border-slate-800/80 pb-4 pt-1 space-y-4">
+      {isFullscreen ? (
+        <div className="flex-shrink-0 flex items-center justify-between gap-3 px-3 py-2 bg-[#121622]/95 border border-slate-800 rounded-2xl backdrop-blur-md shadow-2xl">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 font-black text-xs shadow-[0_0_15px_rgba(245,158,11,0.3)] whitespace-nowrap">
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>READING FULLSCREEN</span>
+            </span>
+            <div className="flex items-center gap-2 text-xs truncate">
+              <span className="font-bold text-white truncate max-w-[150px] sm:max-w-xs">{project?.title}</span>
+              <span className="text-slate-500">/</span>
+              <span className="text-amber-300 font-semibold truncate max-w-[180px] sm:max-w-md">{cleanSceneTitle}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Quick Scene Selector */}
+            <select
+              value={activeScene?.id || ""}
+              onChange={(e) => {
+                const found = allScenesList.find((item) => item.scene.id === e.target.value);
+                if (found) handleSelectSceneItem(found.scene);
+              }}
+              className="bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-200 focus:outline-none max-w-[160px] sm:max-w-[200px] truncate"
+            >
+              {allScenesList.map(({ part, scene }) => (
+                <option key={scene.id} value={scene.id} className="bg-slate-900">
+                  ภาค {part.number} • ฉาก {scene.order}: {scene.title}
+                </option>
+              ))}
+            </select>
+
+            {/* Quick Play/Pause & Audio Indicator */}
+            <button
+              type="button"
+              onClick={handleToggleMasterPlay}
+              className={`h-[38px] px-3 rounded-xl border flex items-center gap-2 text-xs font-semibold transition-all cursor-pointer ${
+                isAnyPlaying
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm"
+                  : "bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-800"
+              }`}
+              title={isAnyPlaying ? "หยุดเล่นเพลง" : "เปิดเพลง BGM"}
+            >
+              {isAnyPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+              <span className="hidden md:inline truncate max-w-[120px]">
+                {isAnyPlaying ? (activeScene?.bgmTitle || activeYouTubeTitle || "กำลังเล่นเพลง") : "เปิด BGM"}
+              </span>
+            </button>
+
+            {/* Exit Fullscreen Button */}
+            <button
+              type="button"
+              onClick={handleToggleFullscreen}
+              className="h-[38px] px-3.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-xs font-thai font-bold transition-all shadow active:scale-95 flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+              title="ออกจากโหมดเต็มจอ (ESC หรือกดปุ่ม F)"
+            >
+              <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">ย่อจอ (ESC)</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-shrink-0 border-b border-slate-800/80 pb-3 space-y-2.5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           {/* Left: Breadcrumbs & Project Title */}
           <div className="space-y-1">
@@ -1761,19 +1874,31 @@ export default function NovelReaderPage({
                 </div>
               )}
             </div>
+
+            {/* Reading Fullscreen Toggle Button */}
+            <button
+              type="button"
+              onClick={handleToggleFullscreen}
+              className="h-[38px] px-3.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-amber-600/20 hover:from-amber-500/30 hover:to-amber-600/30 text-amber-300 hover:text-white border border-amber-500/40 text-xs font-thai font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+              title="เข้าสู่โหมดอ่านเต็มจอ ไร้สิ่งรบกวน (Reading Fullscreen) [กดปุ่ม F]"
+            >
+              <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">อ่านเต็มจอ</span>
+              <span className="sm:hidden">เต็มจอ</span>
+            </button>
           </div>
         </div>
 
         {/* Navigation Tabs (Reader / Studio / Bible / Images / Quick Scene Selector) */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1 text-xs font-thai font-semibold">
-          <span className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-500 text-slate-950 font-bold shadow-[0_0_15px_rgba(245,158,11,0.25)]">
+          <span className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-500 text-slate-950 font-bold shadow-[0_0_15px_rgba(245,158,11,0.25)] flex-shrink-0">
             <BookOpen className="w-3.5 h-3.5" />
             <span>📖 โหมดอ่านนิยาย (Reader)</span>
           </span>
 
           <Link
             href={`/projects/${projectId}`}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex-shrink-0"
           >
             <PenTool className="w-3.5 h-3.5 text-amber-400" />
             <span>Studio แก้ไข & สตรีมฉาก</span>
@@ -1781,7 +1906,7 @@ export default function NovelReaderPage({
 
           <Link
             href={`/projects/${projectId}?tab=characters`}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex-shrink-0"
           >
             <User className="w-3.5 h-3.5 text-sky-400" />
             <span>User Character Bible</span>
@@ -1789,14 +1914,14 @@ export default function NovelReaderPage({
 
           <Link
             href={`/projects/${projectId}?tab=images`}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex-shrink-0"
           >
             <Film className="w-3.5 h-3.5 text-emerald-400" />
             <span>Image Studio</span>
           </Link>
 
           {/* Quick Scene Selector & New Part / SS button on Right */}
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2 flex-shrink-0">
             <select
               value={activeScene?.id || ""}
               onChange={(e) => {
@@ -1836,17 +1961,18 @@ export default function NovelReaderPage({
           </div>
         </div>
       </div>
+      )}
 
       {/* ========================================================================= */}
-      {/* 2. MAIN SPLIT-SCREEN CONTAINER (Perfect Symmetrical Height matching Figma) */}
+      {/* 2. MAIN SPLIT-SCREEN CONTAINER (Locked Responsive Viewport Layout)        */}
       {/* ========================================================================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 xl:gap-8 items-stretch w-full">
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4 xl:gap-6 items-stretch w-full">
         {/* ----------------------------------------------------------------------- */}
         {/* LEFT COLUMN: Large Image Card (Figma width: 1196px, 2/3 of screen)        */}
         {/* ----------------------------------------------------------------------- */}
-        <div className="lg:col-span-7 xl:col-span-8 flex flex-col justify-between rounded-[16px] p-5 sm:p-6 bg-[#313131] border border-slate-700/60 shadow-2xl h-[780px] sm:h-[840px] lg:h-[880px] xl:h-[920px]">
+        <div className="lg:col-span-7 xl:col-span-8 flex flex-col justify-between rounded-[16px] p-3.5 sm:p-5 bg-[#313131] border border-slate-700/60 shadow-2xl h-[52vh] min-h-[380px] lg:h-full lg:min-h-0 overflow-hidden">
           {/* Main Cinematic Image Display (flex-1 so it dynamically fills vertical height) */}
-          <div className="relative w-full flex-1 min-h-0 rounded-[13px] overflow-hidden bg-[#1e232d] group border border-black/20 mb-3">
+          <div className="relative w-full flex-1 min-h-0 rounded-[13px] overflow-hidden bg-[#1e232d] group border border-black/20 mb-2">
             {currentFeaturedImage ? (
               <>
                 {isVideoMedia(currentFeaturedImage) ? (
@@ -1868,7 +1994,9 @@ export default function NovelReaderPage({
                         e.currentTarget.play().catch(() => {});
                       }
                     }}
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-102"
+                    className={`w-full h-full transition-transform duration-700 group-hover:scale-102 ${
+                      imageFitMode === "contain" ? "object-contain bg-black/90" : "object-cover"
+                    }`}
                   />
                 ) : (
                   /* eslint-disable-next-line @next/next/no-img-element */
@@ -1876,7 +2004,9 @@ export default function NovelReaderPage({
                     key={currentFeaturedImage.id || currentFeaturedImage.filePath}
                     src={currentFeaturedImage.filePath}
                     alt={currentFeaturedImage.caption || currentFeaturedImage.prompt}
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-102"
+                    className={`w-full h-full transition-transform duration-700 group-hover:scale-102 ${
+                      imageFitMode === "contain" ? "object-contain bg-black/90" : "object-cover"
+                    }`}
                   />
                 )}
 
@@ -1908,35 +2038,55 @@ export default function NovelReaderPage({
                   )}
                 </div>
 
-                {/* Upload More Screenshot (SS) Trigger */}
-                <input
-                  ref={screenshotInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleUploadReaderScreenshot(f);
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => screenshotInputRef.current?.click()}
-                  disabled={isUploadingScreenshot}
-                  className="absolute top-3.5 right-14 p-2 rounded-xl bg-black/70 hover:bg-black text-slate-300 hover:text-amber-300 backdrop-blur-md transition-all shadow"
-                  title="อัปโหลดภาพ Screenshot (SS) เพิ่มสำหรับฉากนี้"
-                >
-                  <Camera className="w-4 h-4" />
-                </button>
+                {/* Top Right Action Buttons (Fit toggle, Upload SS, Lightbox, Fullscreen) */}
+                <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5 z-10">
+                  <button
+                    type="button"
+                    onClick={() => setImageFitMode((prev) => (prev === "cover" ? "contain" : "cover"))}
+                    className="p-2 rounded-xl bg-black/70 hover:bg-black text-slate-300 hover:text-amber-300 backdrop-blur-md transition-all shadow cursor-pointer"
+                    title={imageFitMode === "cover" ? "เปลี่ยนเป็นแสดงภาพเต็มสัดส่วน (Fit)" : "เปลี่ยนเป็นเติมเต็มกรอบ (Cover)"}
+                  >
+                    <SlidersHorizontal className="w-4 h-4" />
+                  </button>
 
-                {/* Zoom Lightbox Trigger */}
-                <button
-                  onClick={() => setLightboxImage(currentFeaturedImage.filePath)}
-                  className="absolute top-3.5 right-3.5 p-2 rounded-xl bg-black/70 hover:bg-black text-white backdrop-blur-md transition-all shadow"
-                  title="ขยายภาพเต็มจอ"
-                >
-                  <ZoomIn className="w-4 h-4" />
-                </button>
+                  <input
+                    ref={screenshotInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUploadReaderScreenshot(f);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => screenshotInputRef.current?.click()}
+                    disabled={isUploadingScreenshot}
+                    className="p-2 rounded-xl bg-black/70 hover:bg-black text-slate-300 hover:text-amber-300 backdrop-blur-md transition-all shadow cursor-pointer"
+                    title="อัปโหลดภาพ Screenshot (SS) เพิ่มสำหรับฉากนี้"
+                  >
+                    <Camera className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setLightboxImage(currentFeaturedImage.filePath)}
+                    className="p-2 rounded-xl bg-black/70 hover:bg-black text-white hover:text-amber-300 backdrop-blur-md transition-all shadow cursor-pointer"
+                    title="ขยายภาพ (Lightbox)"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleFullscreen}
+                    className="p-2 rounded-xl bg-black/70 hover:bg-black text-amber-400 hover:text-amber-300 backdrop-blur-md transition-all shadow cursor-pointer"
+                    title={isFullscreen ? "ออกจากโหมดเต็มจอ (ESC)" : "อ่านแบบเต็มจอ (Reading Fullscreen) [F]"}
+                  >
+                    {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                  </button>
+                </div>
               </>
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-slate-400">
@@ -2023,26 +2173,31 @@ export default function NovelReaderPage({
             </div>
           )}
 
-          {/* Atmospheric sensory caption underneath the image (Matching Figma & Screenshot) */}
-          <div className="flex-shrink-0 p-3 pt-3 border-t border-slate-700/50 space-y-1">
-            {activeBlock && (
-              <div className="flex items-center gap-2 text-[11px] font-thai text-amber-400 font-bold">
-                <span className="flex-shrink-0">🎬 ประโยคปัจจุบัน:</span>
-                <span className="text-slate-300 font-normal truncate">
-                  {activeBlock.speakerName ? `${activeBlock.speakerName}: ` : ""}&quot;{activeBlock.text}&quot;
-                </span>
-              </div>
+          {/* Atmospheric sensory caption underneath the image */}
+          <div className="flex-shrink-0 p-2.5 sm:p-3 border-t border-slate-700/50 bg-black/25 rounded-b-[12px]">
+            {currentFeaturedImage?.caption ? (
+              <p className="text-xs sm:text-sm font-thai text-amber-200/90 italic leading-relaxed line-clamp-2">
+                &ldquo;{currentFeaturedImage.caption}&rdquo;
+              </p>
+            ) : activeBlock ? (
+              <p className="text-xs sm:text-sm font-thai text-slate-200 leading-relaxed line-clamp-2">
+                {activeBlock.speakerName && (
+                  <span className="text-amber-400 font-bold mr-1.5">{activeBlock.speakerName}:</span>
+                )}
+                <span className="italic text-slate-200">&ldquo;{activeBlock.text}&rdquo;</span>
+              </p>
+            ) : (
+              <p className="text-xs sm:text-sm font-thai text-slate-400 italic line-clamp-2">
+                {leftCardCaption}
+              </p>
             )}
-            <p className="text-sm font-thai text-[#E2E8F0] leading-relaxed line-clamp-3">
-              {leftCardCaption}
-            </p>
           </div>
         </div>
 
         {/* ----------------------------------------------------------------------- */}
-        {/* RIGHT COLUMN: Dialogue Card (Figma width: 596px, 1/3, Scrollable Stream) */}
+        {/* RIGHT COLUMN: Dialogue Card (Locked Stream with Internal Scroll)          */}
         {/* ----------------------------------------------------------------------- */}
-        <div className="lg:col-span-5 xl:col-span-4 flex flex-col justify-between rounded-[16px] p-5 sm:p-6 bg-[#313131] border border-slate-700/60 shadow-2xl h-[780px] sm:h-[840px] lg:h-[880px] xl:h-[920px] space-y-3">
+        <div className="lg:col-span-5 xl:col-span-4 flex flex-col justify-between rounded-[16px] p-3.5 sm:p-5 bg-[#313131] border border-slate-700/60 shadow-2xl h-[65vh] min-h-[460px] lg:h-full lg:min-h-0 overflow-hidden space-y-2.5">
           {/* Header: Part subtitle & Clean Scene Title (No duplicated "ฉากที่ 1: ฉากที่ 1:") */}
           <div className="flex-shrink-0 space-y-2 border-b border-slate-700/50 pb-3">
             {currentPart && (
@@ -2130,12 +2285,6 @@ export default function NovelReaderPage({
                 </span>
 
                 <div className="flex items-center gap-2">
-                  {hasActiveBinding && (
-                    <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                      <Sparkles className="w-2.5 h-2.5" />
-                      <span>ภาพเปลี่ยนตามบทนี้</span>
-                    </span>
-                  )}
                   {activeDialogueIndex > 0 && (
                     <button
                       onClick={handleResetDialogue}
@@ -2283,20 +2432,9 @@ export default function NovelReaderPage({
                             </span>
                           )}
                           {isActive && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-400 text-slate-950 font-mono shadow animate-pulse">
-                              ▶ อ่านอยู่นี่
-                            </span>
-                          )}
-                          {hasBinding && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
-                              <Sparkles className="w-2.5 h-2.5" />
-                              <span>สลับภาพ</span>
-                            </span>
-                          )}
-                          {assignedAudioVal && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1" title="เปลี่ยนอารมณ์เพลง/เสียง">
-                              <Music className="w-2.5 h-2.5" />
-                              <span>{getAudioMoodLabel(assignedAudioVal)}</span>
+                            <span className="relative flex h-2 w-2" title="อ่านอยู่ตอนนี้">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                             </span>
                           )}
                           {assignedAudioVal && (
@@ -2329,15 +2467,16 @@ export default function NovelReaderPage({
                     >
                       <div className="flex-1 space-y-1 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {hasBinding && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
-                              <Sparkles className="w-2.5 h-2.5" />
-                              <span>สลับภาพ</span>
+                          {assignedAudioVal && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1" title="เปลี่ยนอารมณ์เพลง/เสียง">
+                              <Music className="w-2.5 h-2.5" />
+                              <span>{getAudioMoodLabel(assignedAudioVal)}</span>
                             </span>
                           )}
                           {isActive && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-400 text-slate-950 font-mono shadow animate-pulse">
-                              ▶ อ่านอยู่นี่
+                            <span className="relative flex h-2 w-2" title="อ่านอยู่ตอนนี้">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                             </span>
                           )}
                           {mbti && (

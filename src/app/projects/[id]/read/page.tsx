@@ -428,6 +428,8 @@ export default function NovelReaderPage({
   const resumeSceneBgmOrAmbient = (announce = true) => {
     isPlaybackActiveRef.current = true;
     mainBgmPausedForDialogueRef.current = false;
+    activePlayingChannelRef.current = "main";
+    setActivePlayingChannel("main");
 
     const targetYtId = extractYouTubeVideoId(activeScene?.bgmUrl);
     if (targetYtId) {
@@ -435,7 +437,6 @@ export default function NovelReaderPage({
       setActiveYouTubeTitle(activeScene?.bgmTitle || "เพลงประจำฉาก");
       setIsCustomAudioPlaying(true);
       setAudioMode("custom");
-      setActivePlayingChannel("main");
       setTimeout(() => {
         youtubeIframeRef.current?.contentWindow?.postMessage(
           JSON.stringify({ event: "command", func: "unMute", args: [] }),
@@ -460,17 +461,15 @@ export default function NovelReaderPage({
         audioPlayerRef.current.src = activeScene.bgmUrl;
       }
       audioPlayerRef.current.volume = isMuted ? 0 : volume;
-      audioPlayerRef.current.play().catch((e) => console.warn(e));
+      audioPlayerRef.current.play().catch((e) => console.warn("Audio play blocked by browser:", e));
       setIsCustomAudioPlaying(true);
       setAudioMode("custom");
-      setActivePlayingChannel("main");
       if (announce) toast.success(`กำลังเล่นเพลง: ${activeScene?.bgmTitle || "เพลงประจำฉาก"}`);
     } else {
       ambientSound.setVolume(isMuted ? 0 : volume);
       ambientSound.play(currentTrack);
       setIsPlayingBgm(true);
       setAudioMode("ambient");
-      setActivePlayingChannel("main");
       if (announce) toast.success(`กำลังเล่นเพลงบรรยากาศ`);
     }
   };
@@ -501,6 +500,10 @@ export default function NovelReaderPage({
       // Same track on consecutive dialogue lines: continue without restarting!
       return;
     }
+
+    isPlaybackActiveRef.current = true;
+    activePlayingChannelRef.current = "dialogue";
+    setActivePlayingChannel("dialogue");
 
     // 1. Pause Main Scene BGM (preserving its exact timestamp)
     pauseMainSceneBgm();
@@ -1098,6 +1101,64 @@ export default function NovelReaderPage({
     }
   }, [activeDialogueIndex, activeSceneImages, dialogueBindings, parsedBlocks.length]);
 
+  // Auto-play Scene BGM or dialogue audio when opening reader / selecting a scene
+  const hasAttemptedAutoPlayRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!activeScene || !activeScene.id) return;
+    if (hasAttemptedAutoPlayRef.current === activeScene.id) return;
+    hasAttemptedAutoPlayRef.current = activeScene.id;
+
+    isPlaybackActiveRef.current = true;
+
+    // Resolve audio for initial dialogue position
+    const initialAudio = resolveAudioForDialogueIndex(
+      activeDialogueIndex,
+      dialogueBindings,
+      activeScene.bgmUrl
+    );
+
+    if (
+      initialAudio.isDirectBinding &&
+      initialAudio.action !== "stop" &&
+      initialAudio.action !== "play_scene_bgm"
+    ) {
+      triggerDialogueAudio(initialAudio);
+    } else if (activeScene.bgmUrl) {
+      resumeSceneBgmOrAmbient(false);
+    }
+
+    // Modern browser autoplay policy fallback:
+    // If the browser blocks unmuted audio before user gesture, listen for the first user interaction (touch, click, keydown)
+    const handleFirstGesture = () => {
+      isPlaybackActiveRef.current = true;
+      const curAudio = resolveAudioForDialogueIndex(
+        activeDialogueIndex,
+        dialogueBindings,
+        activeScene.bgmUrl
+      );
+      if (
+        curAudio.isDirectBinding &&
+        curAudio.action !== "stop" &&
+        curAudio.action !== "play_scene_bgm"
+      ) {
+        triggerDialogueAudio(curAudio);
+      } else if (activeScene?.bgmUrl) {
+        resumeSceneBgmOrAmbient(false);
+      }
+      window.removeEventListener("pointerdown", handleFirstGesture);
+      window.removeEventListener("keydown", handleFirstGesture);
+    };
+
+    window.addEventListener("pointerdown", handleFirstGesture, { once: true });
+    window.addEventListener("keydown", handleFirstGesture, { once: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", handleFirstGesture);
+      window.removeEventListener("keydown", handleFirstGesture);
+    };
+  }, [activeScene?.id, activeScene?.bgmUrl, activeDialogueIndex, dialogueBindings]);
+
   // Synchronize audio / mood automatically when activeDialogueIndex changes
   useEffect(() => {
     if (!activeScene || parsedBlocks.length === 0) return;
@@ -1127,13 +1188,8 @@ export default function NovelReaderPage({
         }
       } else {
         // Bound dialogue track: pause main scene BGM (preserving its position) and play dialogue track
-        if (isPlaybackActiveRef.current || isCustomAudioPlaying || isPlayingBgm || mainBgmPausedForDialogueRef.current) {
-          isPlaybackActiveRef.current = true;
-          triggerDialogueAudio(audioResolved);
-        } else {
-          currentDialogueAudioRef.current = audioResolved.value;
-          setDialogueAudioTitle(audioResolved.label || "เพลงประจำบทพูด");
-        }
+        isPlaybackActiveRef.current = true;
+        triggerDialogueAudio(audioResolved);
       }
     } else {
       // NON-BOUND DIALOGUE BEAT:
@@ -2444,12 +2500,12 @@ export default function NovelReaderPage({
           )}
           <iframe
             ref={youtubeIframeRef}
-            src={`https://www.youtube-nocookie.com/embed/${activeYouTubeVideoId || extractYouTubeVideoId(activeScene?.bgmUrl || "")}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${activeYouTubeVideoId || extractYouTubeVideoId(activeScene?.bgmUrl || "")}`}
+            src={`https://www.youtube-nocookie.com/embed/${activeYouTubeVideoId || extractYouTubeVideoId(activeScene?.bgmUrl || "")}?enablejsapi=1&autoplay=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${activeYouTubeVideoId || extractYouTubeVideoId(activeScene?.bgmUrl || "")}`}
             title="Main Scene YouTube Audio Player"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             className={showMiniVideoPlayer && activePlayingChannel === "main" ? "w-full aspect-video" : "w-[2px] h-[2px] pointer-events-none"}
             onLoad={() => {
-              if (isPlaybackActiveRef.current && activePlayingChannelRef.current === "main") {
+              if (isPlaybackActiveRef.current && activePlayingChannelRef.current !== "dialogue") {
                 youtubeIframeRef.current?.contentWindow?.postMessage(
                   JSON.stringify({ event: "command", func: "unMute", args: [] }),
                   "*"
@@ -2499,7 +2555,7 @@ export default function NovelReaderPage({
           )}
           <iframe
             ref={dialogueYoutubeIframeRef}
-            src={`https://www.youtube-nocookie.com/embed/${dialogueYouTubeVideoId}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${dialogueYouTubeVideoId}`}
+            src={`https://www.youtube-nocookie.com/embed/${dialogueYouTubeVideoId}?enablejsapi=1&autoplay=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${dialogueYouTubeVideoId}`}
             title="Dialogue YouTube Audio Player"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             className={showMiniVideoPlayer && activePlayingChannel === "dialogue" ? "w-full aspect-video" : "w-[2px] h-[2px] pointer-events-none"}

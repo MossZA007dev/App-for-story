@@ -3562,36 +3562,65 @@ export default function StoryWorkspacePage({
               </div>
             )}
 
-            {/* Editable Scene Title */}
-            {isEditingTitle ? (
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={sceneTitleInput}
-                  onChange={(e) => {
-                    setSceneTitleInput(e.target.value);
-                    setHasUnsavedChanges(true);
-                  }}
-                  className="w-full bg-slate-900 border border-amber-400 rounded-lg px-2.5 py-1 text-base font-bold text-white font-thai focus:outline-none"
-                  autoFocus
-                />
-                <button
-                  onClick={() => setIsEditingTitle(false)}
-                  className="px-2 py-1 rounded bg-amber-500 text-slate-950 font-bold text-xs"
+            {/* Editable Scene Title & Dedicated Scene BGM Button */}
+            <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+              {isEditingTitle ? (
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <input
+                    type="text"
+                    value={sceneTitleInput}
+                    onChange={(e) => {
+                      setSceneTitleInput(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                    className="w-full bg-slate-900 border border-amber-400 rounded-lg px-2.5 py-1 text-base font-bold text-white font-thai focus:outline-none"
+                    autoFocus
+                  />
+                  <button
+                    onClick={() => setIsEditingTitle(false)}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs flex-shrink-0"
+                  >
+                    ตกลง
+                  </button>
+                </div>
+              ) : (
+                <h2
+                  onClick={() => setIsEditingTitle(true)}
+                  className="font-heading text-xl sm:text-2xl font-bold text-white tracking-tight leading-snug hover:text-amber-300 cursor-pointer flex items-center gap-2 group min-w-0 truncate"
+                  title="คลิกเพื่อแก้ไขชื่อฉาก"
                 >
-                  ตกลง
-                </button>
-              </div>
-            ) : (
-              <h2
-                onClick={() => setIsEditingTitle(true)}
-                className="font-heading text-xl sm:text-2xl font-bold text-white tracking-tight leading-snug hover:text-amber-300 cursor-pointer flex items-center gap-2 group"
-                title="คลิกเพื่อแก้ไขชื่อฉาก"
+                  <span className="truncate">{sceneTitleInput || activeScene?.title || "ฉากที่ 1"}</span>
+                  <Edit3 className="w-3.5 h-3.5 text-slate-500 group-hover:text-amber-400 opacity-60 flex-shrink-0" />
+                </h2>
+              )}
+
+              {/* Dedicated Scene BGM Button (in the red circled area) */}
+              <button
+                type="button"
+                onClick={() => setShowAudioModal(true)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-thai font-bold transition-all active:scale-95 flex-shrink-0 shadow-sm ${
+                  activeScene?.bgmUrl
+                    ? "bg-purple-950/40 hover:bg-purple-900/60 text-purple-300 border-purple-500/50 hover:border-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.2)]"
+                    : "bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-purple-300 border-slate-700/80 hover:border-purple-500/50"
+                }`}
+                title={
+                  activeScene?.bgmUrl
+                    ? `เพลงประจำฉาก: ${activeScene.bgmTitle || activeScene.bgmUrl} (คลิกเพื่อแก้ไขหรือเปลี่ยนเพลง)`
+                    : "คลิกเพื่อใส่เพลงประจำฉากนี้ (Scene BGM)"
+                }
               >
-                <span>{sceneTitleInput || activeScene?.title || "ฉากที่ 1"}</span>
-                <Edit3 className="w-3.5 h-3.5 text-slate-500 group-hover:text-amber-400 opacity-60" />
-              </h2>
-            )}
+                <Music
+                  className={`w-3.5 h-3.5 flex-shrink-0 ${
+                    activeScene?.bgmUrl ? "text-purple-400 animate-pulse" : "text-slate-400"
+                  }`}
+                />
+                <span className="truncate max-w-[130px] sm:max-w-[180px]">
+                  {activeScene?.bgmUrl
+                    ? activeScene.bgmTitle || "เพลงประจำฉาก"
+                    : "+ เพลงประจำฉาก"}
+                </span>
+              </button>
+            </div>
 
             {/* Location & AI Toolbar Row */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">

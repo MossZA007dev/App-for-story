@@ -45,6 +45,7 @@ import {
   resolveAudioForDialogueIndex,
   getAudioMoodLabel,
   DialogueBlock,
+  AudioBindingResult,
 } from "@/lib/story/dialogueParser";
 
 interface SceneImage {
@@ -160,12 +161,23 @@ export default function NovelReaderPage({
 
   const dialogueBlockRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  // Audio Engine State
+  // Audio Engine State (Dual Architecture: Main Scene BGM vs Dialogue-Bound Music)
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const dialogueAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const youtubeIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const dialogueYoutubeIframeRef = useRef<HTMLIFrameElement | null>(null);
+
   const [audioMode, setAudioMode] = useState<"ambient" | "custom">("custom");
   const [activeYouTubeVideoId, setActiveYouTubeVideoId] = useState<string | null>(null);
+  const [dialogueYouTubeVideoId, setDialogueYouTubeVideoId] = useState<string | null>(null);
+  const [activePlayingChannel, setActivePlayingChannel] = useState<"none" | "main" | "dialogue">("none");
+  const activePlayingChannelRef = useRef<"none" | "main" | "dialogue">("none");
+  useEffect(() => {
+    activePlayingChannelRef.current = activePlayingChannel;
+  }, [activePlayingChannel]);
+
   const [activeYouTubeTitle, setActiveYouTubeTitle] = useState<string>("");
+  const [dialogueAudioTitle, setDialogueAudioTitle] = useState<string>("");
   const [isPlayingBgm, setIsPlayingBgm] = useState(false);
   const [isCustomAudioPlaying, setIsCustomAudioPlaying] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<AudioTrack>("wildfire");
@@ -175,6 +187,11 @@ export default function NovelReaderPage({
   const [showAudioControls, setShowAudioControls] = useState(false);
   const [isUploadingBgm, setIsUploadingBgm] = useState(false);
   const [isCreatingNextEp, setIsCreatingNextEp] = useState(false);
+
+  // Seamless Resume State Tracking
+  const isPlaybackActiveRef = useRef<boolean>(false);
+  const mainBgmPausedForDialogueRef = useRef<boolean>(false);
+  const currentDialogueAudioRef = useRef<string>("");
 
   const isAnyPlaying = isCustomAudioPlaying || isPlayingBgm;
   const isCustomAudioPlayingRef = useRef(isCustomAudioPlaying);
@@ -206,6 +223,7 @@ export default function NovelReaderPage({
         if (data?.event === "infoDelivery" && data?.info) {
           if (data.info.playerState === 1) {
             setIsCustomAudioPlaying(true);
+            isPlaybackActiveRef.current = true;
           }
         }
       } catch {}
@@ -392,15 +410,226 @@ export default function NovelReaderPage({
     };
   }, []);
 
+  // Pause Main Scene BGM without losing playhead position
+  const pauseMainSceneBgm = () => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause(); // Retains currentTime!
+    }
+    if (youtubeIframeRef.current) {
+      youtubeIframeRef.current.contentWindow?.postMessage(
+        JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+        "*"
+      ); // Retains playback position!
+    }
+    ambientSound.stop();
+  };
+
+  // Resume or start Main Scene BGM (instantly continues from saved playhead position)
+  const resumeSceneBgmOrAmbient = (announce = true) => {
+    isPlaybackActiveRef.current = true;
+    mainBgmPausedForDialogueRef.current = false;
+
+    const targetYtId = extractYouTubeVideoId(activeScene?.bgmUrl);
+    if (targetYtId) {
+      setActiveYouTubeVideoId(targetYtId);
+      setActiveYouTubeTitle(activeScene?.bgmTitle || "เพลงประจำฉาก");
+      setIsCustomAudioPlaying(true);
+      setAudioMode("custom");
+      setActivePlayingChannel("main");
+      setTimeout(() => {
+        youtubeIframeRef.current?.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "unMute", args: [] }),
+          "*"
+        );
+        youtubeIframeRef.current?.contentWindow?.postMessage(
+          JSON.stringify({
+            event: "command",
+            func: "setVolume",
+            args: [Math.round((isMuted ? 0 : volume) * 100)],
+          }),
+          "*"
+        );
+        youtubeIframeRef.current?.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+          "*"
+        );
+      }, 100);
+      if (announce) toast.success(`กำลังเล่นเพลง: ${activeScene?.bgmTitle || "เพลงประจำฉาก"}`);
+    } else if (activeScene?.bgmUrl && audioPlayerRef.current) {
+      if (audioPlayerRef.current.src !== activeScene.bgmUrl) {
+        audioPlayerRef.current.src = activeScene.bgmUrl;
+      }
+      audioPlayerRef.current.volume = isMuted ? 0 : volume;
+      audioPlayerRef.current.play().catch((e) => console.warn(e));
+      setIsCustomAudioPlaying(true);
+      setAudioMode("custom");
+      setActivePlayingChannel("main");
+      if (announce) toast.success(`กำลังเล่นเพลง: ${activeScene?.bgmTitle || "เพลงประจำฉาก"}`);
+    } else {
+      ambientSound.setVolume(isMuted ? 0 : volume);
+      ambientSound.play(currentTrack);
+      setIsPlayingBgm(true);
+      setAudioMode("ambient");
+      setActivePlayingChannel("main");
+      if (announce) toast.success(`กำลังเล่นเพลงบรรยากาศ`);
+    }
+  };
+
+  // Stop Dialogue Track completely
+  const stopDialogueAudio = () => {
+    if (dialogueAudioPlayerRef.current) {
+      dialogueAudioPlayerRef.current.pause();
+      dialogueAudioPlayerRef.current.currentTime = 0;
+    }
+    if (dialogueYoutubeIframeRef.current) {
+      dialogueYoutubeIframeRef.current.contentWindow?.postMessage(
+        JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+        "*"
+      );
+      dialogueYoutubeIframeRef.current.contentWindow?.postMessage(
+        JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
+        "*"
+      );
+    }
+    currentDialogueAudioRef.current = "";
+    setDialogueAudioTitle("");
+  };
+
+  // Play Dialogue-specific audio track (pauses Main Scene BGM seamlessly)
+  const triggerDialogueAudio = (audioResolved: AudioBindingResult) => {
+    if (currentDialogueAudioRef.current === audioResolved.value) {
+      // Same track on consecutive dialogue lines: continue without restarting!
+      return;
+    }
+
+    // 1. Pause Main Scene BGM (preserving its exact timestamp)
+    pauseMainSceneBgm();
+    mainBgmPausedForDialogueRef.current = true;
+
+    // 2. Stop old dialogue audio
+    stopDialogueAudio();
+
+    currentDialogueAudioRef.current = audioResolved.value;
+    setDialogueAudioTitle(audioResolved.label || "เพลงประจำบทพูด");
+
+    if (audioResolved.action === "play_url") {
+      const directUrl = audioResolved.value.replace(/^url:/, "");
+      const ytId = extractYouTubeVideoId(directUrl);
+      if (ytId) {
+        setDialogueYouTubeVideoId(ytId);
+        setActivePlayingChannel("dialogue");
+        setIsCustomAudioPlaying(true);
+        setAudioMode("custom");
+        setTimeout(() => {
+          dialogueYoutubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "loadVideoById", args: [ytId] }),
+            "*"
+          );
+          dialogueYoutubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "unMute", args: [] }),
+            "*"
+          );
+          dialogueYoutubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({
+              event: "command",
+              func: "setVolume",
+              args: [Math.round((isMuted ? 0 : volume) * 100)],
+            }),
+            "*"
+          );
+          dialogueYoutubeIframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+            "*"
+          );
+        }, 120);
+      } else if (dialogueAudioPlayerRef.current) {
+        setDialogueYouTubeVideoId(null);
+        dialogueAudioPlayerRef.current.src = directUrl;
+        dialogueAudioPlayerRef.current.volume = isMuted ? 0 : volume;
+        dialogueAudioPlayerRef.current.play().catch((e) => console.warn(e));
+        setActivePlayingChannel("dialogue");
+        setIsCustomAudioPlaying(true);
+        setAudioMode("custom");
+      }
+    } else if (audioResolved.action === "play_sfx") {
+      const sfxId = audioResolved.value.replace(/^sfx:/, "");
+      const sfx = projectSfxList.find((s) => s.id === sfxId);
+      if (sfx) {
+        const ytId = extractYouTubeVideoId(sfx.audioUrl);
+        if (ytId) {
+          setDialogueYouTubeVideoId(ytId);
+          setActivePlayingChannel("dialogue");
+          setIsCustomAudioPlaying(true);
+          setAudioMode("custom");
+          setTimeout(() => {
+            dialogueYoutubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({ event: "command", func: "loadVideoById", args: [ytId] }),
+              "*"
+            );
+            dialogueYoutubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({ event: "command", func: "unMute", args: [] }),
+              "*"
+            );
+            dialogueYoutubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({
+                event: "command",
+                func: "setVolume",
+                args: [Math.round((isMuted ? 0 : volume) * 100)],
+              }),
+              "*"
+            );
+            dialogueYoutubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+              "*"
+            );
+          }, 120);
+        } else if (sfx.category === "music" && dialogueAudioPlayerRef.current) {
+          setDialogueYouTubeVideoId(null);
+          dialogueAudioPlayerRef.current.src = sfx.audioUrl;
+          dialogueAudioPlayerRef.current.volume = isMuted ? 0 : (sfx.volume ?? 0.8) * volume;
+          dialogueAudioPlayerRef.current.play().catch(() => {});
+          setActivePlayingChannel("dialogue");
+          setIsCustomAudioPlaying(true);
+          setAudioMode("custom");
+        } else if (sfx.audioUrl.startsWith("synth:")) {
+          ambientSound.setVolume(isMuted ? 0 : (sfx.volume ?? 0.8) * volume);
+          ambientSound.play(sfx.audioUrl.replace(/^synth:/, "") as any);
+          setActivePlayingChannel("dialogue");
+          setIsPlayingBgm(true);
+        } else {
+          try {
+            const snd = new Audio(sfx.audioUrl);
+            snd.volume = isMuted ? 0 : (sfx.volume ?? 0.8) * volume;
+            snd.play().catch(() => {});
+          } catch {}
+        }
+      }
+    } else if (audioResolved.action === "play_ambient") {
+      setDialogueYouTubeVideoId(null);
+      ambientSound.setVolume(isMuted ? 0 : volume);
+      ambientSound.play(audioResolved.value as any);
+      setActivePlayingChannel("dialogue");
+      setIsPlayingBgm(true);
+    }
+  };
+
   // Sync custom audio when activeScene changes
   useEffect(() => {
+    // When scene changes, stop previous dialogue audio & reset paused state
+    stopDialogueAudio();
+    mainBgmPausedForDialogueRef.current = false;
+
     if (activeScene?.bgmUrl) {
       const ytId = extractYouTubeVideoId(activeScene.bgmUrl);
       if (ytId) {
         setActiveYouTubeVideoId(ytId);
         setActiveYouTubeTitle(activeScene.bgmTitle || "เพลงประจำฉาก");
-        if (audioPlayerRef.current) audioPlayerRef.current.pause();
-        if (isCustomAudioPlaying) {
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.pause();
+          audioPlayerRef.current.currentTime = 0;
+        }
+        if (isPlaybackActiveRef.current || isCustomAudioPlaying) {
+          setActivePlayingChannel("main");
           setTimeout(() => {
             youtubeIframeRef.current?.contentWindow?.postMessage(
               JSON.stringify({ event: "command", func: "playVideo", args: [] }),
@@ -421,7 +650,8 @@ export default function NovelReaderPage({
         setActiveYouTubeTitle(activeScene.bgmTitle || "เพลงประจำฉาก");
         audioPlayerRef.current.src = activeScene.bgmUrl;
         audioPlayerRef.current.volume = isMuted ? 0 : volume;
-        if (isCustomAudioPlaying) {
+        if (isPlaybackActiveRef.current || isCustomAudioPlaying) {
+          setActivePlayingChannel("main");
           audioPlayerRef.current.play().catch((e) => console.warn(e));
         }
       }
@@ -430,6 +660,7 @@ export default function NovelReaderPage({
       setActiveYouTubeTitle("");
       if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
+        audioPlayerRef.current.currentTime = 0;
       }
       if (youtubeIframeRef.current) {
         youtubeIframeRef.current.contentWindow?.postMessage(
@@ -438,128 +669,59 @@ export default function NovelReaderPage({
         );
       }
       setIsCustomAudioPlaying(false);
+      setActivePlayingChannel("none");
     }
   }, [activeScene?.id, activeScene?.bgmUrl]);
 
   // Master Play/Pause Toggle
   const handleToggleMasterPlay = () => {
-    if (isAnyPlaying) {
+    if (isAnyPlaying || isPlaybackActiveRef.current) {
       // STOP EVERYTHING RELIABLY
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.pause();
-        audioPlayerRef.current.currentTime = 0;
-      }
-      if (youtubeIframeRef.current) {
-        youtubeIframeRef.current.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-          "*"
-        );
-        youtubeIframeRef.current.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
-          "*"
-        );
-        youtubeIframeRef.current.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "mute", args: [] }),
-          "*"
-        );
-      }
-      ambientSound.stop();
+      isPlaybackActiveRef.current = false;
+      mainBgmPausedForDialogueRef.current = false;
+
+      pauseMainSceneBgm();
+      stopDialogueAudio();
+
       setIsCustomAudioPlaying(false);
       setIsPlayingBgm(false);
+      setActivePlayingChannel("none");
       toast.info("หยุดเล่นเพลงเรียบร้อย");
       return;
     }
 
     // START PLAYING
-    const targetYtId = activeYouTubeVideoId || extractYouTubeVideoId(activeScene?.bgmUrl);
-    if (targetYtId) {
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.pause();
-        audioPlayerRef.current.currentTime = 0;
-      }
-      setActiveYouTubeVideoId(targetYtId);
-      setActiveYouTubeTitle(activeYouTubeTitle || activeScene?.bgmTitle || "YouTube Soundtrack");
-      setIsCustomAudioPlaying(true);
-      setAudioMode("custom");
-      setTimeout(() => {
-        youtubeIframeRef.current?.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "loadVideoById", args: [targetYtId] }),
-          "*"
-        );
-        youtubeIframeRef.current?.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "unMute", args: [] }),
-          "*"
-        );
-        youtubeIframeRef.current?.contentWindow?.postMessage(
-          JSON.stringify({
-            event: "command",
-            func: "setVolume",
-            args: [Math.round((isMuted ? 0 : volume) * 100)],
-          }),
-          "*"
-        );
-        youtubeIframeRef.current?.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "playVideo", args: [] }),
-          "*"
-        );
-      }, 150);
-      toast.success(`กำลังเล่นเพลง: ${activeYouTubeTitle || activeScene?.bgmTitle || "เพลงประจำฉาก"}`);
-    } else if (activeScene?.bgmUrl && audioPlayerRef.current) {
-      if (youtubeIframeRef.current) {
-        youtubeIframeRef.current.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-          "*"
-        );
-        youtubeIframeRef.current.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
-          "*"
-        );
-        youtubeIframeRef.current.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "mute", args: [] }),
-          "*"
-        );
-      }
-      audioPlayerRef.current.src = activeScene.bgmUrl;
-      audioPlayerRef.current.volume = isMuted ? 0 : volume;
-      audioPlayerRef.current.play().catch((e) => console.warn(e));
-      setIsCustomAudioPlaying(true);
-      setAudioMode("custom");
-      toast.success(`กำลังเล่นเพลง: ${activeScene.bgmTitle || "เพลงประจำฉาก"}`);
-    } else {
-      ambientSound.setVolume(isMuted ? 0 : volume);
-      ambientSound.play(currentTrack);
-      setIsPlayingBgm(true);
-      setAudioMode("ambient");
-      toast.success(`กำลังเล่นเพลงบรรยากาศ`);
+    isPlaybackActiveRef.current = true;
+
+    // Check if current dialogue has a direct audio binding:
+    const audioResolved = resolveAudioForDialogueIndex(
+      activeDialogueIndex,
+      dialogueBindings,
+      activeScene?.bgmUrl
+    );
+
+    if (audioResolved.isDirectBinding && audioResolved.action !== "stop" && audioResolved.action !== "play_scene_bgm") {
+      triggerDialogueAudio(audioResolved);
+      return;
     }
+
+    resumeSceneBgmOrAmbient();
   };
 
   // Play Specific Ambient Track
   const handleSelectAmbientTrack = (track: AudioTrack) => {
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      audioPlayerRef.current.currentTime = 0;
-    }
-    if (youtubeIframeRef.current) {
-      youtubeIframeRef.current.contentWindow?.postMessage(
-        JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-        "*"
-      );
-      youtubeIframeRef.current.contentWindow?.postMessage(
-        JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
-        "*"
-      );
-      youtubeIframeRef.current.contentWindow?.postMessage(
-        JSON.stringify({ event: "command", func: "mute", args: [] }),
-        "*"
-      );
-    }
+    pauseMainSceneBgm();
+    stopDialogueAudio();
+
     setIsCustomAudioPlaying(false);
     ambientSound.setVolume(isMuted ? 0 : volume);
     ambientSound.play(track);
     setIsPlayingBgm(true);
     setCurrentTrack(track);
     setAudioMode("ambient");
+    setActivePlayingChannel("main");
+    isPlaybackActiveRef.current = true;
+
     const trackLabels: Record<AudioTrack, string> = {
       wildfire: "เพลิงป่า (Wildfire Drone)",
       winter: "ลมเหมันต์ (Winter Winds)",
@@ -575,72 +737,20 @@ export default function NovelReaderPage({
 
   // Play Custom Scene Track
   const handlePlayCustomTrack = () => {
-    const targetYtId = activeYouTubeVideoId || extractYouTubeVideoId(activeScene?.bgmUrl);
-    if (!targetYtId && !activeScene?.bgmUrl) return;
+    if (!activeScene?.bgmUrl) return;
     ambientSound.stop();
     setIsPlayingBgm(false);
-    if (targetYtId) {
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.pause();
-        audioPlayerRef.current.currentTime = 0;
-      }
-      setActiveYouTubeVideoId(targetYtId);
-      setActiveYouTubeTitle(activeYouTubeTitle || activeScene?.bgmTitle || "YouTube Soundtrack");
-      setIsCustomAudioPlaying(true);
-      setAudioMode("custom");
-      setTimeout(() => {
-        youtubeIframeRef.current?.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "loadVideoById", args: [targetYtId] }),
-          "*"
-        );
-        youtubeIframeRef.current?.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "unMute", args: [] }),
-          "*"
-        );
-        youtubeIframeRef.current?.contentWindow?.postMessage(
-          JSON.stringify({
-            event: "command",
-            func: "setVolume",
-            args: [Math.round((isMuted ? 0 : volume) * 100)],
-          }),
-          "*"
-        );
-        youtubeIframeRef.current?.contentWindow?.postMessage(
-          JSON.stringify({ event: "command", func: "playVideo", args: [] }),
-          "*"
-        );
-      }, 150);
-      toast.success(`เล่นเพลง: ${activeYouTubeTitle || activeScene?.bgmTitle || "เพลงประจำฉาก"}`);
-    } else if (audioPlayerRef.current && activeScene?.bgmUrl) {
-      audioPlayerRef.current.src = activeScene.bgmUrl;
-      audioPlayerRef.current.volume = isMuted ? 0 : volume;
-      audioPlayerRef.current.play().catch((e) => console.warn(e));
-      setIsCustomAudioPlaying(true);
-      setAudioMode("custom");
-      toast.success(`เล่นเพลงประจำฉาก: ${activeScene.bgmTitle || "เพลงประจำฉาก"}`);
-    }
+    stopDialogueAudio();
+    resumeSceneBgmOrAmbient();
   };
 
   const handlePauseCustomTrack = () => {
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      audioPlayerRef.current.currentTime = 0;
-    }
-    if (youtubeIframeRef.current) {
-      youtubeIframeRef.current.contentWindow?.postMessage(
-        JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-        "*"
-      );
-      youtubeIframeRef.current.contentWindow?.postMessage(
-        JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
-        "*"
-      );
-      youtubeIframeRef.current.contentWindow?.postMessage(
-        JSON.stringify({ event: "command", func: "mute", args: [] }),
-        "*"
-      );
-    }
+    isPlaybackActiveRef.current = false;
+    mainBgmPausedForDialogueRef.current = false;
+    pauseMainSceneBgm();
+    stopDialogueAudio();
     setIsCustomAudioPlaying(false);
+    setActivePlayingChannel("none");
     toast.info("หยุดเพลงเรียบร้อย");
   };
 
@@ -649,19 +759,35 @@ export default function NovelReaderPage({
     setVolume(clamped);
     if (isMuted && clamped > 0) setIsMuted(false);
     ambientSound.setVolume(clamped);
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.volume = clamped;
-    }
-    if (youtubeIframeRef.current) {
-      youtubeIframeRef.current.contentWindow?.postMessage(
-        JSON.stringify({
-          event: "command",
-          func: "setVolume",
-          args: [Math.round(clamped * 100)],
-        }),
-        "*"
-      );
-    }
+    if (audioPlayerRef.current) audioPlayerRef.current.volume = clamped;
+    if (dialogueAudioPlayerRef.current) dialogueAudioPlayerRef.current.volume = clamped;
+    const ytVol = Math.round(clamped * 100);
+    youtubeIframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ event: "command", func: "setVolume", args: [ytVol] }),
+      "*"
+    );
+    dialogueYoutubeIframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ event: "command", func: "setVolume", args: [ytVol] }),
+      "*"
+    );
+  };
+
+  const handleToggleMute = () => {
+    const nextMute = !isMuted;
+    setIsMuted(nextMute);
+    const targetVol = nextMute ? 0 : volume;
+    ambientSound.setVolume(targetVol);
+    if (audioPlayerRef.current) audioPlayerRef.current.volume = targetVol;
+    if (dialogueAudioPlayerRef.current) dialogueAudioPlayerRef.current.volume = targetVol;
+    const ytFunc = nextMute ? "mute" : "unMute";
+    youtubeIframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ event: "command", func: ytFunc, args: [] }),
+      "*"
+    );
+    dialogueYoutubeIframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ event: "command", func: ytFunc, args: [] }),
+      "*"
+    );
   };
 
   // Upload Scene BGM directly in Reader
@@ -982,361 +1108,43 @@ export default function NovelReaderPage({
       activeScene.bgmUrl
     );
 
-    // If this dialogue beat has an explicit audio binding, transition audio/mood smoothly
     if (audioResolved.isDirectBinding) {
       if (audioResolved.action === "stop") {
-        ambientSound.stop();
-        if (audioPlayerRef.current) {
-          audioPlayerRef.current.pause();
-          audioPlayerRef.current.currentTime = 0;
-        }
-        if (youtubeIframeRef.current) {
-          youtubeIframeRef.current.contentWindow?.postMessage(
-            JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-            "*"
-          );
-          youtubeIframeRef.current.contentWindow?.postMessage(
-            JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
-            "*"
-          );
-          youtubeIframeRef.current.contentWindow?.postMessage(
-            JSON.stringify({ event: "command", func: "mute", args: [] }),
-            "*"
-          );
+        // Dramatic silence command for this dialogue beat
+        stopDialogueAudio();
+        if (isPlaybackActiveRef.current || isCustomAudioPlaying || isPlayingBgm) {
+          pauseMainSceneBgm();
+          mainBgmPausedForDialogueRef.current = true;
         }
         setIsCustomAudioPlaying(false);
         setIsPlayingBgm(false);
-        setActiveYouTubeVideoId(null);
-        setActiveYouTubeTitle("");
+        setActivePlayingChannel("none");
       } else if (audioResolved.action === "play_scene_bgm") {
-        if (activeScene.bgmUrl) {
-          ambientSound.stop();
-          setIsPlayingBgm(false);
-          const ytId = extractYouTubeVideoId(activeScene.bgmUrl);
-          if (ytId) {
-            if (audioPlayerRef.current) {
-              audioPlayerRef.current.pause();
-              audioPlayerRef.current.currentTime = 0;
-            }
-            setActiveYouTubeVideoId(ytId);
-            setActiveYouTubeTitle(activeScene.bgmTitle || "เพลงประจำฉาก");
-            setIsCustomAudioPlaying(true);
-            setAudioMode("custom");
-            setTimeout(() => {
-              youtubeIframeRef.current?.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "loadVideoById", args: [ytId] }),
-                "*"
-              );
-              youtubeIframeRef.current?.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "unMute", args: [] }),
-                "*"
-              );
-              youtubeIframeRef.current?.contentWindow?.postMessage(
-                JSON.stringify({
-                  event: "command",
-                  func: "setVolume",
-                  args: [Math.round((isMuted ? 0 : volume) * 100)],
-                }),
-                "*"
-              );
-              youtubeIframeRef.current?.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "playVideo", args: [] }),
-                "*"
-              );
-            }, 150);
-          } else if (audioPlayerRef.current) {
-            if (youtubeIframeRef.current) {
-              youtubeIframeRef.current.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-                "*"
-              );
-              youtubeIframeRef.current.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
-                "*"
-              );
-              youtubeIframeRef.current.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "mute", args: [] }),
-                "*"
-              );
-            }
-            setActiveYouTubeVideoId(null);
-            setActiveYouTubeTitle(activeScene.bgmTitle || "เพลงประจำฉาก");
-            audioPlayerRef.current.src = activeScene.bgmUrl;
-            audioPlayerRef.current.volume = isMuted ? 0 : volume;
-            audioPlayerRef.current.play().catch(() => {});
-            setIsCustomAudioPlaying(true);
-            setAudioMode("custom");
-          }
+        // Explicit command to return to Main Scene BGM
+        stopDialogueAudio();
+        if (isPlaybackActiveRef.current || mainBgmPausedForDialogueRef.current) {
+          resumeSceneBgmOrAmbient(false);
         }
-      } else if (audioResolved.action === "play_url") {
-        const directUrl = audioResolved.value.replace(/^url:/, "");
-        ambientSound.stop();
-        setIsPlayingBgm(false);
-        const ytId = extractYouTubeVideoId(directUrl);
-        if (ytId) {
-          if (audioPlayerRef.current) {
-            audioPlayerRef.current.pause();
-            audioPlayerRef.current.currentTime = 0;
-          }
-          setActiveYouTubeVideoId(ytId);
-          setActiveYouTubeTitle(audioResolved.label || "เพลงประจำบทพูด");
-          setIsCustomAudioPlaying(true);
-          setAudioMode("custom");
-          setTimeout(() => {
-            youtubeIframeRef.current?.contentWindow?.postMessage(
-              JSON.stringify({ event: "command", func: "loadVideoById", args: [ytId] }),
-              "*"
-            );
-            youtubeIframeRef.current?.contentWindow?.postMessage(
-              JSON.stringify({ event: "command", func: "unMute", args: [] }),
-              "*"
-            );
-            youtubeIframeRef.current?.contentWindow?.postMessage(
-              JSON.stringify({
-                event: "command",
-                func: "setVolume",
-                args: [Math.round((isMuted ? 0 : volume) * 100)],
-              }),
-              "*"
-            );
-            youtubeIframeRef.current?.contentWindow?.postMessage(
-              JSON.stringify({ event: "command", func: "playVideo", args: [] }),
-              "*"
-            );
-          }, 150);
-        } else if (audioPlayerRef.current) {
-          if (youtubeIframeRef.current) {
-            youtubeIframeRef.current.contentWindow?.postMessage(
-              JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-              "*"
-            );
-            youtubeIframeRef.current.contentWindow?.postMessage(
-              JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
-              "*"
-            );
-            youtubeIframeRef.current.contentWindow?.postMessage(
-              JSON.stringify({ event: "command", func: "mute", args: [] }),
-              "*"
-            );
-          }
-          setActiveYouTubeVideoId(null);
-          setActiveYouTubeTitle(audioResolved.label || "เพลงประจำบทพูด");
-          audioPlayerRef.current.src = directUrl;
-          audioPlayerRef.current.volume = isMuted ? 0 : volume;
-          audioPlayerRef.current.play().catch(() => {});
-          setIsCustomAudioPlaying(true);
-          setAudioMode("custom");
-        }
-      } else if (audioResolved.action === "play_ambient") {
-        if (audioPlayerRef.current) {
-          audioPlayerRef.current.pause();
-          audioPlayerRef.current.currentTime = 0;
-        }
-        if (youtubeIframeRef.current) {
-          youtubeIframeRef.current.contentWindow?.postMessage(
-            JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-            "*"
-          );
-          youtubeIframeRef.current.contentWindow?.postMessage(
-            JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
-            "*"
-          );
-          youtubeIframeRef.current.contentWindow?.postMessage(
-            JSON.stringify({ event: "command", func: "mute", args: [] }),
-            "*"
-          );
-        }
-        setActiveYouTubeVideoId(null);
-        setActiveYouTubeTitle("");
-        setIsCustomAudioPlaying(false);
-        ambientSound.setVolume(isMuted ? 0 : volume);
-        ambientSound.play(audioResolved.value as any);
-        setIsPlayingBgm(true);
-        setCurrentTrack(audioResolved.value as any);
-        setAudioMode("ambient");
-      } else if (audioResolved.action === "play_sfx") {
-        const sfxId = audioResolved.value.replace(/^sfx:/, "");
-        const sfx = projectSfxList.find((s) => s.id === sfxId);
-        if (sfx) {
-          const ytId = extractYouTubeVideoId(sfx.audioUrl);
-          if (ytId) {
-            ambientSound.stop();
-            setIsPlayingBgm(false);
-            if (audioPlayerRef.current) {
-              audioPlayerRef.current.pause();
-              audioPlayerRef.current.currentTime = 0;
-            }
-            setActiveYouTubeVideoId(ytId);
-            setActiveYouTubeTitle(sfx.name || "เพลงประจำบทพูด");
-            setIsCustomAudioPlaying(true);
-            setAudioMode("custom");
-            setTimeout(() => {
-              youtubeIframeRef.current?.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "loadVideoById", args: [ytId] }),
-                "*"
-              );
-              youtubeIframeRef.current?.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "unMute", args: [] }),
-                "*"
-              );
-              youtubeIframeRef.current?.contentWindow?.postMessage(
-                JSON.stringify({
-                  event: "command",
-                  func: "setVolume",
-                  args: [Math.round((isMuted ? 0 : volume) * 100)],
-                }),
-                "*"
-              );
-              youtubeIframeRef.current?.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "playVideo", args: [] }),
-                "*"
-              );
-            }, 150);
-          } else if (sfx.category === "music") {
-            ambientSound.stop();
-            setIsPlayingBgm(false);
-            if (youtubeIframeRef.current) {
-              youtubeIframeRef.current.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-                "*"
-              );
-              youtubeIframeRef.current.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
-                "*"
-              );
-              youtubeIframeRef.current.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "mute", args: [] }),
-                "*"
-              );
-            }
-            if (audioPlayerRef.current) {
-              setActiveYouTubeVideoId(null);
-              setActiveYouTubeTitle(sfx.name || "เพลงประจำบทพูด");
-              audioPlayerRef.current.src = sfx.audioUrl;
-              audioPlayerRef.current.volume = isMuted ? 0 : (sfx.volume ?? 0.8) * volume;
-              audioPlayerRef.current.play().catch(() => {});
-              setIsCustomAudioPlaying(true);
-              setAudioMode("custom");
-            }
-          } else if (sfx.audioUrl.startsWith("synth:")) {
-            ambientSound.setVolume(isMuted ? 0 : (sfx.volume ?? 0.8) * volume);
-            ambientSound.play(sfx.audioUrl.replace(/^synth:/, "") as any);
-          } else {
-            try {
-              const snd = new Audio(sfx.audioUrl);
-              snd.volume = isMuted ? 0 : (sfx.volume ?? 0.8) * volume;
-              snd.play().catch(() => {});
-            } catch {}
-          }
+      } else {
+        // Bound dialogue track: pause main scene BGM (preserving its position) and play dialogue track
+        if (isPlaybackActiveRef.current || isCustomAudioPlaying || isPlayingBgm || mainBgmPausedForDialogueRef.current) {
+          isPlaybackActiveRef.current = true;
+          triggerDialogueAudio(audioResolved);
+        } else {
+          currentDialogueAudioRef.current = audioResolved.value;
+          setDialogueAudioTitle(audioResolved.label || "เพลงประจำบทพูด");
         }
       }
     } else {
       // NON-BOUND DIALOGUE BEAT:
-      // The current beat has NO dialogue-specific audio binding.
-      // A dialogue song plays strictly on the bound beat only.
-      // 1. If the scene has a scene BGM (activeScene.bgmUrl):
-      //    Transition back to scene BGM smoothly (if audio is active).
-      // 2. If the scene has NO scene BGM:
-      //    Stop all dialogue-specific audio immediately (silence).
-      if (activeScene.bgmUrl) {
-        const sceneYtId = extractYouTubeVideoId(activeScene.bgmUrl);
-        if (sceneYtId) {
-          if (activeYouTubeVideoIdRef.current !== sceneYtId) {
-            setActiveYouTubeVideoId(sceneYtId);
-            setActiveYouTubeTitle(activeScene.bgmTitle || "เพลงประจำฉาก");
-            if (isCustomAudioPlayingRef.current) {
-              if (audioPlayerRef.current) {
-                audioPlayerRef.current.pause();
-                audioPlayerRef.current.currentTime = 0;
-              }
-              ambientSound.stop();
-              setAudioMode("custom");
-              setTimeout(() => {
-                youtubeIframeRef.current?.contentWindow?.postMessage(
-                  JSON.stringify({ event: "command", func: "loadVideoById", args: [sceneYtId] }),
-                  "*"
-                );
-                youtubeIframeRef.current?.contentWindow?.postMessage(
-                  JSON.stringify({ event: "command", func: "unMute", args: [] }),
-                  "*"
-                );
-                youtubeIframeRef.current?.contentWindow?.postMessage(
-                  JSON.stringify({
-                    event: "command",
-                    func: "setVolume",
-                    args: [Math.round((isMuted ? 0 : volume) * 100)],
-                  }),
-                  "*"
-                );
-                youtubeIframeRef.current?.contentWindow?.postMessage(
-                  JSON.stringify({ event: "command", func: "playVideo", args: [] }),
-                  "*"
-                );
-              }, 150);
-            }
-          }
-        } else {
-          // Scene BGM is HTML5 direct audio file
-          if (activeYouTubeVideoIdRef.current) {
-            if (youtubeIframeRef.current) {
-              youtubeIframeRef.current.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-                "*"
-              );
-              youtubeIframeRef.current.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
-                "*"
-              );
-              youtubeIframeRef.current.contentWindow?.postMessage(
-                JSON.stringify({ event: "command", func: "mute", args: [] }),
-                "*"
-              );
-            }
-            setActiveYouTubeVideoId(null);
-            setActiveYouTubeTitle(activeScene.bgmTitle || "เพลงประจำฉาก");
-            if (isCustomAudioPlayingRef.current && audioPlayerRef.current) {
-              audioPlayerRef.current.src = activeScene.bgmUrl;
-              audioPlayerRef.current.volume = isMuted ? 0 : volume;
-              audioPlayerRef.current.play().catch(() => {});
-              setAudioMode("custom");
-            }
-          } else if (audioPlayerRef.current && audioPlayerRef.current.src !== activeScene.bgmUrl) {
-            setActiveYouTubeTitle(activeScene.bgmTitle || "เพลงประจำฉาก");
-            if (isCustomAudioPlayingRef.current) {
-              audioPlayerRef.current.src = activeScene.bgmUrl;
-              audioPlayerRef.current.volume = isMuted ? 0 : volume;
-              audioPlayerRef.current.play().catch(() => {});
-              setAudioMode("custom");
-            }
-          }
-        }
-      } else {
-        // Scene has NO scene BGM:
-        // Dialogue-bound song must STOP completely!
-        if (isCustomAudioPlayingRef.current || activeYouTubeVideoIdRef.current) {
-          if (audioPlayerRef.current) {
-            audioPlayerRef.current.pause();
-            audioPlayerRef.current.currentTime = 0;
-          }
-          if (youtubeIframeRef.current) {
-            youtubeIframeRef.current.contentWindow?.postMessage(
-              JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
-              "*"
-            );
-            youtubeIframeRef.current.contentWindow?.postMessage(
-              JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
-              "*"
-            );
-            youtubeIframeRef.current.contentWindow?.postMessage(
-              JSON.stringify({ event: "command", func: "mute", args: [] }),
-              "*"
-            );
-          }
-          ambientSound.stop();
-          setIsCustomAudioPlaying(false);
-          setIsPlayingBgm(false);
-          setActiveYouTubeVideoId(null);
-          setActiveYouTubeTitle("");
+      // Current dialogue has no bound track. Stop dialogue track and SEAMLESSLY RESUME Main Scene BGM!
+      stopDialogueAudio();
+
+      if (activeScene.bgmUrl && (isPlaybackActiveRef.current || mainBgmPausedForDialogueRef.current)) {
+        resumeSceneBgmOrAmbient(false);
+      } else if (!activeScene.bgmUrl) {
+        if (currentDialogueAudioRef.current) {
+          stopDialogueAudio();
         }
       }
     }
@@ -1499,8 +1307,10 @@ export default function NovelReaderPage({
                     )}
                     <span className="text-[11px] font-thai font-semibold text-slate-200 truncate">
                       {isAnyPlaying
-                        ? audioMode === "custom"
-                          ? `🎵 ${activeYouTubeTitle || activeScene?.bgmTitle || "เพลงประจำฉาก"}`
+                        ? activePlayingChannel === "dialogue"
+                          ? `🎵 ${dialogueAudioTitle || "เพลงประจำบทพูด"}`
+                          : audioMode === "custom"
+                          ? `🎵 ${activeScene?.bgmTitle || activeYouTubeTitle || "เพลงประจำฉาก"}`
                           : currentTrack === "wildfire"
                           ? "🔥 เพลิงป่า"
                           : currentTrack === "winter"
@@ -2569,39 +2379,58 @@ export default function NovelReaderPage({
         </div>
       </div>
 
-      {/* Hidden Audio Player for Custom Scene BGM */}
+      {/* Hidden HTML5 Audio Players (Main Scene BGM vs Dialogue-Bound Music) */}
       <audio
         ref={audioPlayerRef}
         loop
         crossOrigin="anonymous"
         className="hidden"
-        onPlay={() => setIsCustomAudioPlaying(true)}
-        onPause={() => setIsCustomAudioPlaying(false)}
-        onEnded={() => setIsCustomAudioPlaying(false)}
-        onError={(e) => {
-          console.warn("Reader audio error:", e);
-          setIsCustomAudioPlaying(false);
-          const ytId = extractYouTubeVideoId(activeScene?.bgmUrl);
-          if (!ytId && activeScene?.bgmUrl) {
-            toast.error("ไม่สามารถเล่นไฟล์เสียงจากลิงก์นี้ได้ ลิงก์อาจติด CORS หรือไม่ใช่ Direct Audio (.mp3, .wav)");
+        onPlay={() => {
+          setIsCustomAudioPlaying(true);
+          setActivePlayingChannel("main");
+        }}
+        onPause={() => {
+          if (activePlayingChannelRef.current === "main") {
+            setIsCustomAudioPlaying(false);
           }
+        }}
+        onError={(e) => {
+          console.warn("Reader main audio error:", e);
+        }}
+      />
+      <audio
+        ref={dialogueAudioPlayerRef}
+        loop
+        crossOrigin="anonymous"
+        className="hidden"
+        onPlay={() => {
+          setIsCustomAudioPlaying(true);
+          setActivePlayingChannel("dialogue");
+        }}
+        onPause={() => {
+          if (activePlayingChannelRef.current === "dialogue") {
+            setIsCustomAudioPlaying(false);
+          }
+        }}
+        onError={(e) => {
+          console.warn("Reader dialogue audio error:", e);
         }}
       />
 
-      {/* YouTube Background & Picture-in-Picture Player for Reader */}
+      {/* Main Scene YouTube Background & Picture-in-Picture Player */}
       {(activeYouTubeVideoId || (activeScene?.bgmUrl && extractYouTubeVideoId(activeScene.bgmUrl))) && (
         <div
           className={
-            showMiniVideoPlayer
+            showMiniVideoPlayer && activePlayingChannel === "main"
               ? "fixed bottom-5 right-5 z-50 w-72 sm:w-80 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 bg-slate-950 transition-all duration-300 animate-in fade-in zoom-in-95"
               : "fixed bottom-1 right-1 w-[2px] h-[2px] opacity-[0.01] pointer-events-none overflow-hidden z-0"
           }
         >
-          {showMiniVideoPlayer && (
+          {showMiniVideoPlayer && activePlayingChannel === "main" && (
             <div className="flex items-center justify-between px-3 py-2 bg-slate-900 border-b border-slate-800 text-xs text-slate-300 font-thai">
               <span className="flex items-center gap-1.5 truncate">
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                <span className="truncate font-semibold">{activeYouTubeTitle || activeScene?.bgmTitle || "YouTube Soundtrack"}</span>
+                <span className="truncate font-semibold">{activeScene?.bgmTitle || activeYouTubeTitle || "เพลงประจำฉาก"}</span>
               </span>
               <button
                 type="button"
@@ -2616,11 +2445,11 @@ export default function NovelReaderPage({
           <iframe
             ref={youtubeIframeRef}
             src={`https://www.youtube-nocookie.com/embed/${activeYouTubeVideoId || extractYouTubeVideoId(activeScene?.bgmUrl || "")}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${activeYouTubeVideoId || extractYouTubeVideoId(activeScene?.bgmUrl || "")}`}
-            title="Reader YouTube Audio Player"
+            title="Main Scene YouTube Audio Player"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            className={showMiniVideoPlayer ? "w-full aspect-video" : "w-[2px] h-[2px] pointer-events-none"}
+            className={showMiniVideoPlayer && activePlayingChannel === "main" ? "w-full aspect-video" : "w-[2px] h-[2px] pointer-events-none"}
             onLoad={() => {
-              if (isCustomAudioPlaying) {
+              if (isPlaybackActiveRef.current && activePlayingChannelRef.current === "main") {
                 youtubeIframeRef.current?.contentWindow?.postMessage(
                   JSON.stringify({ event: "command", func: "unMute", args: [] }),
                   "*"
@@ -2634,6 +2463,61 @@ export default function NovelReaderPage({
                   "*"
                 );
                 youtubeIframeRef.current?.contentWindow?.postMessage(
+                  JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+                  "*"
+                );
+              }
+            }}
+          />
+        </div>
+      )}
+
+      {/* Dialogue-Bound YouTube Background & Picture-in-Picture Player */}
+      {dialogueYouTubeVideoId && (
+        <div
+          className={
+            showMiniVideoPlayer && activePlayingChannel === "dialogue"
+              ? "fixed bottom-5 right-5 z-50 w-72 sm:w-80 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 bg-slate-950 transition-all duration-300 animate-in fade-in zoom-in-95"
+              : "fixed bottom-1 right-1 w-[2px] h-[2px] opacity-[0.01] pointer-events-none overflow-hidden z-0"
+          }
+        >
+          {showMiniVideoPlayer && activePlayingChannel === "dialogue" && (
+            <div className="flex items-center justify-between px-3 py-2 bg-slate-900 border-b border-slate-800 text-xs text-slate-300 font-thai">
+              <span className="flex items-center gap-1.5 truncate">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span className="truncate font-semibold">{dialogueAudioTitle || "เพลงประจำบทพูด"}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowMiniVideoPlayer(false)}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                title="ซ่อนหน้าต่างวิดีโอ (เพลงยังเล่นต่อในพื้นหลัง)"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          <iframe
+            ref={dialogueYoutubeIframeRef}
+            src={`https://www.youtube-nocookie.com/embed/${dialogueYouTubeVideoId}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${dialogueYouTubeVideoId}`}
+            title="Dialogue YouTube Audio Player"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            className={showMiniVideoPlayer && activePlayingChannel === "dialogue" ? "w-full aspect-video" : "w-[2px] h-[2px] pointer-events-none"}
+            onLoad={() => {
+              if (isPlaybackActiveRef.current && activePlayingChannelRef.current === "dialogue") {
+                dialogueYoutubeIframeRef.current?.contentWindow?.postMessage(
+                  JSON.stringify({ event: "command", func: "unMute", args: [] }),
+                  "*"
+                );
+                dialogueYoutubeIframeRef.current?.contentWindow?.postMessage(
+                  JSON.stringify({
+                    event: "command",
+                    func: "setVolume",
+                    args: [Math.round((isMuted ? 0 : volume) * 100)],
+                  }),
+                  "*"
+                );
+                dialogueYoutubeIframeRef.current?.contentWindow?.postMessage(
                   JSON.stringify({ event: "command", func: "playVideo", args: [] }),
                   "*"
                 );

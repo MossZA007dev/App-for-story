@@ -180,9 +180,15 @@ export default function StoryWorkspacePage({
   const [dialogueBlocks, setDialogueBlocks] = useState<DialogueBlock[]>([]);
   const [activeBlockIndex, setActiveBlockIndex] = useState<number>(0);
   const dialogueRowRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const dialogueContainerRef = useRef<HTMLDivElement | null>(null);
+  const dialogueScrollPosRef = useRef<number>(0);
+  const shouldAutoScrollBlockRef = useRef<boolean>(false);
 
-  // Smoothly scroll active dialogue block into view when stepping through dialogue
+  // Smoothly scroll active dialogue block into view ONLY when explicitly triggered by user
   useEffect(() => {
+    if (!shouldAutoScrollBlockRef.current) return;
+    shouldAutoScrollBlockRef.current = false;
+
     if (activeBlockIndex >= 0 && dialogueRowRefs.current[activeBlockIndex]) {
       dialogueRowRefs.current[activeBlockIndex]?.scrollIntoView({
         behavior: "smooth",
@@ -553,9 +559,14 @@ export default function StoryWorkspacePage({
   }, [projectId]);
 
   // 2. Load Active Scene Details
-  const loadSceneDetails = async (sceneId: string, preserveAudioPlayback: boolean = false) => {
+  const loadSceneDetails = async (
+    sceneId: string,
+    preserveAudioPlayback: boolean = false,
+    preservePosition: boolean = false
+  ) => {
     if (!sceneId) return;
     try {
+      const savedScrollTop = dialogueContainerRef.current?.scrollTop ?? dialogueScrollPosRef.current;
       const res = await fetch(`/api/projects/${projectId}/scenes/${sceneId}`);
       if (!res.ok) throw new Error("โหลดรายละเอียดฉากไม่สำเร็จ");
       const data = await res.json();
@@ -592,18 +603,42 @@ export default function StoryWorkspacePage({
         setActiveYouTubeTitle("");
       }
       setSceneImages(data.images || []);
-      setSelectedImageIndex(0);
-      setActiveBlockIndex(0);
+
+      // Parse Dialogue Blocks first
+      const parsed = parseSceneToDialogueBlocks(data.scene.contentMarkdown || "", characters);
+      setDialogueBlocks(parsed);
+
+      if (!preservePosition) {
+        setSelectedImageIndex(0);
+        setActiveBlockIndex(0);
+        dialogueScrollPosRef.current = 0;
+        if (dialogueContainerRef.current) {
+          dialogueContainerRef.current.scrollTop = 0;
+        }
+      } else {
+        setSelectedImageIndex((prev) => Math.min(prev, Math.max(0, (data.images || []).length - 1)));
+        setActiveBlockIndex((prev) => Math.min(prev, Math.max(0, parsed.length - 1)));
+        if (savedScrollTop > 0) {
+          dialogueScrollPosRef.current = savedScrollTop;
+          requestAnimationFrame(() => {
+            if (dialogueContainerRef.current) {
+              dialogueContainerRef.current.scrollTop = savedScrollTop;
+            }
+          });
+          setTimeout(() => {
+            if (dialogueContainerRef.current) {
+              dialogueContainerRef.current.scrollTop = savedScrollTop;
+            }
+          }, 50);
+        }
+      }
+
       setDirectorsNote(data.scene.directorNote || "");
       setSceneTitleInput(data.scene.title || "");
       setSceneLocationInput(data.scene.location || "");
       setEditableMarkdown(data.scene.contentMarkdown || "");
       setSceneVersions(data.versions || []);
       setHasUnsavedChanges(false);
-
-      // Parse Dialogue Blocks
-      const parsed = parseSceneToDialogueBlocks(data.scene.contentMarkdown || "", characters);
-      setDialogueBlocks(parsed);
 
       // Parse Dialogue-to-Image Bindings
       if (data.scene.dialogueBindings) {
@@ -645,16 +680,20 @@ export default function StoryWorkspacePage({
     }
   }, [activeSceneId]);
 
-  // Auto-sync on window focus if there are no unsaved changes (preserve ongoing music playback)
+  // Preserve dialogue scroll position across window minimize / app switching
   useEffect(() => {
-    const handleFocus = () => {
-      if (activeSceneId && !hasUnsavedChanges) {
-        loadSceneDetails(activeSceneId, true);
+    const handleRestoreScroll = () => {
+      if (dialogueContainerRef.current && dialogueScrollPosRef.current > 0) {
+        dialogueContainerRef.current.scrollTop = dialogueScrollPosRef.current;
       }
     };
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, [activeSceneId, hasUnsavedChanges]);
+    window.addEventListener("focus", handleRestoreScroll);
+    document.addEventListener("visibilitychange", handleRestoreScroll);
+    return () => {
+      window.removeEventListener("focus", handleRestoreScroll);
+      document.removeEventListener("visibilitychange", handleRestoreScroll);
+    };
+  }, []);
 
   // Safeguard: warn user before leaving if there are unsaved changes
   useEffect(() => {
@@ -1683,7 +1722,7 @@ export default function StoryWorkspacePage({
 
       setShowAiImageModal(false);
       setAiImagePromptInput("");
-      if (activeSceneId) loadSceneDetails(activeSceneId);
+      if (activeSceneId) loadSceneDetails(activeSceneId, true, true);
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "เกิดข้อผิดพลาดในการสร้างภาพ");
@@ -2991,7 +3030,7 @@ export default function StoryWorkspacePage({
       if (!res.ok) throw new Error("อัปเดต Ledger ไม่สำเร็จ");
       toast.success("อัปเดตสถานะลง Continuity Ledger เรียบร้อยแล้ว!");
       setShowAnalysisModal(false);
-      loadSceneDetails(activeSceneId);
+      loadSceneDetails(activeSceneId, true, true);
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "บันทึก Ledger ล้มเหลว");
@@ -3002,6 +3041,7 @@ export default function StoryWorkspacePage({
 
   // Click dialogue row to preview its bound image and audio mood (with seamless resume)
   const handleSelectDialogueRow = (index: number) => {
+    shouldAutoScrollBlockRef.current = true;
     setActiveBlockIndex(index);
     const resolved = resolveImageForDialogueIndex(index, localDialogueBindings, sceneImages);
     if (resolved.imageIndex >= 0) {
@@ -3390,7 +3430,7 @@ export default function StoryWorkspacePage({
                 type="button"
                 onClick={async () => {
                   if (activeSceneId) {
-                    toast.promise(loadSceneDetails(activeSceneId), {
+                    toast.promise(loadSceneDetails(activeSceneId, true, true), {
                       loading: "กำลังซิงค์ข้อมูลล่าสุด...",
                       success: "ซิงค์ข้อมูล บทพูด และรูปภาพล่าสุดเรียบร้อย!",
                       error: "เกิดข้อผิดพลาดในการซิงค์",
@@ -4259,7 +4299,13 @@ export default function StoryWorkspacePage({
           )}
 
           {/* Inner Dialogue Container (#2D2D2D, rounded-[18px]) - FULLY INTERACTIVE & EDITABLE */}
-          <div className="relative flex-1 min-h-0 rounded-[18px] bg-[#2D2D2D] p-4 sm:p-5 border border-slate-700/40 overflow-y-auto dialogue-scroll space-y-3 pr-2.5">
+          <div
+            ref={dialogueContainerRef}
+            onScroll={(e) => {
+              dialogueScrollPosRef.current = e.currentTarget.scrollTop;
+            }}
+            className="relative flex-1 min-h-0 rounded-[18px] bg-[#2D2D2D] p-4 sm:p-5 border border-slate-700/40 overflow-y-auto dialogue-scroll space-y-3 pr-2.5"
+          >
             {isStreaming ? (
               <div className="space-y-4 p-2">
                 <div className="flex items-center gap-2 text-xs font-bold text-amber-400 font-thai animate-pulse">

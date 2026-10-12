@@ -57,6 +57,7 @@ import { CollaboratorModal } from "@/components/collaboration/CollaboratorModal"
 import { ClaudeScriptImportModal } from "@/components/story/ClaudeScriptImportModal";
 import { CharacterAvatarModal, AvatarCharacterInfo } from "@/components/characters/CharacterAvatarModal";
 import { PartModal, PartModalData } from "@/components/parts/PartModal";
+import { SpeakerSelectDropdown } from "@/components/story/SpeakerSelectDropdown";
 import {
   parseSceneToDialogueBlocks,
   parseClaudeScript,
@@ -80,6 +81,7 @@ interface CharacterSummary {
   chosenRole?: string;
   currentMbti?: string;
   avatarUrl?: string;
+  faction?: string;
 }
 
 interface SceneImage {
@@ -161,6 +163,7 @@ export default function StoryWorkspacePage({
   }, [activeBlockIndex]);
   const [localDialogueBindings, setLocalDialogueBindings] = useState<Record<string, string>>({});
   const [activeMediaPicker, setActiveMediaPicker] = useState<{ blockIdx: number; type: "image" | "audio" } | null>(null);
+  const [activeSpeakerDropdownIdx, setActiveSpeakerDropdownIdx] = useState<number | null>(null);
   const [directorsNote, setDirectorsNote] = useState("");
   const [sceneTitleInput, setSceneTitleInput] = useState("");
   const [sceneLocationInput, setSceneLocationInput] = useState("");
@@ -4070,65 +4073,26 @@ export default function StoryWorkspacePage({
                     <div className="flex items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-slate-800/60 flex-wrap">
                       {/* Left: Speaker Selector & Media Bindings */}
                       <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                        <select
-                          value={
+                        <SpeakerSelectDropdown
+                          currentSpeakerId={
                             isNarrator
                               ? "narrator"
                               : block.speaker?.id || block.speaker?.name || "narrator"
                           }
-                          onChange={(e) => handleUpdateBlockSpeaker(idx, e.target.value)}
-                          className={`bg-slate-900 border border-slate-700 rounded-lg px-2 py-0.5 text-[11px] font-thai font-bold focus:outline-none cursor-pointer max-w-[170px] sm:max-w-[210px] truncate ${
-                            isNarrator
-                              ? "text-amber-300"
-                              : isSelf
-                              ? "text-amber-400"
-                              : isFriend
-                              ? "text-sky-400"
-                              : "text-slate-300"
-                          }`}
-                        >
-                          <option value="narrator">📜 {isNarrator ? displayName : "ผู้บรรยาย (Narrator)"}</option>
-                          <option value="sound">⚡ เสียงประกอบ (Sound FX)</option>
-                          <optgroup label="ตัวละครในเรื่อง">
-                            {characters.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.characterType === "self" ? "👑 " : c.characterType === "friend" ? "🧑‍🤝‍🧑 " : ""}
-                                {c.name} {c.realNickname ? `(${c.realNickname})` : ""}
-                              </option>
-                            ))}
-                          </optgroup>
-                          {block.speaker &&
-                            !block.isNarrator &&
-                            !characters.some(
-                              (c) =>
-                                c.id === block.speaker?.id ||
-                                c.name.toLowerCase() === (block.speaker?.name || "").toLowerCase()
-                            ) && (
-                              <option value={block.speaker.id || block.speaker.name}>
-                                🎭 {block.speaker.realNickname || block.speaker.name}
-                              </option>
-                            )}
-                          <optgroup label="จัดการตัวละคร">
-                            <option value="__change_avatar__" className="text-amber-300">
-                              📷 เปลี่ยนรูปโปรไฟล์ ({displayName})...
-                            </option>
-                            <option value="__quick_add_char__" className="text-amber-300 font-bold">
-                              ➕ เพิ่มตัวละครใหม่ (สร้างด่วน)...
-                            </option>
-                            <option value="__custom_speaker__" className="text-sky-300">
-                              ✏️ กำหนดชื่อผู้พูดอิสระ (Custom)...
-                            </option>
-                            <option value="__manage_characters__">
-                              👥 ไปที่ Character Bible...
-                            </option>
-                          </optgroup>
-                        </select>
-
-                        {mbti && (
-                          <span className="text-[10px] font-mono text-slate-500 font-semibold">
-                            [{mbti}]
-                          </span>
-                        )}
+                          currentSpeakerName={displayName}
+                          isNarrator={isNarrator}
+                          isSound={false}
+                          isSelf={isSelf}
+                          isFriend={isFriend}
+                          mbti={mbti}
+                          characters={characters}
+                          onSelect={(targetKey) => handleUpdateBlockSpeaker(idx, targetKey)}
+                          isOpen={activeSpeakerDropdownIdx === idx}
+                          onToggle={() =>
+                            setActiveSpeakerDropdownIdx(activeSpeakerDropdownIdx === idx ? null : idx)
+                          }
+                          onClose={() => setActiveSpeakerDropdownIdx(null)}
+                        />
 
                         {/* Image / Video Binding: Compact pill or picker */}
                         {activeMediaPicker?.blockIdx === idx && activeMediaPicker.type === "image" ? (

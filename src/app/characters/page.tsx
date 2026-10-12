@@ -47,83 +47,77 @@ interface ProjectItem {
   timelineScope?: string;
 }
 
-// Custom Heraldic Sigils matching Figma Frame 30
-function DirewolfSigil() {
-  return (
-    <svg className="w-8 h-8 text-slate-900 drop-shadow-sm" viewBox="0 0 64 64" fill="currentColor">
-      <path d="M12 36L15 29L22 30L27 22L36 24L44 16L48 20L45 25L53 26L60 33L56 37L58 41L49 39L45 45L37 42L31 49L25 44L19 47L15 42L9 41L12 36Z" />
-      <circle cx="39" cy="27" r="2.5" fill="#D4CDB2" />
-    </svg>
-  );
-}
-
-function LionSigil() {
-  return (
-    <svg className="w-7 h-7 text-amber-950 drop-shadow-sm" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2C8 2 6 5 6 8C4.5 9 3 11 3 14C3 18 6 21 11 21C11.5 21 12.5 20.9 13 20.8C14 21 15 21 16 20.5C18 19.5 19 18 19 16C20.5 15 21 13 21 11C21 7 17 2 12 2ZM10 13C9.4 13 9 12.6 9 12C9 11.4 9.4 11 10 11C10.6 11 11 11.4 11 12C11 12.6 10.6 13 10 13ZM14 13C13.4 13 13 12.6 13 12C13 11.4 13.4 11 14 11C14.6 11 15 11.4 15 12C15 12.6 14.6 13 14 13Z" />
-    </svg>
-  );
-}
-
-function getBannerData(char: CharacterItem) {
+// Clan Heraldic Banner URLs matching exact Figma Frames (Frame 30, Frame 38, Frame 33, Frame 34)
+function getClanBannerUrl(char: CharacterItem): string {
   const factionLower = (char.faction || "").toLowerCase();
-  const nameLower = char.name.toLowerCase();
+  const nameLower = (char.name || "").toLowerCase();
 
-  if (factionLower.includes("stark") || nameLower.includes("stark") || factionLower.includes("grey wolf")) {
-    return {
-      topColor: "#D4CDB2",
-      bottomColor: "#7B9070",
-      sigil: <DirewolfSigil />,
-      label: "STARK",
-    };
+  // 1. House Stark (Frame 30: Beige/Green Direwolf)
+  if (
+    factionLower.includes("stark") ||
+    nameLower.includes("stark") ||
+    factionLower.includes("wolf") ||
+    factionLower.includes("สตาร์ค") ||
+    factionLower.includes("หมาป่า")
+  ) {
+    return "/images/banners/clan_stark.png";
   }
-  if (factionLower.includes("lannister") || nameLower.includes("lannister")) {
-    return {
-      topColor: "#FDE68A",
-      bottomColor: "#991B1B",
-      sigil: <LionSigil />,
-      label: "LANNISTER",
-    };
+
+  // 2. House Lannister (Frame 38: Crimson/Gold Rampant Lion)
+  if (
+    factionLower.includes("lannister") ||
+    nameLower.includes("lannister") ||
+    factionLower.includes("lion") ||
+    factionLower.includes("แลนนิสเตอร์") ||
+    factionLower.includes("สิงโต")
+  ) {
+    return "/images/banners/clan_lannister.png";
   }
-  if (factionLower.includes("targaryen") || nameLower.includes("targaryen") || factionLower.includes("dragon")) {
-    return {
-      topColor: "#FECACA",
-      bottomColor: "#881337",
-      sigil: <Flame className="w-7 h-7 text-red-950 drop-shadow-sm" />,
-      label: "DRAGON",
-    };
+
+  // 3. House Targaryen (Frame 33: Black/Crimson 3-Headed Dragon)
+  if (
+    factionLower.includes("targaryen") ||
+    nameLower.includes("targaryen") ||
+    factionLower.includes("dragon") ||
+    factionLower.includes("ทาร์แกเรียน") ||
+    factionLower.includes("มังกร")
+  ) {
+    return "/images/banners/clan_targaryen.png";
   }
-  if (factionLower.includes("night's watch") || factionLower.includes("watch")) {
-    return {
-      topColor: "#D1D5DB",
-      bottomColor: "#1F2937",
-      sigil: <Shield className="w-7 h-7 text-slate-900 drop-shadow-sm" />,
-      label: "WATCH",
-    };
+
+  // 4. House Tyrell (Frame 34: Green/Gold Blooming Rose)
+  if (
+    factionLower.includes("tyrell") ||
+    nameLower.includes("tyrell") ||
+    factionLower.includes("rose") ||
+    factionLower.includes("ไทเรล") ||
+    factionLower.includes("กุหลาบ")
+  ) {
+    return "/images/banners/clan_tyrell.png";
   }
+
+  // 5. Night's Watch (Obsidian/Crow Shield)
+  if (
+    factionLower.includes("watch") ||
+    factionLower.includes("night's watch") ||
+    factionLower.includes("วอทช์") ||
+    factionLower.includes("อีกา")
+  ) {
+    return "/images/banners/clan_watch.png";
+  }
+
+  // 6. Protagonist / Self (Golden Royal Crown Banner)
   if (char.characterType === "self") {
-    return {
-      topColor: "#FEF08A",
-      bottomColor: "#D97706",
-      sigil: <Crown className="w-7 h-7 text-amber-950 drop-shadow-sm" />,
-      label: "ME",
-    };
+    return "/images/banners/clan_me.png";
   }
+
+  // 7. Squad / Friend (Allied Sky Shield Banner)
   if (char.characterType === "friend") {
-    return {
-      topColor: "#E0F2FE",
-      bottomColor: "#0284C7",
-      sigil: <Shield className="w-7 h-7 text-sky-950 drop-shadow-sm" />,
-      label: "SQUAD",
-    };
+    return "/images/banners/clan_squad.png";
   }
-  // Canon / Default
-  return {
-    topColor: "#D4CDB2",
-    bottomColor: "#7B9070",
-    sigil: <Clapperboard className="w-7 h-7 text-slate-900 drop-shadow-sm" />,
-    label: (char.faction || "CANON").slice(0, 8).toUpperCase(),
-  };
+
+  // Default Medieval Banner (Frame 30 Stark)
+  return "/images/banners/clan_stark.png";
 }
 
 export default function CharactersDashboardPage() {
@@ -312,8 +306,6 @@ export default function CharactersDashboardPage() {
   // Frame 30 (Top Banner) + Rectangle 7 (Bottom Plate)
   // =========================================================================
   const renderFigmaCharacterCard = (char: CharacterItem) => {
-    const banner = getBannerData(char);
-
     return (
       <div
         key={char.id}
@@ -352,29 +344,14 @@ export default function CharactersDashboardPage() {
           <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-black/35 pointer-events-none" />
         </div>
 
-        {/* Layer 2: Top-Left Banner / Pennant (Exact Frame 30 from Figma) */}
-        <div className="absolute top-0 left-3 z-30 pointer-events-none drop-shadow-[0_4px_10px_rgba(0,0,0,0.55)]">
-          <div className="relative w-[60px] sm:w-[68px] h-[104px] sm:h-[118px]">
-            <svg
-              viewBox="0 0 99 172"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              className="w-full h-full drop-shadow-md"
-            >
-              {/* Parchment Top Tier */}
-              <path d="M0 0H99V118.609L49.5 171L0 118.609V0Z" fill={banner.topColor} />
-              {/* Faction Lower Chevron Tier */}
-              <path d="M0 29H99V119.109L49.5 171.5L0 119.109V29Z" fill={banner.bottomColor} />
-            </svg>
-
-            {/* Emblem Centered in Upper Tier */}
-            <div className="absolute top-3 inset-x-0 flex flex-col items-center justify-center">
-              {banner.sigil}
-              <span className="text-[9px] font-mono font-black text-slate-900 uppercase tracking-tighter mt-1 bg-white/30 px-1 rounded">
-                {banner.label}
-              </span>
-            </div>
-          </div>
+        {/* Layer 2: Medieval Clan Banner (Exact Figma Frame 30/38/33/34) */}
+        <div className="absolute top-0 left-2.5 sm:left-3.5 z-30 pointer-events-none filter drop-shadow-[0_4px_14px_rgba(0,0,0,0.7)]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={getClanBannerUrl(char)}
+            alt={char.faction || "Clan Banner"}
+            className="w-[72px] sm:w-[80px] md:w-[84px] h-auto object-contain transition-transform duration-300 group-hover:-translate-y-0.5"
+          />
         </div>
 
         {/* Quick Edit Hover Button (Top-Right) */}

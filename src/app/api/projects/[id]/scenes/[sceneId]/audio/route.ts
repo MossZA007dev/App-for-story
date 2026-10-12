@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { scenes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { scenes, soundEffects } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
 import { audioStorage } from "@/lib/storage";
+import { extractYouTubeVideoId } from "@/lib/audio/audioHelpers";
 import path from "path";
 import crypto from "crypto";
 
@@ -11,7 +12,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string; sceneId: string }> }
 ) {
   try {
-    const { sceneId } = await params;
+    const { id: projectId, sceneId } = await params;
     const contentType = req.headers.get("content-type") || "";
 
     const currentScene = db.select().from(scenes).where(eq(scenes.id, sceneId)).get();
@@ -54,6 +55,39 @@ export async function POST(
       })
       .where(eq(scenes.id, sceneId))
       .run();
+
+    // Auto-save to Sound & Music Vault
+    if (bgmUrl && bgmUrl.trim()) {
+      try {
+        const cleanUrl = bgmUrl.trim();
+        const existing = db
+          .select()
+          .from(soundEffects)
+          .where(and(eq(soundEffects.projectId, projectId), eq(soundEffects.audioUrl, cleanUrl)))
+          .get();
+
+        if (!existing) {
+          const isYt = Boolean(extractYouTubeVideoId(cleanUrl));
+          db.insert(soundEffects)
+            .values({
+              id: crypto.randomUUID(),
+              projectId,
+              name: bgmTitle || (isYt ? "เพลงประกอบฉาก (YouTube)" : "เพลงประกอบประจำฉาก"),
+              category: "music",
+              audioUrl: cleanUrl,
+              sourceType: isYt ? "url" : (cleanUrl.startsWith("http") ? "url" : "upload"),
+              volume: 0.8,
+              tags: JSON.stringify(["เพลง", "BGM", "เพลงประจำฉาก"]),
+              description: `เพลงประกอบจากฉาก: ${currentScene.title || "ฉากนิยาย"}`,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .run();
+        }
+      } catch (vaultErr) {
+        console.warn("Failed to auto-save scene audio to sound vault:", vaultErr);
+      }
+    }
 
     const updated = db.select().from(scenes).where(eq(scenes.id, sceneId)).get();
 

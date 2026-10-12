@@ -211,7 +211,7 @@ export default function StoryWorkspacePage({
   const customSfxMap = useMemo(() => {
     const map: Record<string, string> = {};
     for (const sfx of projectSfxList) {
-      map[sfx.id] = sfx.name;
+      map[sfx.id] = sfx.category === "music" ? `🎵 ${sfx.name}` : `🔊 ${sfx.name}`;
     }
     return map;
   }, [projectSfxList]);
@@ -1380,8 +1380,39 @@ export default function StoryWorkspacePage({
     } else {
       updated[audioKey] = audioValue;
       handlePreviewAudioBinding(audioValue);
-      const label = getAudioMoodLabel(audioValue);
+      const label = getAudioMoodLabel(audioValue, customSfxMap);
       toast.success(`ผูกอารมณ์ "${label}" กับประโยค #${index + 1} เรียบร้อย!`);
+
+      // Auto-save new audio URLs into Sound & Music Vault in background
+      if (audioValue.startsWith("url:")) {
+        const urlStr = audioValue.replace(/^url:/, "").trim();
+        if (urlStr) {
+          const isYt = Boolean(extractYouTubeVideoId(urlStr));
+          fetch(`/api/projects/${projectId}/sfx`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: isYt ? "เพลงประจำบทพูด (YouTube)" : "เพลงประจำบทพูด",
+              category: "music",
+              audioUrl: urlStr,
+              sourceType: "url",
+              volume: 0.8,
+              tags: ["เพลง", "บทพูด", "BGM"],
+              description: `เพลงที่ผูกกับบทพูดประโยค #${index + 1}`,
+            }),
+          })
+            .then((r) => r.json())
+            .then((d) => {
+              if (d.soundEffect) {
+                setProjectSfxList((prev) => {
+                  if (prev.some((s) => s.audioUrl === urlStr)) return prev;
+                  return [d.soundEffect, ...prev];
+                });
+              }
+            })
+            .catch(() => {});
+        }
+      }
     }
 
     setLocalDialogueBindings(updated);
@@ -1538,17 +1569,76 @@ export default function StoryWorkspacePage({
       const sfxId = audioValue.replace(/^sfx:/, "");
       const sfx = projectSfxList.find((s) => s.id === sfxId);
       if (sfx) {
-        if (sfx.audioUrl.startsWith("synth:")) {
+        const ytId = extractYouTubeVideoId(sfx.audioUrl);
+        if (ytId) {
+          ambientSound.stop();
+          if (studioAudioPlayerRef.current) {
+            studioAudioPlayerRef.current.pause();
+            studioAudioPlayerRef.current.currentTime = 0;
+          }
+          setActiveYouTubeVideoId(ytId);
+          setActiveYouTubeTitle(sfx.name || "เพลงประจำบทพูด");
+          setCurrentAudioTrack("custom");
+          setIsAudioPlaying(true);
+          setTimeout(() => {
+            youtubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({ event: "command", func: "loadVideoById", args: [ytId] }),
+              "*"
+            );
+            youtubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({ event: "command", func: "unMute", args: [] }),
+              "*"
+            );
+            youtubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({
+                event: "command",
+                func: "setVolume",
+                args: [Math.round((isAudioMuted ? 0 : audioVolume) * 100)],
+              }),
+              "*"
+            );
+            youtubeIframeRef.current?.contentWindow?.postMessage(
+              JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+              "*"
+            );
+          }, 150);
+          toast.info(`เล่นเพลง: "${sfx.name}"`);
+        } else if (sfx.category === "music") {
+          ambientSound.stop();
+          if (youtubeIframeRef.current) {
+            youtubeIframeRef.current.contentWindow?.postMessage(
+              JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+              "*"
+            );
+            youtubeIframeRef.current.contentWindow?.postMessage(
+              JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
+              "*"
+            );
+            youtubeIframeRef.current.contentWindow?.postMessage(
+              JSON.stringify({ event: "command", func: "mute", args: [] }),
+              "*"
+            );
+          }
+          if (studioAudioPlayerRef.current) {
+            studioAudioPlayerRef.current.src = sfx.audioUrl;
+            studioAudioPlayerRef.current.volume = isAudioMuted ? 0 : (sfx.volume ?? 0.8) * audioVolume;
+            studioAudioPlayerRef.current.play().catch(() => {});
+            setCurrentAudioTrack("custom");
+            setIsAudioPlaying(true);
+          }
+          toast.info(`เล่นเพลง: "${sfx.name}"`);
+        } else if (sfx.audioUrl.startsWith("synth:")) {
           ambientSound.setVolume(isAudioMuted ? 0 : (sfx.volume ?? 0.8) * audioVolume);
           ambientSound.play(sfx.audioUrl.replace(/^synth:/, "") as any);
+          toast.info(`ทดสอบเสียง SFX: "${sfx.name}"`);
         } else {
           try {
             const snd = new Audio(sfx.audioUrl);
             snd.volume = isAudioMuted ? 0 : (sfx.volume ?? 0.8) * audioVolume;
             snd.play().catch(() => {});
           } catch {}
+          toast.info(`ทดสอบเสียง SFX: "${sfx.name}"`);
         }
-        toast.info(`ทดสอบเสียง SFX: "${sfx.name}"`);
       }
       return;
     }
@@ -3361,26 +3451,39 @@ export default function StoryWorkspacePage({
                               </option>
                             ))}
                           </optgroup>
-                          <optgroup label="เอฟเฟกต์เสียง (SFX)">
+                          <optgroup label="🔊 เอฟเฟกต์เสียง (SFX)">
                             {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เอฟเฟกต์").map((o) => (
                               <option key={o.id} value={o.id}>
                                 {o.label}
                               </option>
                             ))}
-                            {projectSfxList.map((sfx) => (
-                              <option key={sfx.id} value={`sfx:${sfx.id}`}>
-                                🔊 {sfx.name}
-                              </option>
-                            ))}
+                            {projectSfxList
+                              .filter((sfx) => sfx.category !== "music")
+                              .map((sfx) => (
+                                <option key={sfx.id} value={`sfx:${sfx.id}`}>
+                                  🔊 {sfx.name}
+                                </option>
+                              ))}
                           </optgroup>
+                          {projectSfxList.filter((sfx) => sfx.category === "music").length > 0 && (
+                            <optgroup label="🎵 คลังเพลง & BGM ของนิยาย">
+                              {projectSfxList
+                                .filter((sfx) => sfx.category === "music")
+                                .map((sfx) => (
+                                  <option key={sfx.id} value={`sfx:${sfx.id}`}>
+                                    🎵 {sfx.name}
+                                  </option>
+                                ))}
+                            </optgroup>
+                          )}
                           <optgroup label="ควบคุมเพลง & คลังเสียง">
                             {AUDIO_MOOD_OPTIONS.filter((o) => o.group === "เพลง").map((o) => (
                               <option key={o.id} value={o.id}>
                                 {o.label}
                               </option>
                             ))}
-                            <option value="__custom_url__">+ 🎵 ลิงก์เพลงภายนอก...</option>
-                            <option value="__open_sfx_tab__">➕ 🔊 ไปที่คลังเสียง SFX (อัปโหลดเพิ่ม)...</option>
+                            <option value="__custom_url__">+ 🎵 ใส่ลิงก์เพลงใหม่ (YouTube / MP3)...</option>
+                            <option value="__open_sfx_tab__">➕ 🎵/🔊 ไปที่คลังเพลง & SFX...</option>
                           </optgroup>
                         </select>
 
@@ -4084,6 +4187,7 @@ export default function StoryWorkspacePage({
         onClose={() => setShowAudioModal(false)}
         currentUrl={activeScene?.bgmUrl}
         currentTitle={activeScene?.bgmTitle}
+        vaultMusicList={projectSfxList.filter((s) => s.category === "music")}
         onSave={async (url, title) => {
           await handleSetAudioUrl(url, title);
         }}

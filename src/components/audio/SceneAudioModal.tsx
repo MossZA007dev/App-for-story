@@ -25,6 +25,7 @@ interface SceneAudioModalProps {
   currentTitle?: string | null;
   onSave: (url: string, title?: string) => Promise<void>;
   onDelete?: () => Promise<void>;
+  vaultMusicList?: { id: string; name: string; audioUrl: string; category?: string }[];
 }
 
 export function SceneAudioModal({
@@ -34,6 +35,7 @@ export function SceneAudioModal({
   currentTitle = "",
   onSave,
   onDelete,
+  vaultMusicList = [],
 }: SceneAudioModalProps) {
   const [urlInput, setUrlInput] = useState(currentUrl || "");
   const [titleInput, setTitleInput] = useState(currentTitle || "");
@@ -314,9 +316,43 @@ export function SceneAudioModal({
             />
           </div>
 
+          {/* Music Vault Songs for One-Click Selection */}
+          {vaultMusicList && vaultMusicList.length > 0 && (
+            <div className="space-y-1.5 pt-1">
+              <span className="text-[11px] text-purple-300 font-bold flex items-center gap-1">
+                <Music className="w-3.5 h-3.5" />
+                <span>เลือกจากคลังเพลงของนิยาย ({vaultMusicList.length} เพลง):</span>
+              </span>
+              <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2 bg-slate-950/80 rounded-xl border border-slate-800">
+                {vaultMusicList.map((m) => {
+                  const isSelected = urlInput.trim() === m.audioUrl.trim();
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        setUrlInput(m.audioUrl);
+                        setTitleInput(m.name);
+                        if (isPreviewPlaying) stopPreview();
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] transition-all truncate max-w-[210px] ${
+                        isSelected
+                          ? "bg-purple-600 text-white font-bold shadow-sm"
+                          : "bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 hover:text-white"
+                      }`}
+                      title={`${m.name} (${m.audioUrl})`}
+                    >
+                      🎵 {m.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Preset Buttons for One-Click Fill */}
           <div className="space-y-1.5 pt-1">
-            <span className="text-[11px] text-slate-400 font-semibold">ตัวอย่างลิงก์แนะนำ (คลิกเพื่อทดสอบ):</span>
+            <span className="text-[11px] text-slate-400 font-semibold">ตัวอย่างเพลงยอดนิยม (คลิกเพื่อทดสอบ):</span>
             <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"

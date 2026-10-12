@@ -48,13 +48,14 @@ export interface SoundEffectItem {
 
 const SFX_CATEGORIES = [
   { id: "all", label: "ทั้งหมด" },
+  { id: "music", label: "🎵 คลังเพลง & BGM" },
   { id: "weapon", label: "🗡️ อาวุธ & การต่อสู้" },
   { id: "action", label: "⚔️ มหากาพย์สงคราม" },
   { id: "shock", label: "⚡ สายฟ้า & สะเทือนขวัญ" },
   { id: "atmosphere", label: "🌧️ สภาพอากาศ & ธรรมชาติ" },
   { id: "emotion", label: "💓 อารมณ์ & ตึงเครียด" },
   { id: "horror", label: "🌑 ลึกลับ & สยองขวัญ" },
-  { id: "general", label: "🎵 ทั่วไป" },
+  { id: "general", label: "✨ อื่นๆ (General)" },
 ];
 
 export default function SoundEffectsVaultPage({
@@ -74,16 +75,20 @@ export default function SoundEffectsVaultPage({
   // Playback state
   const [activePlayingId, setActivePlayingId] = useState<string | null>(null);
   const [playingVolume, setPlayingVolume] = useState<number>(0.8);
+  const [activeYouTubeVideoId, setActiveYouTubeVideoId] = useState<string | null>(null);
   const activeAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const previewAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const youtubeIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const previewYoutubeIframeRef = useRef<HTMLIFrameElement | null>(null);
 
   // Upload Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [uploadMode, setUploadMode] = useState<"file" | "url">("file");
+  const [vaultType, setVaultType] = useState<"music" | "sfx">("music");
+  const [uploadMode, setUploadMode] = useState<"file" | "url">("url");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [urlInput, setUrlInput] = useState("");
   const [nameInput, setNameInput] = useState("");
-  const [categoryInput, setCategoryInput] = useState("weapon");
+  const [categoryInput, setCategoryInput] = useState("music");
   const [tagsInput, setTagsInput] = useState("");
   const [descriptionInput, setDescriptionInput] = useState("");
   const [volumeInput, setVolumeInput] = useState(0.85);
@@ -131,8 +136,23 @@ export default function SoundEffectsVaultPage({
     if (activeAudioPlayerRef.current) {
       activeAudioPlayerRef.current.pause();
     }
+    if (youtubeIframeRef.current) {
+      youtubeIframeRef.current.contentWindow?.postMessage(
+        JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+        "*"
+      );
+      youtubeIframeRef.current.contentWindow?.postMessage(
+        JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
+        "*"
+      );
+      youtubeIframeRef.current.contentWindow?.postMessage(
+        JSON.stringify({ event: "command", func: "mute", args: [] }),
+        "*"
+      );
+    }
     ambientSound.stop();
     setActivePlayingId(null);
+    setActiveYouTubeVideoId(null);
   };
 
   const handleTogglePlay = (item: SoundEffectItem) => {
@@ -150,6 +170,36 @@ export default function SoundEffectsVaultPage({
       ambientSound.setVolume(item.volume ?? 0.8);
       ambientSound.play(synthTrack);
       toast.info(`กำลังทดสอบเสียง: "${item.name}"`);
+      return;
+    }
+
+    // If it's a YouTube video link
+    const ytId = extractYouTubeVideoId(item.audioUrl);
+    if (ytId) {
+      setActiveYouTubeVideoId(ytId);
+      setTimeout(() => {
+        youtubeIframeRef.current?.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "loadVideoById", args: [ytId] }),
+          "*"
+        );
+        youtubeIframeRef.current?.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "unMute", args: [] }),
+          "*"
+        );
+        youtubeIframeRef.current?.contentWindow?.postMessage(
+          JSON.stringify({
+            event: "command",
+            func: "setVolume",
+            args: [Math.round((item.volume ?? 0.8) * 100)],
+          }),
+          "*"
+        );
+        youtubeIframeRef.current?.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+          "*"
+        );
+      }, 150);
+      toast.info(`กำลังเล่นเพลง (YouTube): "${item.name}"`);
       return;
     }
 
@@ -210,15 +260,18 @@ export default function SoundEffectsVaultPage({
   const handleCopyBindingCode = (item: SoundEffectItem) => {
     const code = `sfx:${item.id}`;
     navigator.clipboard.writeText(code);
-    toast.success(`คัดลอกรหัสผูกเสียง: "${code}" สำเร็จ! สามารถนำไปเลือกในช่องเสียงบทพูดได้เลย`);
+    const label = item.category === "music" ? "เพลง" : "เสียง SFX";
+    toast.success(`คัดลอกรหัสผูก${label}: "${code}" สำเร็จ! สามารถนำไปเลือกในช่องเสียงบทพูดได้เลย`);
   };
 
-  // Submit new SFX
-  const handleOpenUploadModal = () => {
+  // Submit new SFX / Music
+  const handleOpenUploadModal = (defaultType: "music" | "sfx" = "music") => {
     setSelectedFile(null);
     setUrlInput("");
     setNameInput("");
-    setCategoryInput("weapon");
+    setVaultType(defaultType);
+    setCategoryInput(defaultType === "music" ? "music" : "weapon");
+    setUploadMode(defaultType === "music" ? "url" : "file");
     setTagsInput("");
     setDescriptionInput("");
     setVolumeInput(0.85);
@@ -254,6 +307,11 @@ export default function SoundEffectsVaultPage({
           .catch(() => setIsPreviewModalPlaying(false));
       }
     } else if (uploadMode === "url" && urlInput.trim()) {
+      const ytId = extractYouTubeVideoId(urlInput.trim());
+      if (ytId) {
+        setIsPreviewModalPlaying(true);
+        return;
+      }
       if (previewAudioPlayerRef.current) {
         previewAudioPlayerRef.current.src = urlInput.trim();
         previewAudioPlayerRef.current.volume = volumeInput;
@@ -272,11 +330,11 @@ export default function SoundEffectsVaultPage({
       return;
     }
     if (uploadMode === "url" && !urlInput.trim()) {
-      toast.error("กรุณาระบุลิงก์เสียง");
+      toast.error("กรุณาระบุลิงก์เพลงหรือเสียง");
       return;
     }
     if (!nameInput.trim()) {
-      toast.error("กรุณาระบุชื่อเสียง");
+      toast.error("กรุณาระบุชื่อเพลงหรือเสียง");
       return;
     }
 
@@ -319,15 +377,16 @@ export default function SoundEffectsVaultPage({
       }
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "บันทึกเสียงไม่สำเร็จ");
+      if (!res.ok) throw new Error(data.error || "บันทึกไม่สำเร็จ");
 
-      toast.success(`เพิ่มเสียง "${data.soundEffect.name}" ลงในคลังเสียงเรียบร้อยแล้ว!`);
+      const label = categoryInput === "music" ? "เพลง" : "เสียง SFX";
+      toast.success(`เพิ่ม${label} "${data.soundEffect.name}" ลงในคลังเรียบร้อยแล้ว!`);
       setSfxList((prev) => [data.soundEffect, ...prev]);
       setIsModalOpen(false);
       if (previewAudioPlayerRef.current) previewAudioPlayerRef.current.pause();
     } catch (err: any) {
       console.error(err);
-      toast.error(err.message || "เกิดข้อผิดพลาดในการบันทึกเสียง SFX");
+      toast.error(err.message || "เกิดข้อผิดพลาดในการบันทึก");
     } finally {
       setIsSubmitting(false);
     }
@@ -360,6 +419,33 @@ export default function SoundEffectsVaultPage({
         className="hidden"
       />
 
+      {/* Hidden YouTube player for card playback */}
+      {activeYouTubeVideoId && (
+        <div className="fixed bottom-1 right-1 w-[2px] h-[2px] opacity-[0.01] pointer-events-none overflow-hidden z-0">
+          <iframe
+            ref={youtubeIframeRef}
+            src={`https://www.youtube-nocookie.com/embed/${activeYouTubeVideoId}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}&loop=1&playlist=${activeYouTubeVideoId}`}
+            title="SFX YouTube Preview"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            className="w-[2px] h-[2px] pointer-events-none"
+            onLoad={() => {
+              youtubeIframeRef.current?.contentWindow?.postMessage(
+                JSON.stringify({ event: "command", func: "unMute", args: [] }),
+                "*"
+              );
+              youtubeIframeRef.current?.contentWindow?.postMessage(
+                JSON.stringify({ event: "command", func: "setVolume", args: [Math.round(playingVolume * 100)] }),
+                "*"
+              );
+              youtubeIframeRef.current?.contentWindow?.postMessage(
+                JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+                "*"
+              );
+            }}
+          />
+        </div>
+      )}
+
       {/* Project Header Navigation */}
       {project && (
         <ProjectHeader
@@ -378,21 +464,28 @@ export default function SoundEffectsVaultPage({
               <Volume2 className="w-4 h-4" />
             </div>
             <h1 className="text-xl font-bold text-white tracking-wide">
-              คลังเสียง & SFX Studio (Sound Vault)
+              คลังเพลง & เสียงประกอบ (Sound & Music Vault)
             </h1>
           </div>
           <p className="text-xs text-slate-400">
-            รวบรวมเอฟเฟกต์เสียง คมดาบ ฟ้าผ่า และเสียงบรรยากาศ สำหรับผูกเข้ากับบทพูดในฉากและเล่นตามจังหวะอ่าน
+            รวบรวมเพลงประกอบฉาก เพลง YouTube และเสียงเอฟเฟกต์ SFX ทั้งหมดของนิยาย บันทึกและนำกลับมาเลือกใช้กับฉากหรือบทพูดได้ทันที
           </p>
         </div>
 
         <div className="flex items-center gap-2.5">
           <button
-            onClick={handleOpenUploadModal}
+            onClick={() => handleOpenUploadModal("music")}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 font-bold text-xs active:scale-95 transition-all shadow-sm"
+          >
+            <Music className="w-4 h-4" />
+            <span>+ เพิ่มเพลงประกอบ (BGM)</span>
+          </button>
+          <button
+            onClick={() => handleOpenUploadModal("sfx")}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
           >
             <Plus className="w-4 h-4" />
-            <span>อัปโหลด / เพิ่มเสียง SFX</span>
+            <span>+ เพิ่มเสียง SFX</span>
           </button>
         </div>
       </div>
@@ -401,11 +494,7 @@ export default function SoundEffectsVaultPage({
       <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-emerald-300 text-xs">
         <Sparkles className="w-4 h-4 text-emerald-400 flex-shrink-0" />
         <div className="flex-1">
-          <strong>ผูกเสียงกับบทพูดได้ทันที:</strong> ทุกเสียงที่คุณอัปโหลดหรือเพิ่มไว้ในหน้านี้ จะปรากฏในตัวเลือก{" "}
-          <span className="font-bold underline text-white">
-            &quot;เอฟเฟกต์เสียง (SFX)&quot;
-          </span>{" "}
-          บนกล่องบทพูดในหน้า Studio ทันที เมื่อคนอ่านกดเลื่อนถึงบทพูดนั้น ระบบจะกดเล่นเสียงให้โดยอัตโนมัติ!
+          <strong>🎵 บันทึกเพลงและเสียงอัตโนมัติ:</strong> ทุกเพลงที่คุณเคยใส่ลิงก์ไว้ในฉากหรือบทพูด รวมถึงเสียง SFX ที่อัปโหลดใหม่ จะถูกบันทึกเก็บไว้ในคลังนี้โดยอัตโนมัติ และจะปรากฏในตัวเลือกเสียงของบทพูดในหน้า Studio ทันที!
         </div>
       </div>
 
@@ -462,29 +551,40 @@ export default function SoundEffectsVaultPage({
       {isLoading ? (
         <div className="p-12 text-center text-slate-400 text-xs flex flex-col items-center justify-center gap-3">
           <div className="w-8 h-8 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
-          <span>กำลังโหลดคลังเสียง SFX...</span>
+          <span>กำลังโหลดคลังเพลง & เสียงประกอบ...</span>
         </div>
       ) : filteredList.length === 0 ? (
         <div className="p-12 text-center bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl space-y-3">
           <div className="w-12 h-12 rounded-2xl bg-slate-800/80 flex items-center justify-center text-slate-500 mx-auto">
             <VolumeX className="w-6 h-6" />
           </div>
-          <p className="text-sm font-bold text-slate-300">ไม่พบเสียง SFX ที่ตรงกับเงื่อนไข</p>
+          <p className="text-sm font-bold text-slate-300">ไม่พบเพลงหรือเสียงประกอบที่ตรงกับเงื่อนไข</p>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            คุณสามารถกดปุ่ม &quot;อัปโหลด / เพิ่มเสียง SFX&quot; เพื่อใส่ไฟล์เสียงของตัวเองได้เลย
+            คุณสามารถเพิ่มเพลงประกอบ (YouTube / MP3) หรืออัปโหลดไฟล์เสียงเอฟเฟกต์เข้าคลังได้ทันที
           </p>
-          <button
-            onClick={handleOpenUploadModal}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            <span>เพิ่มเสียงใหม่</span>
-          </button>
+          <div className="flex items-center justify-center gap-2 pt-2">
+            <button
+              onClick={() => handleOpenUploadModal("music")}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-xs font-bold transition-colors"
+            >
+              <Music className="w-4 h-4" />
+              <span>+ เพิ่มเพลงประกอบ</span>
+            </button>
+            <button
+              onClick={() => handleOpenUploadModal("sfx")}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ เพิ่มเสียง SFX</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredList.map((item) => {
             const isPlaying = activePlayingId === item.id;
+            const isMusic = item.category === "music";
+            const isYt = Boolean(extractYouTubeVideoId(item.audioUrl));
             let tags: string[] = [];
             try {
               tags = JSON.parse(item.tags || "[]");
@@ -495,7 +595,9 @@ export default function SoundEffectsVaultPage({
                 key={item.id}
                 className={`relative group rounded-2xl p-4 transition-all duration-200 border ${
                   isPlaying
-                    ? "bg-slate-900/90 border-amber-500/80 shadow-lg shadow-amber-500/10"
+                    ? isMusic
+                      ? "bg-slate-900/90 border-purple-500/80 shadow-lg shadow-purple-500/10"
+                      : "bg-slate-900/90 border-amber-500/80 shadow-lg shadow-amber-500/10"
                     : "bg-slate-950/70 hover:bg-slate-900/80 border-slate-800/80 hover:border-slate-700 shadow-md"
                 }`}
               >
@@ -505,10 +607,14 @@ export default function SoundEffectsVaultPage({
                     onClick={() => handleTogglePlay(item)}
                     className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center transition-all ${
                       isPlaying
-                        ? "bg-amber-500 text-slate-950 scale-105 shadow-md shadow-amber-500/30"
+                        ? isMusic
+                          ? "bg-purple-500 text-white scale-105 shadow-md shadow-purple-500/30"
+                          : "bg-amber-500 text-slate-950 scale-105 shadow-md shadow-amber-500/30"
+                        : isMusic
+                        ? "bg-purple-950/40 group-hover:bg-purple-900/50 text-purple-300 border border-purple-500/30 group-hover:border-purple-500/60"
                         : "bg-slate-900 group-hover:bg-slate-800 text-amber-400 border border-slate-800 group-hover:border-amber-500/40"
                     }`}
-                    title={isPlaying ? "หยุดเสียง" : "ทดสอบฟังเสียง"}
+                    title={isPlaying ? "หยุดเพลง/เสียง" : "ทดสอบฟังเพลง/เสียง"}
                   >
                     {isPlaying ? (
                       <Pause className="w-5 h-5 fill-current" />
@@ -520,7 +626,11 @@ export default function SoundEffectsVaultPage({
                   {/* Sound Info */}
                   <div className="flex-1 min-w-0 space-y-1">
                     <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-xs font-bold text-white truncate group-hover:text-amber-300 transition-colors">
+                      <h3 className={`text-xs font-bold truncate transition-colors ${
+                        isMusic
+                          ? "text-white group-hover:text-purple-300"
+                          : "text-white group-hover:text-amber-300"
+                      }`}>
                         {item.name}
                       </h3>
                       {/* Delete button */}
@@ -530,7 +640,7 @@ export default function SoundEffectsVaultPage({
                           handleDeleteSfx(item.id, item.name);
                         }}
                         className="opacity-70 group-hover:opacity-100 hover:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-950/50 active:scale-95 transition-all"
-                        title="ลบเสียงนี้"
+                        title="ลบรายการนี้"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -538,11 +648,17 @@ export default function SoundEffectsVaultPage({
 
                     {/* Category & Source Type Badges */}
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
-                        {SFX_CATEGORIES.find((c) => c.id === item.category)?.label || item.category}
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                        isMusic
+                          ? "bg-purple-950/60 text-purple-300 border-purple-500/40"
+                          : "bg-slate-800 text-slate-300 border border-slate-700"
+                      }`}>
+                        {isMusic ? "🎵 เพลงประกอบ / BGM" : SFX_CATEGORIES.find((c) => c.id === item.category)?.label || item.category}
                       </span>
                       <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-900 text-slate-400 font-mono">
-                        {item.sourceType === "upload"
+                        {isYt
+                          ? "🎬 YouTube"
+                          : item.sourceType === "upload"
                           ? "📁 ไฟล์อัปโหลด"
                           : item.sourceType === "synth"
                           ? "🎛️ ระบบเสียงในตัว"
@@ -568,11 +684,15 @@ export default function SoundEffectsVaultPage({
 
                   <button
                     onClick={() => handleCopyBindingCode(item)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-amber-300 border border-slate-800 hover:border-amber-500/30 transition-all font-mono text-[10px]"
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border transition-all font-mono text-[10px] ${
+                      isMusic
+                        ? "text-purple-300 hover:text-purple-200 border-purple-500/30 hover:border-purple-500/60"
+                        : "text-slate-300 hover:text-amber-300 border-slate-800 hover:border-amber-500/30"
+                    }`}
                     title="คัดลอกรหัสผูกเสียงนี้เพื่อนำไปใส่ในบทพูด"
                   >
                     <Copy className="w-3 h-3" />
-                    <span>ผูกกับบทพูด</span>
+                    <span>{isMusic ? "🎵 ผูกเพลงกับบท" : "🔊 ผูกเสียงกับบท"}</span>
                   </button>
                 </div>
               </div>
@@ -582,7 +702,7 @@ export default function SoundEffectsVaultPage({
       )}
 
       {/* ========================================================================= */}
-      {/* Upload & Add SFX Modal                                                    */}
+      {/* Upload & Add Music / SFX Modal                                            */}
       {/* ========================================================================= */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in font-thai">
@@ -590,13 +710,21 @@ export default function SoundEffectsVaultPage({
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
-                  <Volume2 className="w-4 h-4" />
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center border ${
+                  vaultType === "music"
+                    ? "bg-purple-500/20 border-purple-500/40 text-purple-400"
+                    : "bg-amber-500/20 border-amber-500/40 text-amber-400"
+                }`}>
+                  {vaultType === "music" ? <Music className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold text-white">เพิ่มเสียง SFX ลงในคลัง</h2>
+                  <h2 className="text-sm font-bold text-white">
+                    {vaultType === "music" ? "เพิ่มเพลงประกอบ (Music / BGM) ลงในคลัง" : "เพิ่มเสียงเอฟเฟกต์ (SFX) ลงในคลัง"}
+                  </h2>
                   <p className="text-[11px] text-slate-400">
-                    รองรับทั้งการอัปโหลดไฟล์ (.mp3, .wav, .ogg, .m4a) และลิงก์ออนไลน์
+                    {vaultType === "music"
+                      ? "รองรับทั้งคลิปเพลง YouTube, ลิงก์ออนไลน์, และไฟล์เสียง (.mp3, .wav)"
+                      : "รองรับทั้งการอัปโหลดไฟล์ (.mp3, .wav, .ogg, .m4a) และลิงก์ออนไลน์"}
                   </p>
                 </div>
               </div>
@@ -611,29 +739,65 @@ export default function SoundEffectsVaultPage({
               </button>
             </div>
 
-            {/* Mode Tabs */}
-            <div className="flex items-center rounded-xl bg-slate-950 p-1 border border-slate-800">
+            {/* Top Vault Type Switcher: Music vs SFX */}
+            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800">
               <button
                 type="button"
-                onClick={() => setUploadMode("file")}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  uploadMode === "file"
-                    ? "bg-amber-500 text-slate-950 shadow-sm"
+                onClick={() => {
+                  setVaultType("music");
+                  setCategoryInput("music");
+                  setUploadMode("url");
+                }}
+                className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  vaultType === "music"
+                    ? "bg-purple-600 text-white shadow-sm"
                     : "text-slate-400 hover:text-white"
                 }`}
               >
-                📁 อัปโหลดไฟล์เสียง
+                <Music className="w-3.5 h-3.5" />
+                <span>🎵 เพลงประกอบ (Music / BGM)</span>
               </button>
               <button
                 type="button"
-                onClick={() => setUploadMode("url")}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  uploadMode === "url"
+                onClick={() => {
+                  setVaultType("sfx");
+                  setCategoryInput("weapon");
+                  setUploadMode("file");
+                }}
+                className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  vaultType === "sfx"
                     ? "bg-amber-500 text-slate-950 shadow-sm"
                     : "text-slate-400 hover:text-white"
                 }`}
               >
-                🔗 ใส่ลิงก์เสียงออนไลน์
+                <Volume2 className="w-3.5 h-3.5" />
+                <span>🔊 เสียงเอฟเฟกต์ (SFX)</span>
+              </button>
+            </div>
+
+            {/* Source Mode Tabs (File vs URL) */}
+            <div className="flex items-center rounded-xl bg-slate-950 p-1 border border-slate-800 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setUploadMode("url")}
+                className={`flex-1 py-1.5 rounded-lg transition-all ${
+                  uploadMode === "url"
+                    ? vaultType === "music" ? "bg-purple-600 text-white" : "bg-amber-500 text-slate-950"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                🔗 ใส่ลิงก์ {vaultType === "music" ? "(YouTube / Audio URL)" : "ออนไลน์"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setUploadMode("file")}
+                className={`flex-1 py-1.5 rounded-lg transition-all ${
+                  uploadMode === "file"
+                    ? vaultType === "music" ? "bg-purple-600 text-white" : "bg-amber-500 text-slate-950"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                📁 อัปโหลดไฟล์ {vaultType === "music" ? "เพลง (.mp3, .wav)" : "เสียง SFX"}
               </button>
             </div>
 
@@ -682,28 +846,46 @@ export default function SoundEffectsVaultPage({
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                     <Link2 className="w-3.5 h-3.5 text-sky-400" />
-                    <span>ลิงก์เสียงออนไลน์ (Direct Audio URL):</span>
+                    <span>
+                      {vaultType === "music"
+                        ? "ลิงก์เพลงประกอบ (YouTube หรือ Direct MP3):"
+                        : "ลิงก์เสียงออนไลน์ (Direct Audio URL):"}
+                    </span>
                   </label>
                   <input
                     type="text"
                     value={urlInput}
                     onChange={(e) => setUrlInput(e.target.value)}
-                    placeholder="เช่น https://domain.com/sound-effect.mp3"
+                    placeholder={
+                      vaultType === "music"
+                        ? "เช่น https://www.youtube.com/watch?v=... หรือ https://domain.com/bgm.mp3"
+                        : "เช่น https://domain.com/sound-effect.mp3"
+                    }
                     className="w-full bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 outline-none font-mono"
                   />
+                  {extractYouTubeVideoId(urlInput) && (
+                    <p className="text-[11px] text-red-400 flex items-center gap-1 pt-0.5">
+                      <span>🎬 ตรวจพบคลิป YouTube: พร้อมเล่นพรีวิวและใช้เป็นเพลงประกอบ</span>
+                    </p>
+                  )}
                 </div>
               )}
 
-              {/* Sound Name */}
+              {/* Sound / Music Name */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">
-                  ชื่อเสียง SFX: <span className="text-red-400">*</span>
+                  {vaultType === "music" ? "ชื่อเพลงประกอบ (BGM):" : "ชื่อเสียง SFX:"}{" "}
+                  <span className="text-red-400">*</span>
                 </label>
                 <input
                   type="text"
                   value={nameInput}
                   onChange={(e) => setNameInput(e.target.value)}
-                  placeholder="เช่น ดาบฟาดฟัน, ประตูปิดกระแทก, เสียงเวทมนตร์เยือกแข็ง"
+                  placeholder={
+                    vaultType === "music"
+                      ? "เช่น Epic Battle Theme, เพลงฉากเปิดตัว, Sad Piano Melancholy"
+                      : "เช่น ดาบฟาดฟัน, ประตูปิดกระแทก, เสียงเวทมนตร์เยือกแข็ง"
+                  }
                   className="w-full bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 outline-none"
                   required
                 />
@@ -712,7 +894,7 @@ export default function SoundEffectsVaultPage({
               {/* Category & Volume Row */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300">หมวดหมู่เสียง:</label>
+                  <label className="text-xs font-bold text-slate-300">หมวดหมู่:</label>
                   <select
                     value={categoryInput}
                     onChange={(e) => setCategoryInput(e.target.value)}
@@ -752,29 +934,45 @@ export default function SoundEffectsVaultPage({
                   type="text"
                   value={descriptionInput}
                   onChange={(e) => setDescriptionInput(e.target.value)}
-                  placeholder="เช่น ใช้เมื่อตัวละครฟันดาบโดนเกราะเหล็ก, เสียงเปิดประตูห้องใต้ดิน"
+                  placeholder={
+                    vaultType === "music"
+                      ? "เช่น เพลงประจำตัวละครเอก, ใช้ตอนไคลแมกซ์ของฉากต่อสู้"
+                      : "เช่น ใช้เมื่อตัวละครฟันดาบโดนเกราะเหล็ก, เสียงเปิดประตูห้องใต้ดิน"
+                  }
                   className="w-full bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 outline-none"
                 />
               </div>
 
               {/* Test Play preview button inside modal */}
               {((uploadMode === "file" && selectedFile) || (uploadMode === "url" && urlInput.trim())) && (
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-xs text-slate-300 flex items-center gap-1.5">
-                    <Radio className={`w-3.5 h-3.5 ${isPreviewModalPlaying ? "text-amber-400 animate-pulse" : "text-slate-500"}`} />
-                    <span>ทดสอบฟังเสียงก่อนบันทึก:</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleTogglePreviewModal}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                      isPreviewModalPlaying
-                        ? "bg-amber-500 text-slate-950"
-                        : "bg-slate-800 hover:bg-slate-700 text-slate-200"
-                    }`}
-                  >
-                    {isPreviewModalPlaying ? "หยุด" : "ทดสอบฟัง"}
-                  </button>
+                <div className="space-y-2 p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-300 flex items-center gap-1.5">
+                      <Radio className={`w-3.5 h-3.5 ${isPreviewModalPlaying ? "text-amber-400 animate-pulse" : "text-slate-500"}`} />
+                      <span>ทดสอบฟังเสียงก่อนบันทึก:</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleTogglePreviewModal}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        isPreviewModalPlaying
+                          ? "bg-amber-500 text-slate-950"
+                          : "bg-slate-800 hover:bg-slate-700 text-slate-200"
+                      }`}
+                    >
+                      {isPreviewModalPlaying ? "หยุด" : "ทดสอบฟัง"}
+                    </button>
+                  </div>
+                  {extractYouTubeVideoId(urlInput) && isPreviewModalPlaying && (
+                    <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black border border-slate-800 mt-2">
+                      <iframe
+                        src={`https://www.youtube-nocookie.com/embed/${extractYouTubeVideoId(urlInput)}?autoplay=1&enablejsapi=1`}
+                        title="YouTube Preview"
+                        className="w-full h-full"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -793,10 +991,20 @@ export default function SoundEffectsVaultPage({
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-lg shadow-amber-500/20 active:scale-95 disabled:opacity-50 transition-all"
+                  className={`inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold shadow-lg active:scale-95 disabled:opacity-50 transition-all ${
+                    vaultType === "music"
+                      ? "bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-400 hover:to-purple-500 text-white shadow-purple-500/20"
+                      : "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-amber-500/20"
+                  }`}
                 >
                   <Plus className="w-4 h-4" />
-                  <span>{isSubmitting ? "กำลังบันทึก..." : "💾 บันทึกลงคลังเสียง SFX"}</span>
+                  <span>
+                    {isSubmitting
+                      ? "กำลังบันทึก..."
+                      : vaultType === "music"
+                      ? "💾 บันทึกลงคลังเพลง (Music Vault)"
+                      : "💾 บันทึกลงคลังเสียง SFX"}
+                  </span>
                 </button>
               </div>
             </form>

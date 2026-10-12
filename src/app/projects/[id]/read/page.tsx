@@ -982,7 +982,65 @@ export default function NovelReaderPage({
         const sfxId = audioResolved.value.replace(/^sfx:/, "");
         const sfx = projectSfxList.find((s) => s.id === sfxId);
         if (sfx) {
-          if (sfx.audioUrl.startsWith("synth:")) {
+          const ytId = extractYouTubeVideoId(sfx.audioUrl);
+          if (ytId) {
+            ambientSound.stop();
+            setIsPlayingBgm(false);
+            if (audioPlayerRef.current) {
+              audioPlayerRef.current.pause();
+              audioPlayerRef.current.currentTime = 0;
+            }
+            setActiveYouTubeVideoId(ytId);
+            setActiveYouTubeTitle(sfx.name || "เพลงประจำบทพูด");
+            setIsCustomAudioPlaying(true);
+            setAudioMode("custom");
+            setTimeout(() => {
+              youtubeIframeRef.current?.contentWindow?.postMessage(
+                JSON.stringify({ event: "command", func: "loadVideoById", args: [ytId] }),
+                "*"
+              );
+              youtubeIframeRef.current?.contentWindow?.postMessage(
+                JSON.stringify({ event: "command", func: "unMute", args: [] }),
+                "*"
+              );
+              youtubeIframeRef.current?.contentWindow?.postMessage(
+                JSON.stringify({
+                  event: "command",
+                  func: "setVolume",
+                  args: [Math.round((isMuted ? 0 : volume) * 100)],
+                }),
+                "*"
+              );
+              youtubeIframeRef.current?.contentWindow?.postMessage(
+                JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+                "*"
+              );
+            }, 150);
+          } else if (sfx.category === "music") {
+            ambientSound.stop();
+            setIsPlayingBgm(false);
+            if (youtubeIframeRef.current) {
+              youtubeIframeRef.current.contentWindow?.postMessage(
+                JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+                "*"
+              );
+              youtubeIframeRef.current.contentWindow?.postMessage(
+                JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
+                "*"
+              );
+              youtubeIframeRef.current.contentWindow?.postMessage(
+                JSON.stringify({ event: "command", func: "mute", args: [] }),
+                "*"
+              );
+            }
+            if (audioPlayerRef.current) {
+              audioPlayerRef.current.src = sfx.audioUrl;
+              audioPlayerRef.current.volume = isMuted ? 0 : (sfx.volume ?? 0.8) * volume;
+              audioPlayerRef.current.play().catch(() => {});
+              setIsCustomAudioPlaying(true);
+              setAudioMode("custom");
+            }
+          } else if (sfx.audioUrl.startsWith("synth:")) {
             ambientSound.setVolume(isMuted ? 0 : (sfx.volume ?? 0.8) * volume);
             ambientSound.play(sfx.audioUrl.replace(/^synth:/, "") as any);
           } else {

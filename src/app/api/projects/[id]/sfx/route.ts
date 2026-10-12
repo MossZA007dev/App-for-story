@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { soundEffects, projects } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { soundEffects, projects, parts, scenes } from "@/lib/db/schema";
+import { eq, desc, inArray } from "drizzle-orm";
 import { audioStorage } from "@/lib/storage";
+import { extractYouTubeVideoId } from "@/lib/audio/audioHelpers";
 import crypto from "crypto";
 import path from "path";
 
@@ -114,6 +115,109 @@ export async function GET(
         .where(eq(soundEffects.projectId, projectId))
         .orderBy(desc(soundEffects.createdAt))
         .all();
+    }
+
+    // Auto-scan and sync music links from scenes and dialogue beats into Sound & Music Vault
+    try {
+      const projectParts = db
+        .select({ id: parts.id })
+        .from(parts)
+        .where(eq(parts.projectId, projectId))
+        .all();
+      const partIds = projectParts.map((p) => p.id);
+
+      if (partIds.length > 0) {
+        const projectScenes = db
+          .select({
+            id: scenes.id,
+            title: scenes.title,
+            bgmUrl: scenes.bgmUrl,
+            bgmTitle: scenes.bgmTitle,
+            dialogueBindings: scenes.dialogueBindings,
+          })
+          .from(scenes)
+          .where(inArray(scenes.partId, partIds))
+          .all();
+
+        const existingUrls = new Set(items.map((it) => it.audioUrl.trim()));
+        let hasNewMusic = false;
+        const now = new Date().toISOString();
+
+        for (const sc of projectScenes) {
+          // 1. Scene BGM Link
+          if (sc.bgmUrl && sc.bgmUrl.trim() && !existingUrls.has(sc.bgmUrl.trim())) {
+            const cleanUrl = sc.bgmUrl.trim();
+            const isYt = Boolean(extractYouTubeVideoId(cleanUrl));
+            const newId = crypto.randomUUID();
+            db.insert(soundEffects)
+              .values({
+                id: newId,
+                projectId,
+                name: sc.bgmTitle || (isYt ? "เพลงประกอบฉาก (YouTube)" : "เพลงประกอบประจำฉาก"),
+                category: "music",
+                audioUrl: cleanUrl,
+                sourceType: isYt ? "url" : (cleanUrl.startsWith("http") ? "url" : "upload"),
+                volume: 0.8,
+                tags: JSON.stringify(["เพลง", "BGM", "เพลงประจำฉาก"]),
+                description: `เพลงประกอบจากฉาก: ${sc.title || "ฉากนิยาย"}`,
+                createdAt: now,
+                updatedAt: now,
+              })
+              .run();
+            existingUrls.add(cleanUrl);
+            hasNewMusic = true;
+          }
+
+          // 2. Dialogue Beat Audio Links
+          if (sc.dialogueBindings) {
+            try {
+              const bindings =
+                typeof sc.dialogueBindings === "string"
+                  ? JSON.parse(sc.dialogueBindings)
+                  : sc.dialogueBindings;
+              if (bindings && typeof bindings === "object") {
+                for (const [key, val] of Object.entries(bindings)) {
+                  if (key.startsWith("audio_") && typeof val === "string" && val.startsWith("url:")) {
+                    const cleanUrl = val.replace(/^url:/, "").trim();
+                    if (cleanUrl && !existingUrls.has(cleanUrl)) {
+                      const isYt = Boolean(extractYouTubeVideoId(cleanUrl));
+                      const newId = crypto.randomUUID();
+                      db.insert(soundEffects)
+                        .values({
+                          id: newId,
+                          projectId,
+                          name: isYt ? "เพลงประจำบทพูด (YouTube)" : "เพลงประจำบทพูด",
+                          category: "music",
+                          audioUrl: cleanUrl,
+                          sourceType: "url",
+                          volume: 0.8,
+                          tags: JSON.stringify(["เพลง", "บทพูด", "BGM"]),
+                          description: `เพลงที่ผูกกับบทพูดในฉาก: ${sc.title || "ฉากนิยาย"}`,
+                          createdAt: now,
+                          updatedAt: now,
+                        })
+                        .run();
+                      existingUrls.add(cleanUrl);
+                      hasNewMusic = true;
+                    }
+                  }
+                }
+              }
+            } catch {}
+          }
+        }
+
+        if (hasNewMusic) {
+          items = db
+            .select()
+            .from(soundEffects)
+            .where(eq(soundEffects.projectId, projectId))
+            .orderBy(desc(soundEffects.createdAt))
+            .all();
+        }
+      }
+    } catch (syncErr) {
+      console.warn("Failed to auto-sync scene music to vault:", syncErr);
     }
 
     return NextResponse.json({

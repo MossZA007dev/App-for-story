@@ -34,7 +34,7 @@ export const characters = sqliteTable("characters", {
   locationNow: text("location_now").default(""),
   // visual_sheet: { age, build, hair_eyes, face, default_clothing, scars_marks }
   visualSheet: text("visual_sheet").default("{}"),
-  characterType: text("character_type", { enum: ["self", "friend", "canon", "narrator"] }).default("friend"),
+  characterType: text("character_type", { enum: ["self", "friend", "canon", "narrator"] }).default("canon"),
   realNickname: text("real_nickname").default(""),
   avatarUrl: text("avatar_url").default(""),
   createdAt: text("created_at").notNull(),

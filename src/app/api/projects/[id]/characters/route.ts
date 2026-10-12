@@ -15,7 +15,7 @@ const CharacterCreateSchema = z.object({
   roleReason: z.string().optional().default(""),
   faction: z.string().optional().default(""),
   background: z.string().optional().default(""),
-  characterType: z.enum(["self", "friend", "canon", "narrator"]).default("friend"),
+  characterType: z.enum(["self", "friend", "canon", "narrator"]).default("canon"),
   realNickname: z.string().optional().default(""),
   avatarUrl: z.string().optional().default(""),
   status: z.enum(["alive", "dead", "missing", "captive"]).default("alive"),

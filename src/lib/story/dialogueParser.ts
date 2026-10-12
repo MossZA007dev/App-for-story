@@ -211,7 +211,7 @@ export function parseClaudeScript(
             id: `temp-${encodeURIComponent(cleanSpeakerName)}`,
             name: cleanSpeakerName,
             realNickname: cleanSpeakerName,
-            characterType: isSelf ? "self" : "friend",
+            characterType: isSelf ? "self" : "canon",
           };
         }
 

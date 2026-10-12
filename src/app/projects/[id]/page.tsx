@@ -1674,7 +1674,7 @@ export default function StoryWorkspacePage({
             id: `temp-${encodeURIComponent(targetKey)}`,
             name: targetKey,
             realNickname: targetKey,
-            characterType: isSelf ? "self" : "friend",
+            characterType: isSelf ? "self" : "canon",
           },
           speakerName: char?.realNickname || char?.name || targetKey || "ตัวละคร",
         };
@@ -2211,7 +2211,9 @@ export default function StoryWorkspacePage({
               body: JSON.stringify({
                 name: charName,
                 realNickname: charName,
-                characterType: "friend",
+                characterType: "canon",
+                faction: "ตัวละครในหนัง / จักรวาล",
+                chosenRole: "ตัวละครในเนื้อเรื่อง",
               }),
             });
             if (res.ok) {
@@ -2225,7 +2227,9 @@ export default function StoryWorkspacePage({
             id: `temp-${encodeURIComponent(charName)}`,
             name: charName,
             realNickname: charName,
-            characterType: "friend",
+            characterType: "canon",
+            faction: "ตัวละครในหนัง / จักรวาล",
+            chosenRole: "ตัวละครในเนื้อเรื่อง",
           };
         })
       );
@@ -2234,7 +2238,7 @@ export default function StoryWorkspacePage({
       if (validNew.length > 0) {
         currentChars = [...currentChars, ...validNew];
         setCharacters(currentChars);
-        toast.info(`เพิ่มตัวละครใหม่เข้าโปรเจกต์: ${validNew.map((c: any) => c.name).join(", ")}`);
+        toast.info(`เพิ่มตัวละครในหนัง/จักรวาล: ${validNew.map((c: any) => c.name).join(", ")}`);
       }
     } catch (err) {
       console.error("Error auto registering characters", err);

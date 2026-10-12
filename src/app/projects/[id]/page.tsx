@@ -2334,6 +2334,12 @@ export default function StoryWorkspacePage({
     const audioResolved = resolveAudioForDialogueIndex(index, localDialogueBindings, activeScene?.bgmUrl, customSfxMap);
     if (audioResolved.isDirectBinding) {
       handlePreviewAudioBinding(audioResolved.value);
+    } else if (isAudioPlaying) {
+      if (activeScene?.bgmUrl) {
+        handlePreviewAudioBinding("scene_bgm");
+      } else {
+        handlePreviewAudioBinding("stop");
+      }
     }
   };
 

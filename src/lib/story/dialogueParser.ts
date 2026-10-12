@@ -563,30 +563,7 @@ export function resolveAudioForDialogueIndex(
     };
   }
 
-  // 2. Look backwards for the most recent audio binding
-  for (let i = activeIndex - 1; i >= 0; i--) {
-    const val = bindings[`audio_${i}`];
-    if (val) {
-      return {
-        action:
-          val === "stop"
-            ? "stop"
-            : val === "scene_bgm"
-            ? "play_scene_bgm"
-            : val.startsWith("url:")
-            ? "play_url"
-            : val.startsWith("sfx:")
-            ? "play_sfx"
-            : "play_ambient",
-        value: val,
-        label: getAudioMoodLabel(val, customSfxMap),
-        isDirectBinding: false,
-        boundBlockIndex: i,
-      };
-    }
-  }
-
-  // 3. Fallback: scene BGM if available
+  // 2. No direct binding on this dialogue beat: fallback to scene BGM if available
   if (sceneBgmUrl) {
     return {
       action: "play_scene_bgm",

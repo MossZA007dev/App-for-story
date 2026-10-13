@@ -48,6 +48,7 @@ import {
   Camera,
   ChevronDown,
   GripVertical,
+  Maximize2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
@@ -233,6 +234,7 @@ export default function StoryWorkspacePage({
   // Images State
   const [sceneImages, setSceneImages] = useState<SceneImage[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number>(0);
+  const [imageFitMode, setImageFitMode] = useState<"contain" | "cover">("contain");
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [showAiImageModal, setShowAiImageModal] = useState(false);
@@ -3951,8 +3953,8 @@ export default function StoryWorkspacePage({
             </div>
           )}
 
-          {/* Main Cinematic Image Display (flex-1 dynamically fills vertical space) */}
-          <div className="relative w-full flex-1 min-h-0 rounded-[13px] overflow-hidden bg-[#1e232d] group border border-black/20 mb-3">
+          {/* Main Cinematic Image Display (Strict 16:9 Aspect Ratio) */}
+          <div className="relative w-full aspect-video rounded-[13px] overflow-hidden bg-black/95 group border border-slate-800 shadow-2xl mb-3 flex items-center justify-center flex-shrink-0">
             {currentFeaturedImage ? (
               <>
                 {isVideoMedia(currentFeaturedImage) ? (
@@ -3974,7 +3976,9 @@ export default function StoryWorkspacePage({
                         e.currentTarget.play().catch(() => {});
                       }
                     }}
-                    className="w-full h-full object-cover transition-all duration-700 animate-fadeIn"
+                    className={`w-full h-full transition-all duration-700 animate-fadeIn ${
+                      imageFitMode === "contain" ? "object-contain bg-black" : "object-cover"
+                    }`}
                   />
                 ) : (
                   /* eslint-disable-next-line @next/next/no-img-element */
@@ -3982,7 +3986,9 @@ export default function StoryWorkspacePage({
                     key={currentFeaturedImage.id}
                     src={currentFeaturedImage.filePath}
                     alt={currentFeaturedImage.caption || currentFeaturedImage.prompt}
-                    className="w-full h-full object-cover transition-all duration-700 group-hover:scale-102 animate-fadeIn"
+                    className={`w-full h-full transition-all duration-700 group-hover:scale-102 animate-fadeIn ${
+                      imageFitMode === "contain" ? "object-contain bg-black" : "object-cover"
+                    }`}
                   />
                 )}
 
@@ -4058,6 +4064,25 @@ export default function StoryWorkspacePage({
                       <span>ครอปรูป</span>
                     </button>
                   )}
+
+                  {/* 16:9 Fit vs Cover Toggle Button */}
+                  <button
+                    type="button"
+                    onClick={() => setImageFitMode((prev) => (prev === "contain" ? "cover" : "contain"))}
+                    className={`px-2.5 py-1 rounded-full text-xs font-bold font-thai flex items-center gap-1.5 backdrop-blur-md border shadow transition-all active:scale-95 ${
+                      imageFitMode === "contain"
+                        ? "bg-amber-400 text-slate-950 border-amber-300 font-black"
+                        : "bg-black/80 hover:bg-black text-amber-300 border-slate-700 hover:border-amber-400"
+                    }`}
+                    title={
+                      imageFitMode === "contain"
+                        ? "กำลังแสดงภาพเต็ม 100% ไม่ตัดขอบ (Fit) - คลิกเพื่อสลับเป็นเติมเต็มกรอบ (Cover)"
+                        : "กำลังแสดงเต็มกรอบ 16:9 (Cover) - คลิกเพื่อสลับเป็นแสดงภาพเต็ม (Fit)"
+                    }
+                  >
+                    <Maximize2 className="w-3 h-3" />
+                    <span>{imageFitMode === "contain" ? "16:9 ภาพเต็ม (Fit)" : "16:9 เต็มกรอบ (Cover)"}</span>
+                  </button>
 
                   <button
                     onClick={() => handleSetAsCover(currentFeaturedImage)}

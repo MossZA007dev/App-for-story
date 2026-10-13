@@ -238,7 +238,7 @@ export default function NovelReaderPage({
 
   // Fullscreen & Reading View State
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [imageFitMode, setImageFitMode] = useState<"cover" | "contain">("cover");
+  const [imageFitMode, setImageFitMode] = useState<"cover" | "contain">("contain");
 
   const handleToggleFullscreen = () => {
     if (typeof document === "undefined") return;
@@ -2323,8 +2323,8 @@ export default function NovelReaderPage({
         {/* LEFT COLUMN: Large Image Card (Figma width: 1196px, 2/3 of screen)        */}
         {/* ----------------------------------------------------------------------- */}
         <div className="lg:col-span-7 xl:col-span-8 flex flex-col justify-between rounded-[16px] p-3.5 sm:p-5 bg-[#313131] border border-slate-700/60 shadow-2xl h-[52vh] min-h-[380px] lg:h-full lg:min-h-0 overflow-hidden">
-          {/* Main Cinematic Image Display (flex-1 so it dynamically fills vertical height) */}
-          <div className="relative w-full flex-1 min-h-0 rounded-[13px] overflow-hidden bg-[#1e232d] group border border-black/20 mb-2">
+          {/* Main Cinematic Image Display (Strict 16:9 Aspect Ratio) */}
+          <div className="relative w-full aspect-video rounded-[13px] overflow-hidden bg-black/95 group border border-slate-800 shadow-2xl mb-2 flex items-center justify-center flex-shrink-0">
             {currentFeaturedImage ? (
               <>
                 {isVideoMedia(currentFeaturedImage) ? (

@@ -522,7 +522,7 @@ export default function StoryWorkspacePage({
   const [dragOverBlockIdx, setDragOverBlockIdx] = useState<number | null>(null);
 
   // 1. Load Project Data
-  const loadProjectData = async () => {
+  const loadProjectData = async (overrideSceneId?: string) => {
     try {
       setLoading(true);
       const [projRes, collabRes] = await Promise.all([
@@ -562,18 +562,35 @@ export default function StoryWorkspacePage({
       }
 
       if (data.parts && data.parts.length > 0) {
-        const firstPart = data.parts[0];
-        setActivePartId(firstPart.id);
-        const firstEp = firstPart.episodes && firstPart.episodes.length > 0 ? firstPart.episodes[0] : null;
-        if (firstEp) {
-          setActiveEpisodeId(firstEp.id);
-          if (firstEp.scenes && firstEp.scenes.length > 0) {
-            setActiveSceneId(firstEp.scenes[0].id);
-          } else if (firstPart.scenes && firstPart.scenes.length > 0) {
-            setActiveSceneId(firstPart.scenes[0].id);
+        const matchedPart = data.parts.find((p: any) => p.id === activePartId) || data.parts[0];
+        setActivePartId(matchedPart.id);
+
+        const matchedEp =
+          matchedPart.episodes?.find((ep: any) => ep.id === activeEpisodeId) ||
+          (matchedPart.episodes && matchedPart.episodes.length > 0 ? matchedPart.episodes[0] : null);
+
+        if (overrideSceneId !== undefined) {
+          setActiveSceneId(overrideSceneId);
+        } else if (matchedEp) {
+          setActiveEpisodeId(matchedEp.id);
+          const epScenes = matchedEp.scenes || [];
+          const matchedScene = epScenes.find((s: any) => s.id === activeSceneId);
+          if (matchedScene) {
+            // Keep current activeSceneId
+          } else if (epScenes.length > 0) {
+            setActiveSceneId(epScenes[0].id);
+          } else {
+            setActiveSceneId("");
           }
-        } else if (firstPart.scenes && firstPart.scenes.length > 0) {
-          setActiveSceneId(firstPart.scenes[0].id);
+        } else if (matchedPart.scenes && matchedPart.scenes.length > 0) {
+          const matchedScene = matchedPart.scenes.find((s: any) => s.id === activeSceneId);
+          if (matchedScene) {
+            // Keep current activeSceneId
+          } else {
+            setActiveSceneId(matchedPart.scenes[0].id);
+          }
+        } else {
+          setActiveSceneId("");
         }
       }
     } catch (err) {
@@ -3165,11 +3182,15 @@ export default function StoryWorkspacePage({
   };
 
   const handleDeleteScene = async (targetSceneId: string, sceneTitle: string) => {
-    if (!confirm(`คุณต้องการลบ "${sceneTitle}" ใช่หรือไม่? (บทสนทนาและรูปภาพในฉากนี้จะถูกลบถาวร)`)) {
+    if (!confirm(`คุณต้องการลบ "${sceneTitle}" ใช่หรือไม่?\n(บทสนทนาและรูปภาพที่ผูกไว้ในฉากนี้จะถูกลบถาวร)`)) {
       return;
     }
 
     try {
+      const remainingScenes = currentEpisodeScenes.filter((s) => s.id !== targetSceneId);
+      const isDeletingActive = targetSceneId === activeSceneId;
+      const nextActiveId = remainingScenes.length > 0 ? remainingScenes[0].id : "";
+
       const res = await fetch(`/api/projects/${projectId}/scenes/${targetSceneId}`, {
         method: "DELETE",
       });
@@ -3182,8 +3203,19 @@ export default function StoryWorkspacePage({
       toast.success(`ลบฉาก "${sceneTitle}" เรียบร้อยแล้ว`);
       setShowEditSceneModal(false);
 
-      // Refresh project data
-      await loadProjectData();
+      if (isDeletingActive) {
+        if (nextActiveId) {
+          setActiveSceneId(nextActiveId);
+        } else {
+          setActiveSceneId("");
+          setActiveScene(null);
+          setSceneImages([]);
+          setDialogueBlocks([]);
+        }
+      }
+
+      // Refresh project data and keep next/active scene
+      await loadProjectData(isDeletingActive ? nextActiveId : activeSceneId);
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "เกิดข้อผิดพลาดในการลบฉาก");
@@ -3487,10 +3519,22 @@ export default function StoryWorkspacePage({
                 type="button"
                 onClick={() => handleOpenEditSceneModal(activeSceneId)}
                 title="แก้ไขชื่อฉากนี้ / จัดการฉากในตอนนี้"
-                className="p-1 rounded text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors ml-0.5 flex-shrink-0"
+                className="p-1 rounded text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors ml-0.5 flex-shrink-0 cursor-pointer"
               >
                 <Edit3 className="w-3 h-3" />
               </button>
+
+              {/* Quick Delete active scene button (if more than 1 scene) */}
+              {activeScene && currentEpisodeScenes.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteScene(activeScene.id, activeScene.title)}
+                  title="ลบฉากปัจจุบันนี้"
+                  className="p-1 rounded text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors flex-shrink-0 cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              )}
 
               {/* Floating Reorderable Scene Dropdown Popover */}
               {isSceneDropdownOpen && (
@@ -3580,43 +3624,50 @@ export default function StoryWorkspacePage({
                             )}
                           </div>
 
-                          {/* Up / Down Move Quick Buttons (Accessible for click / touch devices) */}
+                          {/* Row Action Buttons: Move Up/Down, Active Checkmark, Edit, Delete */}
                           <div
-                            className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity flex-shrink-0 mr-1"
+                            className="flex items-center gap-0.5 flex-shrink-0"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <button
-                              type="button"
-                              disabled={idx === 0 || isReorderingScenes}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleReorderScenes(idx, idx - 1);
-                              }}
-                              className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-20 transition-all"
-                              title="ย้ายขึ้นไปก่อนหน้านี้"
-                            >
-                              <ArrowUp className="w-3 h-3" />
-                            </button>
-                            <button
-                              type="button"
-                              disabled={idx === currentEpisodeScenes.length - 1 || isReorderingScenes}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleReorderScenes(idx, idx + 1);
-                              }}
-                              className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-20 transition-all"
-                              title="ย้ายลงไปถัดไป"
-                            >
-                              <ArrowDown className="w-3 h-3" />
-                            </button>
-                          </div>
-
-                          {/* Active Checkmark or Quick Edit */}
-                          {isActive ? (
-                            <div className="p-1 rounded-full bg-amber-400/20 text-amber-400 flex-shrink-0">
-                              <Check className="w-3.5 h-3.5" />
+                            {/* Up / Down Move Quick Buttons */}
+                            <div className="opacity-70 sm:opacity-0 sm:group-hover:opacity-100 flex items-center gap-0.5 transition-opacity mr-0.5">
+                              <button
+                                type="button"
+                                disabled={idx === 0 || isReorderingScenes}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleReorderScenes(idx, idx - 1);
+                                }}
+                                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-20 transition-all cursor-pointer"
+                                title="ย้ายขึ้นไปก่อนหน้านี้"
+                              >
+                                <ArrowUp className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === currentEpisodeScenes.length - 1 || isReorderingScenes}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleReorderScenes(idx, idx + 1);
+                                }}
+                                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-20 transition-all cursor-pointer"
+                                title="ย้ายลงไปถัดไป"
+                              >
+                                <ArrowDown className="w-3 h-3" />
+                              </button>
                             </div>
-                          ) : (
+
+                            {/* Active Checkmark Indicator */}
+                            {isActive && (
+                              <div
+                                className="p-1 rounded-full bg-amber-400/20 text-amber-400 flex-shrink-0 mr-0.5"
+                                title="ฉากปัจจุบันที่กำลังเลือกอยู่"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </div>
+                            )}
+
+                            {/* Quick Edit Scene Title */}
                             <button
                               type="button"
                               onClick={(e) => {
@@ -3625,11 +3676,24 @@ export default function StoryWorkspacePage({
                                 setIsSceneDropdownOpen(false);
                               }}
                               title="แก้ไขชื่อฉากนี้"
-                              className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-all flex-shrink-0"
+                              className="opacity-70 sm:opacity-0 sm:group-hover:opacity-100 p-1 rounded text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-all flex-shrink-0 cursor-pointer"
                             >
                               <Edit3 className="w-3 h-3" />
                             </button>
-                          )}
+
+                            {/* Quick Delete Scene */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteScene(s.id, s.title);
+                              }}
+                              title="ลบฉากนี้"
+                              className="opacity-70 sm:opacity-0 sm:group-hover:opacity-100 p-1 rounded text-slate-400 hover:text-red-400 hover:bg-red-950/50 transition-all flex-shrink-0 cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -6350,7 +6414,7 @@ export default function StoryWorkspacePage({
               className="space-y-4"
             >
               {/* Scene Switcher inside modal */}
-              {currentPart && currentPart.scenes.length > 1 && (
+              {currentEpisodeScenes.length > 1 && (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-slate-300">
@@ -6365,7 +6429,7 @@ export default function StoryWorkspacePage({
                     onChange={(e) => {
                       const chosenId = e.target.value;
                       setEditSceneModalId(chosenId);
-                      const sc = currentPart.scenes.find((s) => s.id === chosenId);
+                      const sc = currentEpisodeScenes.find((s) => s.id === chosenId);
                       if (sc) {
                         setEditSceneModalTitle(sc.title || "");
                         setEditSceneModalLocation(sc.location || "");
@@ -6373,7 +6437,7 @@ export default function StoryWorkspacePage({
                     }}
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 cursor-pointer"
                   >
-                    {currentPart.scenes.map((s) => (
+                    {currentEpisodeScenes.map((s) => (
                       <option key={s.id} value={s.id}>
                         ฉาก {s.order}: {s.title}
                       </option>
@@ -6411,14 +6475,16 @@ export default function StoryWorkspacePage({
 
               {/* Actions */}
               <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-                {currentPart && currentPart.scenes.length > 1 ? (
+                {currentEpisodeScenes.length > 1 || (currentPart && currentPart.scenes.length > 1) ? (
                   <button
                     type="button"
                     onClick={() => {
-                      const sc = currentPart.scenes.find((s) => s.id === editSceneModalId);
+                      const sc =
+                        currentEpisodeScenes.find((s) => s.id === editSceneModalId) ||
+                        currentPart?.scenes.find((s) => s.id === editSceneModalId);
                       if (sc) handleDeleteScene(sc.id, sc.title);
                     }}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-950/40 text-xs font-bold transition-all border border-red-500/20"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-950/40 text-xs font-bold transition-all border border-red-500/20 cursor-pointer"
                     title="ลบฉากนี้ออกจากเรื่อง"
                   >
                     <Trash2 className="w-3.5 h-3.5" />

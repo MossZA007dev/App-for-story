@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { scenes, sceneVersions, images } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, asc } from "drizzle-orm";
 import crypto from "crypto";
 import { z } from "zod";
 
@@ -141,7 +141,35 @@ export async function DELETE(
 ) {
   try {
     const { sceneId } = await params;
+
+    // 1. Get scene info to know partId & episodeId before deletion
+    const targetScene = db.select().from(scenes).where(eq(scenes.id, sceneId)).get();
+
+    // 2. Delete the scene
     db.delete(scenes).where(eq(scenes.id, sceneId)).run();
+
+    // 3. Re-sequence remaining scenes in the episode or part
+    if (targetScene) {
+      const remainingScenes = targetScene.episodeId
+        ? db
+            .select()
+            .from(scenes)
+            .where(eq(scenes.episodeId, targetScene.episodeId))
+            .orderBy(asc(scenes.order))
+            .all()
+        : db
+            .select()
+            .from(scenes)
+            .where(eq(scenes.partId, targetScene.partId))
+            .orderBy(asc(scenes.order))
+            .all();
+
+      remainingScenes.forEach((sc, idx) => {
+        if (sc.order !== idx + 1) {
+          db.update(scenes).set({ order: idx + 1 }).where(eq(scenes.id, sc.id)).run();
+        }
+      });
+    }
 
     return NextResponse.json({
       success: true,

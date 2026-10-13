@@ -1218,6 +1218,43 @@ export default function NovelReaderPage({
     setIsEpisodeDropdownOpen(false);
   };
 
+  const handleDeleteScene = async (targetSceneId: string, sceneTitle: string) => {
+    if (!confirm(`คุณต้องการลบ "${sceneTitle}" ใช่หรือไม่?\n(บทสนทนาและรูปภาพในฉากนี้จะถูกลบถาวร)`)) {
+      return;
+    }
+
+    try {
+      const isDeletingActive = targetSceneId === activeScene?.id;
+      const remaining = scenesInCurrentEpisode.filter(({ scene }) => scene.id !== targetSceneId);
+      const nextActiveScene = remaining.length > 0 ? remaining[0].scene : null;
+
+      const res = await fetch(`/api/projects/${projectId}/scenes/${targetSceneId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "ลบฉากไม่สำเร็จ");
+      }
+
+      toast.success(`ลบฉาก "${sceneTitle}" เรียบร้อยแล้ว`);
+
+      if (isDeletingActive) {
+        if (nextActiveScene) {
+          handleSelectSceneItem(nextActiveScene);
+        } else {
+          setActiveScene(null);
+          setActiveSceneImages([]);
+        }
+      }
+
+      await reloadProjectData(isDeletingActive ? nextActiveScene?.id : activeScene?.id);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "เกิดข้อผิดพลาดในการลบฉาก");
+    }
+  };
+
   // Parse markdown into Dialogue Blocks for Visual Novel Mode
   const parsedBlocks = activeScene
     ? parseSceneToDialogueBlocks(activeScene.contentMarkdown, characters)
@@ -1579,7 +1616,7 @@ export default function NovelReaderPage({
                               {displayTitle}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
                             {scene.location && (
                               <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-slate-400 max-w-[90px] truncate">
                                 <MapPin className="w-2.5 h-2.5 text-amber-400 flex-shrink-0" />
@@ -1587,6 +1624,19 @@ export default function NovelReaderPage({
                               </span>
                             )}
                             {isActive && <Check className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
+                            {scenesInCurrentEpisode.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteScene(scene.id, scene.title);
+                                }}
+                                title="ลบฉากนี้"
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-500 hover:text-red-400 hover:bg-red-950/40 transition-all flex-shrink-0 cursor-pointer"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
@@ -2272,7 +2322,7 @@ export default function NovelReaderPage({
                               {displayTitle}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
                             {scene.location && (
                               <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-slate-400 max-w-[90px] truncate">
                                 <MapPin className="w-2.5 h-2.5 text-amber-400 flex-shrink-0" />
@@ -2280,6 +2330,19 @@ export default function NovelReaderPage({
                               </span>
                             )}
                             {isActive && <Check className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
+                            {scenesInCurrentEpisode.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteScene(scene.id, scene.title);
+                                }}
+                                title="ลบฉากนี้"
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-500 hover:text-red-400 hover:bg-red-950/40 transition-all flex-shrink-0 cursor-pointer"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       );

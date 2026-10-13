@@ -36,6 +36,8 @@ import {
   Maximize2,
   Minimize2,
   Check,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
@@ -239,10 +241,12 @@ export default function NovelReaderPage({
   // Fullscreen & Reading View State
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [imageFitMode, setImageFitMode] = useState<"cover" | "contain">("contain");
+  const [isGalleryCollapsed, setIsGalleryCollapsed] = useState(false);
 
   const handleToggleFullscreen = () => {
     if (typeof document === "undefined") return;
     if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
+      setIsGalleryCollapsed(true);
       if (document.documentElement.requestFullscreen) {
         document.documentElement.requestFullscreen().catch(() => {
           setIsFullscreen(true);
@@ -264,7 +268,11 @@ export default function NovelReaderPage({
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement || (document as any).webkitFullscreenElement));
+      const isFull = Boolean(document.fullscreenElement || (document as any).webkitFullscreenElement);
+      setIsFullscreen(isFull);
+      if (isFull) {
+        setIsGalleryCollapsed(true);
+      }
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
@@ -2459,12 +2467,25 @@ export default function NovelReaderPage({
                   </div>
                 )}
 
-                {/* Top Right Action Buttons (Fit toggle, Upload SS, Lightbox, Fullscreen - fades in on hover in fullscreen) */}
+                {/* Top Right Action Buttons (Fit toggle, Gallery toggle, Upload SS, Lightbox, Fullscreen - fades in on hover in fullscreen) */}
                 <div
                   className={`absolute top-3.5 right-3.5 flex items-center gap-1.5 z-10 transition-opacity duration-300 ${
                     isFullscreen ? "opacity-0 group-hover:opacity-100" : ""
                   }`}
                 >
+                  {activeSceneImages.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setIsGalleryCollapsed((prev) => !prev)}
+                      className={`p-2 rounded-xl bg-black/70 hover:bg-black backdrop-blur-md transition-all shadow cursor-pointer ${
+                        isGalleryCollapsed ? "text-amber-400 ring-1 ring-amber-400/50" : "text-slate-300 hover:text-amber-300"
+                      }`}
+                      title={isGalleryCollapsed ? "แสดงแถบคลังภาพย่อย (Show Gallery Strip)" : "ซ่อนแถบคลังภาพย่อย (Hide Gallery Strip)"}
+                    >
+                      {isGalleryCollapsed ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => setImageFitMode((prev) => (prev === "cover" ? "contain" : "cover"))}
@@ -2554,47 +2575,71 @@ export default function NovelReaderPage({
 
           {/* Thumbnail Strip if multiple images exist */}
           {activeSceneImages.length > 1 && (
-            <div className="flex-shrink-0 space-y-1.5 mb-2">
-              <p className="text-[11px] font-semibold text-slate-400 font-thai">
-                ภาพประกอบทั้งหมดในฉากนี้ ({activeSceneImages.length} ภาพ):
-              </p>
-              <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
-                {activeSceneImages.map((img, idx) => {
-                  const isSelected = selectedImageIndex === idx;
-                  const isMovie = img.kind === "movie_still" || img.kind === "reference";
-
-                  return (
-                    <div
-                      key={img.id}
-                      onClick={() => setSelectedImageIndex(idx)}
-                      className={`cursor-pointer relative aspect-video w-24 rounded-lg overflow-hidden border-2 flex-shrink-0 transition-all ${
-                        isSelected
-                          ? "border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.4)] ring-1 ring-amber-400 scale-105"
-                          : "border-slate-700 opacity-60 hover:opacity-100 hover:border-slate-500"
-                      }`}
-                    >
-                      {isVideoMedia(img) ? (
-                        <video
-                          src={img.filePath}
-                          muted
-                          playsInline
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img
-                          src={img.filePath}
-                          alt={img.caption || ""}
-                          className="w-full h-full object-cover"
-                        />
-                      )}
-                      <span className="absolute bottom-1 right-1 px-1 py-0.2 rounded text-[9px] font-bold bg-black/80 text-white font-mono">
-                        {isVideoMedia(img) ? "🎬 VDO" : isMovie ? "MOVIE" : "AI"}
-                      </span>
-                    </div>
-                  );
-                })}
+            <div className="flex-shrink-0 space-y-1.5 mb-2 transition-all">
+              <div className="flex items-center justify-between px-0.5">
+                <span className="text-[11px] font-semibold text-slate-400 font-thai flex items-center gap-1.5">
+                  <Film className="w-3 h-3 text-amber-400" />
+                  <span>คลังภาพในฉากนี้ ({activeSceneImages.length} ภาพ):</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsGalleryCollapsed((prev) => !prev)}
+                  className="text-[11px] text-slate-400 hover:text-amber-300 font-thai font-medium flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/40 hover:bg-black/80 border border-slate-700/60 transition-all cursor-pointer"
+                  title={isGalleryCollapsed ? "แสดงแถบคลังภาพ" : "ซ่อนแถบคลังภาพเพื่อดูภาพขนาดใหญ่เต็มตา"}
+                >
+                  {isGalleryCollapsed ? (
+                    <>
+                      <ChevronDown className="w-3 h-3 text-amber-400" />
+                      <span>แสดงคลังภาพ ▾</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronUp className="w-3 h-3 text-slate-400" />
+                      <span>ซ่อนคลังภาพ ▴</span>
+                    </>
+                  )}
+                </button>
               </div>
+
+              {!isGalleryCollapsed && (
+                <div className="flex items-center gap-2.5 overflow-x-auto pb-1 animate-in fade-in duration-200">
+                  {activeSceneImages.map((img, idx) => {
+                    const isSelected = selectedImageIndex === idx;
+                    const isMovie = img.kind === "movie_still" || img.kind === "reference";
+
+                    return (
+                      <div
+                        key={img.id}
+                        onClick={() => setSelectedImageIndex(idx)}
+                        className={`cursor-pointer relative aspect-video w-24 rounded-lg overflow-hidden border-2 flex-shrink-0 transition-all ${
+                          isSelected
+                            ? "border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.4)] ring-1 ring-amber-400 scale-105"
+                            : "border-slate-700 opacity-60 hover:opacity-100 hover:border-slate-500"
+                        }`}
+                      >
+                        {isVideoMedia(img) ? (
+                          <video
+                            src={img.filePath}
+                            muted
+                            playsInline
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={img.filePath}
+                            alt={img.caption || ""}
+                            className="w-full h-full object-cover"
+                          />
+                        )}
+                        <span className="absolute bottom-1 right-1 px-1 py-0.2 rounded text-[9px] font-bold bg-black/80 text-white font-mono">
+                          {isVideoMedia(img) ? "🎬 VDO" : isMovie ? "MOVIE" : "AI"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

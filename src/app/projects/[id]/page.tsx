@@ -47,6 +47,7 @@ import {
   Youtube,
   Camera,
   ChevronDown,
+  ChevronUp,
   GripVertical,
   Maximize2,
 } from "lucide-react";
@@ -235,6 +236,7 @@ export default function StoryWorkspacePage({
   const [sceneImages, setSceneImages] = useState<SceneImage[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number>(0);
   const [imageFitMode, setImageFitMode] = useState<"contain" | "cover">("contain");
+  const [isGalleryCollapsed, setIsGalleryCollapsed] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [showAiImageModal, setShowAiImageModal] = useState(false);
@@ -4225,144 +4227,167 @@ export default function StoryWorkspacePage({
           </div>
 
           {/* Thumbnail Strip: Image Gallery for this EP */}
-          <div className="flex-shrink-0 space-y-1.5 mb-2">
+          <div className="flex-shrink-0 space-y-1.5 mb-2 transition-all">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-400 font-thai flex items-center gap-1.5">
-                <Film className="w-3 h-3 text-amber-400" />
-                <span>คลังภาพในฉากนี้ ({sceneImages.length} ภาพ):</span>
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-slate-400 font-thai flex items-center gap-1.5">
+                  <Film className="w-3 h-3 text-amber-400" />
+                  <span>คลังภาพในฉากนี้ ({sceneImages.length} ภาพ):</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsGalleryCollapsed(!isGalleryCollapsed)}
+                  className="text-[11px] text-slate-400 hover:text-amber-300 font-thai font-medium flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 transition-all cursor-pointer"
+                  title={isGalleryCollapsed ? "แสดงแถบคลังภาพ" : "ซ่อนแถบคลังภาพเพื่อดูภาพขนาดใหญ่เต็มตา"}
+                >
+                  {isGalleryCollapsed ? (
+                    <>
+                      <ChevronDown className="w-3 h-3 text-amber-400" />
+                      <span>แสดงคลังภาพ ▾</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronUp className="w-3 h-3 text-slate-400" />
+                      <span>ซ่อนคลังภาพ ▴</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
               <button
                 onClick={() => imageFileInputRef.current?.click()}
-                className="text-[11px] text-amber-400 hover:underline font-thai font-semibold flex items-center gap-1"
+                className="text-[11px] text-amber-400 hover:underline font-thai font-semibold flex items-center gap-1 cursor-pointer"
               >
                 <Plus className="w-3 h-3" />
                 <span>เพิ่มภาพใหม่</span>
               </button>
             </div>
 
-            <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
-              {sceneImages.map((img, idx) => {
-                const isSelected = selectedImageIndex === idx;
-                return (
-                  <div
-                    key={img.id}
-                    onClick={() => setSelectedImageIndex(idx)}
-                    className={`cursor-pointer group relative aspect-video w-24 rounded-lg overflow-hidden border-2 flex-shrink-0 transition-all ${
-                      isSelected
-                        ? "border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.4)] ring-1 ring-amber-400 scale-105"
-                        : "border-slate-700 opacity-60 hover:opacity-100 hover:border-slate-500"
-                    }`}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {isVideoMedia(img) ? (
-                      <div className="w-full h-full relative bg-black flex items-center justify-center">
-                        <video
-                          src={img.filePath}
-                          muted
-                          playsInline
-                          className="w-full h-full object-cover pointer-events-none"
-                        />
-                        <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
-                          <Play className="w-4 h-4 text-white/80 fill-current" />
-                        </div>
-                      </div>
-                    ) : (
-                      <img
-                        src={img.filePath}
-                        alt={img.caption || ""}
-                        className="w-full h-full object-cover"
-                      />
-                    )}
-
-                    {/* Cover indicator */}
-                    {project?.coverImage === img.filePath && (
-                      <div className="absolute top-1 left-1 px-1 py-0.5 rounded bg-amber-400 text-slate-950 text-[9px] font-bold flex items-center gap-0.5 shadow z-10">
-                        <Crown className="w-2.5 h-2.5" />
-                        <span>ปก</span>
-                      </div>
-                    )}
-
-                    {/* Video badge */}
-                    {isVideoMedia(img) && (
-                      <div className="absolute bottom-1 left-1 px-1 py-0.5 rounded bg-black/80 text-amber-300 text-[9px] font-bold flex items-center gap-0.5 backdrop-blur-sm z-10">
-                        <Video className="w-2.5 h-2.5" />
-                        <span>VDO</span>
-                      </div>
-                    )}
-
-                    {/* Hover actions */}
-                    <div className="absolute top-1 right-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            {!isGalleryCollapsed && (
+              <div className="flex items-center gap-2.5 overflow-x-auto pb-1 animate-in fade-in duration-200">
+                {sceneImages.map((img, idx) => {
+                  const isSelected = selectedImageIndex === idx;
+                  return (
+                    <div
+                      key={img.id}
+                      onClick={() => setSelectedImageIndex(idx)}
+                      className={`cursor-pointer group relative aspect-video w-24 rounded-lg overflow-hidden border-2 flex-shrink-0 transition-all ${
+                        isSelected
+                          ? "border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.4)] ring-1 ring-amber-400 scale-105"
+                          : "border-slate-700 opacity-60 hover:opacity-100 hover:border-slate-500"
+                      }`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       {isVideoMedia(img) ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const timing = getVideoTiming(img);
-                            setVideoTrimData({
-                              isOpen: true,
-                              videoSrc: img.filePath,
-                              videoId: img.id,
-                              startTime: timing.startTime,
-                              endTime: timing.endTime,
-                              caption: img.caption || "",
-                            });
-                          }}
-                          className="p-1 rounded bg-black/80 hover:bg-amber-950 text-slate-300 hover:text-amber-300"
-                          title="เลือกช่วงเวลาของวิดีโอนี้ (Trim)"
-                        >
-                          <Scissors className="w-2.5 h-2.5 text-amber-400" />
-                        </button>
+                        <div className="w-full h-full relative bg-black flex items-center justify-center">
+                          <video
+                            src={img.filePath}
+                            muted
+                            playsInline
+                            className="w-full h-full object-cover pointer-events-none"
+                          />
+                          <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
+                            <Play className="w-4 h-4 text-white/80 fill-current" />
+                          </div>
+                        </div>
                       ) : (
+                        <img
+                          src={img.filePath}
+                          alt={img.caption || ""}
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+
+                      {/* Cover indicator */}
+                      {project?.coverImage === img.filePath && (
+                        <div className="absolute top-1 left-1 px-1 py-0.5 rounded bg-amber-400 text-slate-950 text-[9px] font-bold flex items-center gap-0.5 shadow z-10">
+                          <Crown className="w-2.5 h-2.5" />
+                          <span>ปก</span>
+                        </div>
+                      )}
+
+                      {/* Video badge */}
+                      {isVideoMedia(img) && (
+                        <div className="absolute bottom-1 left-1 px-1 py-0.5 rounded bg-black/80 text-amber-300 text-[9px] font-bold flex items-center gap-0.5 backdrop-blur-sm z-10">
+                          <Video className="w-2.5 h-2.5" />
+                          <span>VDO</span>
+                        </div>
+                      )}
+
+                      {/* Hover actions */}
+                      <div className="absolute top-1 right-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                        {isVideoMedia(img) ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const timing = getVideoTiming(img);
+                              setVideoTrimData({
+                                isOpen: true,
+                                videoSrc: img.filePath,
+                                videoId: img.id,
+                                startTime: timing.startTime,
+                                endTime: timing.endTime,
+                                caption: img.caption || "",
+                              });
+                            }}
+                            className="p-1 rounded bg-black/80 hover:bg-amber-950 text-slate-300 hover:text-amber-300"
+                            title="เลือกช่วงเวลาของวิดีโอนี้ (Trim)"
+                          >
+                            <Scissors className="w-2.5 h-2.5 text-amber-400" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCropModalData({
+                                isOpen: true,
+                                imageSrc: img.filePath,
+                                imageId: img.id,
+                                defaultAspect: "16:9",
+                              });
+                            }}
+                            className="p-1 rounded bg-black/80 hover:bg-amber-950 text-slate-300 hover:text-amber-300"
+                            title="ครอปรูปนี้"
+                          >
+                            <Crop className="w-2.5 h-2.5" />
+                          </button>
+                        )}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setCropModalData({
-                              isOpen: true,
-                              imageSrc: img.filePath,
-                              imageId: img.id,
-                              defaultAspect: "16:9",
-                            });
+                            handleSetAsCover(img);
                           }}
-                          className="p-1 rounded bg-black/80 hover:bg-amber-950 text-slate-300 hover:text-amber-300"
-                          title="ครอปรูปนี้"
+                          className="p-1 rounded bg-black/80 hover:bg-amber-950 text-slate-300 hover:text-amber-400"
+                          title="ตั้งรูปหรือคลิปนี้เป็นหน้าปก"
                         >
-                          <Crop className="w-2.5 h-2.5" />
+                          <Crown className="w-2.5 h-2.5" />
                         </button>
-                      )}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSetAsCover(img);
-                        }}
-                        className="p-1 rounded bg-black/80 hover:bg-amber-950 text-slate-300 hover:text-amber-400"
-                        title="ตั้งรูปหรือคลิปนี้เป็นหน้าปก"
-                      >
-                        <Crown className="w-2.5 h-2.5" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteImage(img.id);
-                        }}
-                        className="p-1 rounded bg-black/80 hover:bg-red-950 text-slate-400 hover:text-red-300"
-                        title="ลบภาพนี้"
-                      >
-                        <Trash2 className="w-2.5 h-2.5 text-red-400" />
-                      </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteImage(img.id);
+                          }}
+                          className="p-1 rounded bg-black/80 hover:bg-red-950 text-slate-400 hover:text-red-300"
+                          title="ลบภาพนี้"
+                        >
+                          <Trash2 className="w-2.5 h-2.5 text-red-400" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
 
-              {/* Fast Add Thumbnail Tile */}
-              <button
-                onClick={() => imageFileInputRef.current?.click()}
-                className="aspect-video w-24 rounded-lg border-2 border-dashed border-slate-700 hover:border-amber-500/60 bg-slate-900/60 flex flex-col items-center justify-center gap-1 flex-shrink-0 text-slate-400 hover:text-amber-300 transition-all cursor-pointer"
-                title="อัปโหลดรูปภาพเพิ่ม"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="text-[10px] font-thai">อัปโหลด</span>
-              </button>
-            </div>
+                {/* Fast Add Thumbnail Tile */}
+                <button
+                  onClick={() => imageFileInputRef.current?.click()}
+                  className="aspect-video w-24 rounded-lg border-2 border-dashed border-slate-700 hover:border-amber-500/60 bg-slate-900/60 flex flex-col items-center justify-center gap-1 flex-shrink-0 text-slate-400 hover:text-amber-300 transition-all cursor-pointer"
+                  title="อัปโหลดรูปภาพเพิ่ม"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="text-[10px] font-thai">อัปโหลด</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Atmospheric sensory caption underneath the image (Matching Image 2) */}

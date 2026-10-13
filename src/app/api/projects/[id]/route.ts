@@ -89,10 +89,18 @@ export async function GET(
           scenes: partScenes.filter((s) => s.episodeId === ep.id),
         }));
 
+      const episodeOrderMap = new Map(projectEpisodes.map((ep) => [ep.id, ep.number]));
+      const sortedPartScenes = [...partScenes].sort((a, b) => {
+        const epNumA = a.episodeId ? episodeOrderMap.get(a.episodeId) ?? 999 : 0;
+        const epNumB = b.episodeId ? episodeOrderMap.get(b.episodeId) ?? 999 : 0;
+        if (epNumA !== epNumB) return epNumA - epNumB;
+        return a.order - b.order;
+      });
+
       return {
         ...part,
         episodes: partEpisodes,
-        scenes: partScenes,
+        scenes: sortedPartScenes,
       };
     });
 

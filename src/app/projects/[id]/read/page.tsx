@@ -35,6 +35,7 @@ import {
   Camera,
   Maximize2,
   Minimize2,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
@@ -112,12 +113,30 @@ interface SceneItem {
   lastEditedBy?: string | null;
 }
 
+interface EpisodeItem {
+  id: string;
+  projectId: string;
+  partId: string;
+  number: number;
+  title: string;
+  summary?: string | null;
+  order: number;
+  scenes?: SceneItem[];
+}
+
 interface PartItem {
   id: string;
   number: number;
   title: string;
   scope: string;
+  episodes?: EpisodeItem[];
   scenes: SceneItem[];
+}
+
+interface FlatSceneEntry {
+  part: PartItem;
+  episode?: EpisodeItem;
+  scene: SceneItem;
 }
 
 interface CharacterItem {
@@ -155,12 +174,37 @@ export default function NovelReaderPage({
   const [parts, setParts] = useState<PartItem[]>([]);
   const [characters, setCharacters] = useState<CharacterItem[]>([]);
   const [activeScene, setActiveScene] = useState<SceneItem | null>(null);
-  const [allScenesList, setAllScenesList] = useState<{ part: PartItem; scene: SceneItem }[]>([]);
+  const [allScenesList, setAllScenesList] = useState<FlatSceneEntry[]>([]);
   const [activeSceneImages, setActiveSceneImages] = useState<SceneImage[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [activeDialogueIndex, setActiveDialogueIndex] = useState(0);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Scene & Episode Popover Dropdowns
+  const [isSceneDropdownOpen, setIsSceneDropdownOpen] = useState(false);
+  const [isEpisodeDropdownOpen, setIsEpisodeDropdownOpen] = useState(false);
+  const [isFullscreenSceneDropdownOpen, setIsFullscreenSceneDropdownOpen] = useState(false);
+  const sceneDropdownRef = useRef<HTMLDivElement | null>(null);
+  const episodeDropdownRef = useRef<HTMLDivElement | null>(null);
+  const fullscreenSceneDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (sceneDropdownRef.current && !sceneDropdownRef.current.contains(target)) {
+        setIsSceneDropdownOpen(false);
+      }
+      if (episodeDropdownRef.current && !episodeDropdownRef.current.contains(target)) {
+        setIsEpisodeDropdownOpen(false);
+      }
+      if (fullscreenSceneDropdownRef.current && !fullscreenSceneDropdownRef.current.contains(target)) {
+        setIsFullscreenSceneDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const dialogueBlockRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -368,11 +412,32 @@ export default function NovelReaderPage({
       setParts(data.parts || []);
       setCharacters(data.characters || []);
 
-      const flatList: { part: PartItem; scene: SceneItem }[] = [];
+      const flatList: FlatSceneEntry[] = [];
       (data.parts || []).forEach((p: PartItem) => {
-        (p.scenes || []).forEach((s: SceneItem) => {
-          flatList.push({ part: p, scene: s });
-        });
+        if (p.episodes && p.episodes.length > 0) {
+          const sortedEpisodes = [...p.episodes].sort((a, b) => a.number - b.number);
+          sortedEpisodes.forEach((ep) => {
+            const epScenes =
+              ep.scenes && ep.scenes.length > 0
+                ? ep.scenes
+                : (p.scenes || []).filter((s) => s.episodeId === ep.id);
+            const sortedScenes = [...epScenes].sort((a, b) => a.order - b.order);
+            sortedScenes.forEach((s) => {
+              flatList.push({ part: p, episode: ep, scene: s });
+            });
+          });
+          // Also catch any scenes in this part not assigned to an episode
+          const addedIds = new Set(flatList.map((item) => item.scene.id));
+          (p.scenes || []).forEach((s) => {
+            if (!addedIds.has(s.id)) {
+              flatList.push({ part: p, episode: undefined, scene: s });
+            }
+          });
+        } else {
+          (p.scenes || []).sort((a, b) => a.order - b.order).forEach((s: SceneItem) => {
+            flatList.push({ part: p, episode: undefined, scene: s });
+          });
+        }
       });
       setAllScenesList(flatList);
 
@@ -1097,7 +1162,11 @@ export default function NovelReaderPage({
 
       const createdScene = data.scene;
       const currentPartObj = parts.find((p) => p.id === targetPartId) || parts[0];
-      const newEntry = { part: currentPartObj, scene: createdScene };
+      const newEntry: FlatSceneEntry = {
+        part: currentPartObj,
+        episode: currentEpisode || undefined,
+        scene: createdScene,
+      };
       setAllScenesList((prev) => [...prev, newEntry]);
 
       // Select new scene
@@ -1125,8 +1194,29 @@ export default function NovelReaderPage({
       : null;
 
   const currentPart = activeScene
-    ? parts.find((p) => p.id === activeScene.partId)
+    ? parts.find((p) => p.id === activeScene.partId) || parts[0]
+    : parts[0] || null;
+
+  const currentEpisode = activeScene
+    ? (allScenesList.find((item) => item.scene.id === activeScene.id)?.episode ||
+       (activeScene.episodeId ? currentPart?.episodes?.find((ep) => ep.id === activeScene.episodeId) : null) ||
+       currentPart?.episodes?.[0] || null)
     : null;
+
+  const currentPartEpisodes = currentPart?.episodes || [];
+
+  // Scenes to show in the dropdown for the currently active episode
+  const scenesInCurrentEpisode = currentEpisode
+    ? allScenesList.filter((item) => item.episode?.id === currentEpisode.id)
+    : (currentPart ? allScenesList.filter((item) => item.part.id === currentPart.id) : allScenesList);
+
+  const handleSelectEpisode = (epId: string) => {
+    const firstSceneOfEp = allScenesList.find((item) => item.episode?.id === epId);
+    if (firstSceneOfEp) {
+      handleSelectSceneItem(firstSceneOfEp.scene);
+    }
+    setIsEpisodeDropdownOpen(false);
+  };
 
   // Parse markdown into Dialogue Blocks for Visual Novel Mode
   const parsedBlocks = activeScene
@@ -1387,21 +1477,124 @@ export default function NovelReaderPage({
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Quick Scene Selector */}
-            <select
-              value={activeScene?.id || ""}
-              onChange={(e) => {
-                const found = allScenesList.find((item) => item.scene.id === e.target.value);
-                if (found) handleSelectSceneItem(found.scene);
-              }}
-              className="bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-200 focus:outline-none max-w-[160px] sm:max-w-[200px] truncate"
-            >
-              {allScenesList.map(({ part, scene }) => (
-                <option key={scene.id} value={scene.id} className="bg-slate-900">
-                  ภาค {part.number} • ฉาก {scene.order}: {scene.title}
-                </option>
-              ))}
-            </select>
+            {/* Quick Scene Selector in Fullscreen */}
+            <div ref={fullscreenSceneDropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setIsFullscreenSceneDropdownOpen((prev) => !prev)}
+                className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 hover:border-amber-500/50 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:text-amber-200 transition-all max-w-[170px] sm:max-w-[220px] truncate cursor-pointer font-thai"
+                title="คลิกเพื่อเลือกฉาก"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                <span className="truncate">
+                  {currentEpisode ? `EP ${currentEpisode.number} • ` : ""}ฉาก {activeScene?.order}: {cleanSceneTitle.replace(/^ฉากที่\s*\d+\s*:\s*/i, "")}
+                </span>
+                <ChevronDown
+                  className={`w-3 h-3 text-slate-400 transition-transform ${
+                    isFullscreenSceneDropdownOpen ? "rotate-180 text-amber-400" : ""
+                  }`}
+                />
+              </button>
+
+              {isFullscreenSceneDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 z-50 w-80 sm:w-[380px] rounded-2xl bg-slate-950/95 backdrop-blur-xl border border-slate-700/90 shadow-2xl p-3 font-thai animate-in fade-in zoom-in-95 duration-150">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs font-bold text-white truncate">
+                        ฉากย่อยใน {currentEpisode ? `EP ${currentEpisode.number}: ${currentEpisode.title}` : (currentPart?.title || "ตอนนี้")}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">
+                        {scenesInCurrentEpisode.length} ฉากย่อย
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsFullscreenSceneDropdownOpen(false)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Episode Switcher Tabs inside popover */}
+                  {currentPartEpisodes.length > 1 && (
+                    <div className="flex items-center gap-1.5 mb-2.5 pb-2 border-b border-slate-800/80 overflow-x-auto no-scrollbar">
+                      {currentPartEpisodes.map((ep) => {
+                        const isEpActive = currentEpisode?.id === ep.id;
+                        const epCount = allScenesList.filter((item) => item.episode?.id === ep.id).length;
+                        return (
+                          <button
+                            key={ep.id}
+                            type="button"
+                            onClick={() => {
+                              handleSelectEpisode(ep.id);
+                              setIsFullscreenSceneDropdownOpen(false);
+                            }}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                              isEpActive
+                                ? "bg-amber-500 text-slate-950 shadow-sm"
+                                : "bg-slate-900 text-slate-300 hover:bg-slate-850 hover:text-white border border-slate-800"
+                            }`}
+                          >
+                            <Film className={`w-3 h-3 ${isEpActive ? "text-slate-950" : "text-amber-400"}`} />
+                            <span>EP {ep.number}: {ep.title}</span>
+                            <span className={`text-[10px] px-1 rounded ${isEpActive ? "bg-black/20 text-slate-950" : "bg-slate-800 text-slate-400"}`}>
+                              {epCount}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Scene List */}
+                  <div className="max-h-72 overflow-y-auto space-y-1.5 pr-0.5 custom-scrollbar">
+                    {scenesInCurrentEpisode.map(({ scene }) => {
+                      const isActive = scene.id === activeScene?.id;
+                      const displayTitle = scene.title.replace(/^ฉากที่\s*\d+\s*:\s*/i, "").trim() || scene.title;
+                      return (
+                        <div
+                          key={scene.id}
+                          onClick={() => {
+                            handleSelectSceneItem(scene);
+                            setIsFullscreenSceneDropdownOpen(false);
+                          }}
+                          className={`flex items-center justify-between gap-2.5 p-2 rounded-xl border transition-all cursor-pointer group ${
+                            isActive
+                              ? "bg-amber-500/15 border-amber-500/50 text-amber-200 shadow-sm"
+                              : "bg-slate-900/80 hover:bg-slate-850 hover:border-slate-700 border-slate-800/80 text-slate-300 hover:text-white"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono flex-shrink-0 ${
+                                isActive
+                                  ? "bg-amber-400 text-slate-950 shadow-sm"
+                                  : "bg-slate-800 text-slate-400 border border-slate-700"
+                              }`}
+                            >
+                              ฉาก {scene.order}
+                            </span>
+                            <span className="text-xs font-semibold truncate group-hover:text-amber-300">
+                              {displayTitle}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {scene.location && (
+                              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-slate-400 max-w-[90px] truncate">
+                                <MapPin className="w-2.5 h-2.5 text-amber-400 flex-shrink-0" />
+                                <span className="truncate">{scene.location}</span>
+                              </span>
+                            )}
+                            {isActive && <Check className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Quick Play/Pause & Audio Indicator */}
             <button
@@ -1920,22 +2113,181 @@ export default function NovelReaderPage({
             <span>Image Studio</span>
           </Link>
 
-          {/* Quick Scene Selector & New Part / SS button on Right */}
+          {/* Episode (EP) Switcher & Luxury Scene Selector on Right */}
           <div className="ml-auto flex items-center gap-2 flex-shrink-0">
-            <select
-              value={activeScene?.id || ""}
-              onChange={(e) => {
-                const found = allScenesList.find((item) => item.scene.id === e.target.value);
-                if (found) handleSelectSceneItem(found.scene);
-              }}
-              className="bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1 text-xs font-semibold text-slate-200 focus:outline-none max-w-[200px] truncate"
-            >
-              {allScenesList.map(({ part, scene }) => (
-                <option key={scene.id} value={scene.id} className="bg-slate-900">
-                  ภาค {part.number} • ฉาก {scene.order}: {scene.title}
-                </option>
-              ))}
-            </select>
+            {/* Episode (EP) Switcher Pill */}
+            {currentPartEpisodes.length > 0 && (
+              <div ref={episodeDropdownRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsEpisodeDropdownOpen((prev) => !prev)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-amber-500/40 hover:border-amber-400 text-xs font-bold text-amber-200 hover:text-white transition-all shadow-sm font-thai cursor-pointer max-w-[130px] sm:max-w-[160px]"
+                  title="คลิกเพื่อสลับตอน (EP)"
+                >
+                  <Film className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                  <span className="truncate">
+                    EP {currentEpisode ? currentEpisode.number : 1}: {currentEpisode?.title || "ตอนที่ 1"}
+                  </span>
+                  <ChevronDown
+                    className={`w-3 h-3 text-slate-400 transition-transform duration-200 flex-shrink-0 ${
+                      isEpisodeDropdownOpen ? "rotate-180 text-amber-400" : ""
+                    }`}
+                  />
+                </button>
+
+                {isEpisodeDropdownOpen && (
+                  <div className="absolute right-0 sm:left-0 top-full mt-2 z-50 w-52 rounded-2xl bg-slate-950/95 backdrop-blur-xl border border-slate-700/90 shadow-2xl p-2 font-thai animate-in fade-in zoom-in-95 duration-150">
+                    <div className="text-[10px] font-bold text-slate-400 px-2 py-1 uppercase tracking-wider border-b border-slate-800 mb-1">
+                      เลือกตอน (Episode)
+                    </div>
+                    <div className="space-y-1">
+                      {currentPartEpisodes.map((ep) => {
+                        const isEpActive = currentEpisode?.id === ep.id;
+                        const epCount = allScenesList.filter((item) => item.episode?.id === ep.id).length;
+                        return (
+                          <button
+                            key={ep.id}
+                            type="button"
+                            onClick={() => handleSelectEpisode(ep.id)}
+                            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              isEpActive
+                                ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                                : "text-slate-300 hover:bg-slate-900 hover:text-white"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              <Film className={`w-3.5 h-3.5 ${isEpActive ? "text-amber-400" : "text-slate-500"}`} />
+                              <span className="truncate">EP {ep.number}: {ep.title}</span>
+                            </div>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">
+                              {epCount} ฉาก
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Sub-Scene Selector Button & Luxury Glassmorphism Popover */}
+            <div ref={sceneDropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setIsSceneDropdownOpen((prev) => !prev)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-850 border border-slate-700/90 hover:border-amber-500/50 text-xs font-bold text-slate-100 hover:text-amber-200 transition-all shadow-sm font-thai cursor-pointer max-w-[170px] sm:max-w-[220px]"
+                title="คลิกเพื่อเลือกฉากย่อย"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                <span className="truncate">
+                  {activeScene ? `ฉาก ${activeScene.order}: ${cleanSceneTitle.replace(/^ฉากที่\s*\d+\s*:\s*/i, "")}` : "เลือกฉาก"}
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 flex-shrink-0 ${
+                    isSceneDropdownOpen ? "rotate-180 text-amber-400" : ""
+                  }`}
+                />
+              </button>
+
+              {/* Luxury Scene Dropdown Popover */}
+              {isSceneDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 z-50 w-80 sm:w-[380px] rounded-2xl bg-slate-950/95 backdrop-blur-xl border border-slate-700/90 shadow-2xl p-3 font-thai animate-in fade-in zoom-in-95 duration-150">
+                  {/* Header */}
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs font-bold text-white truncate">
+                        ฉากย่อยใน {currentEpisode ? `EP ${currentEpisode.number}: ${currentEpisode.title}` : (currentPart?.title || "ตอนนี้")}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">
+                        {scenesInCurrentEpisode.length} ฉากย่อย
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsSceneDropdownOpen(false)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Quick Episode Switcher inside popover if multiple episodes */}
+                  {currentPartEpisodes.length > 1 && (
+                    <div className="flex items-center gap-1.5 mb-2.5 pb-2 border-b border-slate-800/80 overflow-x-auto no-scrollbar">
+                      {currentPartEpisodes.map((ep) => {
+                        const isEpActive = currentEpisode?.id === ep.id;
+                        const epCount = allScenesList.filter((item) => item.episode?.id === ep.id).length;
+                        return (
+                          <button
+                            key={ep.id}
+                            type="button"
+                            onClick={() => handleSelectEpisode(ep.id)}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                              isEpActive
+                                ? "bg-amber-500 text-slate-950 shadow-sm"
+                                : "bg-slate-900 text-slate-300 hover:bg-slate-850 hover:text-white border border-slate-800"
+                            }`}
+                          >
+                            <Film className={`w-3 h-3 ${isEpActive ? "text-slate-950" : "text-amber-400"}`} />
+                            <span>EP {ep.number}: {ep.title}</span>
+                            <span className={`text-[10px] px-1 rounded ${isEpActive ? "bg-black/20 text-slate-950" : "bg-slate-800 text-slate-400"}`}>
+                              {epCount}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Scene List */}
+                  <div className="max-h-72 overflow-y-auto space-y-1.5 pr-0.5 custom-scrollbar">
+                    {scenesInCurrentEpisode.map(({ scene }) => {
+                      const isActive = scene.id === activeScene?.id;
+                      const displayTitle = scene.title.replace(/^ฉากที่\s*\d+\s*:\s*/i, "").trim() || scene.title;
+                      return (
+                        <div
+                          key={scene.id}
+                          onClick={() => {
+                            handleSelectSceneItem(scene);
+                            setIsSceneDropdownOpen(false);
+                          }}
+                          className={`flex items-center justify-between gap-2.5 p-2 rounded-xl border transition-all cursor-pointer group ${
+                            isActive
+                              ? "bg-amber-500/15 border-amber-500/50 text-amber-200 shadow-sm"
+                              : "bg-slate-900/80 hover:bg-slate-850 hover:border-slate-700 border-slate-800/80 text-slate-300 hover:text-white"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono flex-shrink-0 ${
+                                isActive
+                                  ? "bg-amber-400 text-slate-950 shadow-sm"
+                                  : "bg-slate-800 text-slate-400 border border-slate-700"
+                              }`}
+                            >
+                              ฉาก {scene.order}
+                            </span>
+                            <span className="text-xs font-semibold truncate group-hover:text-amber-300">
+                              {displayTitle}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {scene.location && (
+                              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-slate-400 max-w-[90px] truncate">
+                                <MapPin className="w-2.5 h-2.5 text-amber-400 flex-shrink-0" />
+                                <span className="truncate">{scene.location}</span>
+                              </span>
+                            )}
+                            {isActive && <Check className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Live Sync Badge (Figma Mode) */}
             <div
@@ -2201,8 +2553,14 @@ export default function NovelReaderPage({
           {/* Header: Part subtitle & Clean Scene Title (No duplicated "ฉากที่ 1: ฉากที่ 1:") */}
           <div className="flex-shrink-0 space-y-2 border-b border-slate-700/50 pb-3">
             {currentPart && (
-              <div className="text-[11px] font-mono font-bold text-[#FBBF24] tracking-wider uppercase">
-                PART {currentPart.number}: {currentPart.title}
+              <div className="flex items-center gap-2 text-[11px] font-mono font-bold text-[#FBBF24] tracking-wider uppercase flex-wrap">
+                <span>PART {currentPart.number}: {currentPart.title}</span>
+                {currentEpisode && (
+                  <>
+                    <span className="text-slate-500">•</span>
+                    <span className="text-amber-300">EP {currentEpisode.number}: {currentEpisode.title}</span>
+                  </>
+                )}
               </div>
             )}
 
@@ -2563,9 +2921,13 @@ export default function NovelReaderPage({
                 className="w-full sm:w-auto inline-flex items-center justify-between sm:justify-start gap-3 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:brightness-110 text-slate-950 font-bold text-xs font-thai shadow-[0_0_20px_rgba(245,158,11,0.35)] transition-all transform active:scale-95 cursor-pointer"
               >
                 <div className="text-left">
-                  <p className="text-[10px] uppercase font-black text-slate-950/70 tracking-wider">NEXT EP ⏭️</p>
+                  <p className="text-[10px] uppercase font-black text-slate-950/70 tracking-wider">
+                    {nextSceneItem.episode && currentEpisode && nextSceneItem.episode.id !== currentEpisode.id
+                      ? `NEXT EP (${nextSceneItem.episode.title}) ⏭️`
+                      : "NEXT SCENE ⏭️"}
+                  </p>
                   <p className="truncate max-w-[170px] text-xs font-black">
-                    ฉากที่ {nextSceneItem.scene.order}: {nextSceneItem.scene.title}
+                    ฉากที่ {nextSceneItem.scene.order}: {nextSceneItem.scene.title.replace(/^ฉากที่\s*\d+\s*:\s*/i, "")}
                   </p>
                 </div>
                 <div className="w-7 h-7 rounded-lg bg-black/20 flex items-center justify-center">

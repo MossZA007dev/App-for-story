@@ -2425,36 +2425,46 @@ export default function NovelReaderPage({
                   />
                 )}
 
-                {/* Gradient overlay for readability */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
+                {/* Gradient overlay for readability (Removed in fullscreen mode for clean image view) */}
+                <div
+                  className={`absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none transition-opacity duration-300 ${
+                    isFullscreen ? "opacity-0" : ""
+                  }`}
+                />
 
-                {/* Image Type Tag Badge */}
-                <div className="absolute top-3.5 left-3.5 flex items-center gap-2 flex-wrap">
-                  {isVideoMedia(currentFeaturedImage) ? (
-                    <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-purple-950/90 text-purple-200 border border-purple-500/80 font-thai flex items-center gap-1.5 backdrop-blur-md shadow">
-                      <Film className="w-3.5 h-3.5 text-purple-400" />
-                      <span>🎬 วิดีโอคลิปวนลูป</span>
-                      {getVideoTiming(currentFeaturedImage).endTime ? (
-                        <span className="font-mono text-[10px] text-purple-300">
-                          ({getVideoTiming(currentFeaturedImage).startTime.toFixed(1)}s - {getVideoTiming(currentFeaturedImage).endTime?.toFixed(1)}s)
-                        </span>
-                      ) : null}
-                    </span>
-                  ) : currentFeaturedImage.kind === "movie_still" || currentFeaturedImage.kind === "reference" ? (
-                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-950/90 text-red-200 border border-red-700/80 font-thai flex items-center gap-1.5 backdrop-blur-md shadow">
-                      <Film className="w-3.5 h-3.5 text-red-400" />
-                      <span>ภาพจริงจากหนัง / CANON STILL</span>
-                    </span>
-                  ) : (
-                    <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/90 text-slate-950 font-thai flex items-center gap-1.5 backdrop-blur-md shadow">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>ภาพประกอบ AI (CINEMATIC SCENE)</span>
-                    </span>
-                  )}
-                </div>
+                {/* Image Type Tag Badge (Hidden in fullscreen mode so the picture is fully visible without blockage) */}
+                {!isFullscreen && (
+                  <div className="absolute top-3.5 left-3.5 flex items-center gap-2 flex-wrap pointer-events-none">
+                    {isVideoMedia(currentFeaturedImage) ? (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-purple-950/90 text-purple-200 border border-purple-500/80 font-thai flex items-center gap-1.5 backdrop-blur-md shadow">
+                        <Film className="w-3.5 h-3.5 text-purple-400" />
+                        <span>🎬 วิดีโอคลิปวนลูป</span>
+                        {getVideoTiming(currentFeaturedImage).endTime ? (
+                          <span className="font-mono text-[10px] text-purple-300">
+                            ({getVideoTiming(currentFeaturedImage).startTime.toFixed(1)}s - {getVideoTiming(currentFeaturedImage).endTime?.toFixed(1)}s)
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : currentFeaturedImage.kind === "movie_still" || currentFeaturedImage.kind === "reference" ? (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-950/90 text-red-200 border border-red-700/80 font-thai flex items-center gap-1.5 backdrop-blur-md shadow">
+                        <Film className="w-3.5 h-3.5 text-red-400" />
+                        <span>ภาพจริงจากหนัง / CANON STILL</span>
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/90 text-slate-950 font-thai flex items-center gap-1.5 backdrop-blur-md shadow">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>ภาพประกอบ AI (CINEMATIC SCENE)</span>
+                      </span>
+                    )}
+                  </div>
+                )}
 
-                {/* Top Right Action Buttons (Fit toggle, Upload SS, Lightbox, Fullscreen) */}
-                <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5 z-10">
+                {/* Top Right Action Buttons (Fit toggle, Upload SS, Lightbox, Fullscreen - fades in on hover in fullscreen) */}
+                <div
+                  className={`absolute top-3.5 right-3.5 flex items-center gap-1.5 z-10 transition-opacity duration-300 ${
+                    isFullscreen ? "opacity-0 group-hover:opacity-100" : ""
+                  }`}
+                >
                   <button
                     type="button"
                     onClick={() => setImageFitMode((prev) => (prev === "cover" ? "contain" : "cover"))}

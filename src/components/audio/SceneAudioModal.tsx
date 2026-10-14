@@ -215,39 +215,43 @@ export function SceneAudioModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in font-thai">
-      <div className="relative w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-6 space-y-5 text-white">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-sm animate-fade-in font-thai overflow-y-auto">
+      <div className="relative w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl text-white flex flex-col max-h-[90vh] my-auto overflow-hidden">
+        {/* Fixed Header */}
+        <div className="flex items-center justify-between border-b border-slate-800/90 px-5 py-3.5 sm:px-6 sm:py-4 flex-shrink-0 bg-slate-900">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 flex-shrink-0">
               <Music className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">ตั้งค่าเพลงประกอบประจำฉาก</h2>
+              <h2 className="text-base font-bold text-white leading-tight">ตั้งค่าเพลงประกอบประจำฉาก</h2>
               <p className="text-xs text-slate-400">
                 รองรับทั้งลิงก์ YouTube และไฟล์เสียง Direct Audio (.mp3, .wav)
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={() => {
               stopPreview();
               onClose();
             }}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            title="ปิดหน้าต่าง (ESC)"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* URL Input */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-              <Link2 className="w-3.5 h-3.5 text-sky-400" />
-              <span>ลิงก์เพลงประกอบ (Audio URL / YouTube Link):</span>
-            </label>
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          {/* Scrollable Form Body */}
+          <div className="flex-1 overflow-y-auto px-5 py-4 sm:px-6 sm:py-5 space-y-4 custom-scrollbar">
+            {/* URL Input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                <Link2 className="w-3.5 h-3.5 text-sky-400" />
+                <span>ลิงก์เพลงประกอบ (Audio URL / YouTube Link):</span>
+              </label>
             <input
               type="text"
               value={urlInput}
@@ -395,7 +399,7 @@ export function SceneAudioModal({
               {/* YouTube Live Preview Video Player */}
               {ytVideoId && (
                 <div className="space-y-1.5">
-                  <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black border border-slate-800 shadow-lg">
+                  <div className="relative w-full aspect-video max-h-48 sm:max-h-52 rounded-xl overflow-hidden bg-black border border-slate-800 shadow-lg mx-auto">
                     <iframe
                       ref={testYtIframeRef}
                       src={`https://www.youtube-nocookie.com/embed/${ytVideoId}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}`}
@@ -492,55 +496,56 @@ export function SceneAudioModal({
               เพลงนี้จะถูก<strong>บันทึกติดกับฉากนี้ถาวร</strong> และเล่นวนซ้ำต่อเนื่องอัตโนมัติทั้งตอนเขียนและตอนเปิดอ่าน
             </span>
           </div>
+        </div>
 
-          {/* Actions */}
-          <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-            {onDelete && currentUrl ? (
-              <button
-                type="button"
-                onClick={async () => {
-                  if (confirm("ต้องการลบเพลงประกอบประจำฉากนี้ใช่หรือไม่?")) {
-                    try {
-                      setIsDeleting(true);
-                      stopPreview();
-                      await onDelete();
-                      onClose();
-                    } finally {
-                      setIsDeleting(false);
-                    }
+        {/* Fixed Footer Actions */}
+        <div className="flex items-center justify-between px-5 py-3.5 sm:px-6 sm:py-4 border-t border-slate-800/90 bg-slate-950/80 backdrop-blur-md flex-shrink-0">
+          {onDelete && currentUrl ? (
+            <button
+              type="button"
+              onClick={async () => {
+                if (confirm("ต้องการลบเพลงประกอบประจำฉากนี้ใช่หรือไม่?")) {
+                  try {
+                    setIsDeleting(true);
+                    stopPreview();
+                    await onDelete();
+                    onClose();
+                  } finally {
+                    setIsDeleting(false);
                   }
-                }}
-                disabled={isDeleting}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold text-red-400 hover:text-red-300 hover:bg-red-950/40 border border-red-900/60 transition-colors"
-              >
-                {isDeleting ? "กำลังลบ..." : "ลบเพลงนี้"}
-              </button>
-            ) : (
-              <div />
-            )}
+                }
+              }}
+              disabled={isDeleting}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold text-red-400 hover:text-red-300 hover:bg-red-950/40 border border-red-900/60 transition-colors cursor-pointer"
+            >
+              {isDeleting ? "กำลังลบ..." : "ลบเพลงนี้"}
+            </button>
+          ) : (
+            <div />
+          )}
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  stopPreview();
-                  onClose();
-                }}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="submit"
-                disabled={isSaving || !urlInput.trim()}
-                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-lg shadow-emerald-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
-                <Music className="w-4 h-4" />
-                <span>{isSaving ? "กำลังบันทึก..." : "💾 บันทึกและเริ่มเล่นทันที"}</span>
-              </button>
-            </div>
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                stopPreview();
+                onClose();
+              }}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="submit"
+              disabled={isSaving || !urlInput.trim()}
+              className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-lg shadow-emerald-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
+            >
+              <Music className="w-4 h-4" />
+              <span>{isSaving ? "กำลังบันทึก..." : "💾 บันทึกและเริ่มเล่นทันที"}</span>
+            </button>
           </div>
-        </form>
+        </div>
+      </form>
       </div>
     </div>
   );

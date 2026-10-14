@@ -1684,7 +1684,7 @@ export default function NovelReaderPage({
           </div>
         </div>
       ) : (
-        <div className="flex-shrink-0 border-b border-slate-800/80 pb-3 space-y-2.5">
+        <div className="flex-shrink-0 border-b border-slate-800/80 pb-3 space-y-2.5 relative z-30">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           {/* Left: Breadcrumbs & Project Title */}
           <div className="space-y-1">
@@ -2140,39 +2140,42 @@ export default function NovelReaderPage({
           </div>
         </div>
 
-        {/* Navigation Tabs (Reader / Studio / Bible / Images / Quick Scene Selector) */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1 text-xs font-thai font-semibold">
-          <span className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-500 text-slate-950 font-bold shadow-[0_0_15px_rgba(245,158,11,0.25)] flex-shrink-0">
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>📖 โหมดอ่านนิยาย (Reader)</span>
-          </span>
+        {/* Navigation Tabs (Reader / Studio / Bible / Images) & Right-side Episode / Scene Dropdowns */}
+        <div className="flex items-center justify-between gap-3 text-xs font-thai font-semibold relative z-30">
+          {/* Scrollable Navigation Tabs on Left */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1 flex-1 min-w-0 no-scrollbar">
+            <span className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-500 text-slate-950 font-bold shadow-[0_0_15px_rgba(245,158,11,0.25)] flex-shrink-0">
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>📖 โหมดอ่านนิยาย (Reader)</span>
+            </span>
 
-          <Link
-            href={`/projects/${projectId}`}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex-shrink-0"
-          >
-            <PenTool className="w-3.5 h-3.5 text-amber-400" />
-            <span>Studio แก้ไข & สตรีมฉาก</span>
-          </Link>
+            <Link
+              href={`/projects/${projectId}`}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex-shrink-0"
+            >
+              <PenTool className="w-3.5 h-3.5 text-amber-400" />
+              <span>Studio แก้ไข & สตรีมฉาก</span>
+            </Link>
 
-          <Link
-            href={`/projects/${projectId}?tab=characters`}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex-shrink-0"
-          >
-            <User className="w-3.5 h-3.5 text-sky-400" />
-            <span>User Character Bible</span>
-          </Link>
+            <Link
+              href={`/projects/${projectId}?tab=characters`}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex-shrink-0"
+            >
+              <User className="w-3.5 h-3.5 text-sky-400" />
+              <span>User Character Bible</span>
+            </Link>
 
-          <Link
-            href={`/projects/${projectId}?tab=images`}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex-shrink-0"
-          >
-            <Film className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Image Studio</span>
-          </Link>
+            <Link
+              href={`/projects/${projectId}?tab=images`}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex-shrink-0"
+            >
+              <Film className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Image Studio</span>
+            </Link>
+          </div>
 
-          {/* Episode (EP) Switcher & Luxury Scene Selector on Right */}
-          <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+          {/* Episode (EP) Switcher & Luxury Scene Selector on Right (Unclipped from overflow!) */}
+          <div className="flex items-center gap-2 flex-shrink-0 relative z-40">
             {/* Episode (EP) Switcher Pill */}
             {currentPartEpisodes.length > 0 && (
               <div ref={episodeDropdownRef} className="relative">
@@ -2194,11 +2197,11 @@ export default function NovelReaderPage({
                 </button>
 
                 {isEpisodeDropdownOpen && (
-                  <div className="absolute right-0 sm:left-0 top-full mt-2 z-50 w-52 rounded-2xl bg-slate-950/95 backdrop-blur-xl border border-slate-700/90 shadow-2xl p-2 font-thai animate-in fade-in zoom-in-95 duration-150">
+                  <div className="absolute right-0 sm:left-0 sm:right-auto top-full mt-2 z-50 w-56 rounded-2xl bg-slate-950/98 backdrop-blur-xl border border-slate-700/90 shadow-[0_10px_35px_rgba(0,0,0,0.8)] p-2 font-thai animate-in fade-in zoom-in-95 duration-150">
                     <div className="text-[10px] font-bold text-slate-400 px-2 py-1 uppercase tracking-wider border-b border-slate-800 mb-1">
                       เลือกตอน (Episode)
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-1 max-h-72 overflow-y-auto custom-scrollbar">
                       {currentPartEpisodes.map((ep) => {
                         const isEpActive = currentEpisode?.id === ep.id;
                         const epCount = allScenesList.filter((item) => item.episode?.id === ep.id).length;
@@ -2250,7 +2253,7 @@ export default function NovelReaderPage({
 
               {/* Luxury Scene Dropdown Popover */}
               {isSceneDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 z-50 w-80 sm:w-[380px] rounded-2xl bg-slate-950/95 backdrop-blur-xl border border-slate-700/90 shadow-2xl p-3 font-thai animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute right-0 top-full mt-2 z-50 w-80 sm:w-[380px] rounded-2xl bg-slate-950/98 backdrop-blur-xl border border-slate-700/90 shadow-[0_10px_35px_rgba(0,0,0,0.8)] p-3 font-thai animate-in fade-in zoom-in-95 duration-150">
                   {/* Header */}
                   <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80">
                     <div className="flex items-center gap-2 min-w-0">

@@ -1500,7 +1500,7 @@ export default function NovelReaderPage({
     <div
       className={`w-full bg-[#070A11] text-slate-100 flex flex-col ${
         isFullscreen
-          ? "fixed inset-0 z-50 h-screen w-screen p-2.5 sm:p-4 overflow-hidden"
+          ? "fixed inset-0 z-50 h-screen w-screen p-2.5 sm:p-4 overflow-hidden gap-2.5 sm:gap-3"
           : "min-h-screen lg:h-screen lg:max-h-screen lg:overflow-hidden p-3 sm:p-4 lg:p-5 gap-3"
       }`}
     >
@@ -1508,7 +1508,7 @@ export default function NovelReaderPage({
       {/* 1. TOP HEADER (Fullscreen Bar vs Standard Header)                         */}
       {/* ========================================================================= */}
       {isFullscreen ? (
-        <div className="flex-shrink-0 flex items-center justify-between gap-3 px-3 py-2 bg-[#121622]/95 border border-slate-800 rounded-2xl backdrop-blur-md shadow-2xl">
+        <div className="relative z-50 flex-shrink-0 flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#121622]/95 border border-slate-800 rounded-2xl backdrop-blur-md shadow-2xl">
           <div className="flex items-center gap-2.5 overflow-hidden">
             <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 font-black text-xs shadow-[0_0_15px_rgba(245,158,11,0.3)] whitespace-nowrap">
               <BookOpen className="w-3.5 h-3.5" />
@@ -1521,9 +1521,9 @@ export default function NovelReaderPage({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0 relative z-50">
             {/* Quick Scene Selector in Fullscreen */}
-            <div ref={fullscreenSceneDropdownRef} className="relative">
+            <div ref={fullscreenSceneDropdownRef} className="relative z-50">
               <button
                 type="button"
                 onClick={() => setIsFullscreenSceneDropdownOpen((prev) => !prev)}
@@ -1542,7 +1542,7 @@ export default function NovelReaderPage({
               </button>
 
               {isFullscreenSceneDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 z-50 w-80 sm:w-[380px] rounded-2xl bg-slate-950/95 backdrop-blur-xl border border-slate-700/90 shadow-2xl p-3 font-thai animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute right-0 top-full mt-2.5 z-50 w-80 sm:w-[380px] rounded-2xl bg-slate-950/98 backdrop-blur-xl border border-slate-700/90 shadow-[0_15px_40px_rgba(0,0,0,0.9)] p-3 font-thai animate-in fade-in zoom-in-95 duration-150">
                   <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-xs font-bold text-white truncate">

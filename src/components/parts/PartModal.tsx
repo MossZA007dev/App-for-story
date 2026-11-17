@@ -11,6 +11,7 @@ export interface PartModalData {
   scope?: string;
   theme?: string;
   peakSummary?: string;
+  characterChangeSummary?: string;
   status?: "planned" | "drafting" | "done";
 }
 
@@ -37,6 +38,7 @@ export function PartModal({
   const [scope, setScope] = useState("");
   const [theme, setTheme] = useState("");
   const [peakSummary, setPeakSummary] = useState("");
+  const [partNotes, setPartNotes] = useState("");
   const [initialSceneTitle, setInitialSceneTitle] = useState("");
   const [status, setStatus] = useState<"planned" | "drafting" | "done">("planned");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -49,6 +51,7 @@ export function PartModal({
       setScope(initialData.scope || "");
       setTheme(initialData.theme || "");
       setPeakSummary(initialData.peakSummary || "");
+      setPartNotes(initialData.characterChangeSummary || "");
       setStatus(initialData.status || "planned");
       setInitialSceneTitle("");
     } else {
@@ -57,6 +60,7 @@ export function PartModal({
       setScope(`Season ${nextPartNumber}`);
       setTheme("");
       setPeakSummary("");
+      setPartNotes("");
       setInitialSceneTitle(`ฉากที่ 1: การเปิดม่านของภาคที่ ${nextPartNumber}`);
       setStatus("planned");
     }
@@ -107,6 +111,7 @@ export function PartModal({
             theme: theme.trim(),
             peakSummary: peakSummary.trim(),
             status,
+            characterChangeSummary: partNotes,
           }),
         });
 
@@ -127,7 +132,7 @@ export function PartModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className="cinematic-card w-full max-w-lg rounded-2xl p-6 border-slate-700 bg-slate-950 space-y-5 shadow-2xl">
+      <div className="cinematic-card w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-2xl p-6 border-slate-700 bg-slate-950 space-y-5 shadow-2xl">
         {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2.5">
@@ -234,6 +239,13 @@ export function PartModal({
               />
             </div>
           )}
+
+          {mode === "edit" && <div className="space-y-1.5">
+            <label htmlFor="part-notes" className="font-semibold text-slate-200">เกริ่นภาค โครงเรื่อง และบันทึกการเปลี่ยนแปลง</label>
+            <textarea id="part-notes" value={partNotes} onChange={e=>setPartNotes(e.target.value)} rows={6} maxLength={80000}
+              placeholder="บันทึกสิ้นภาคหรือแนวทางสำหรับเขียนต่อ"
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white placeholder-slate-500 focus:outline-none focus:border-amber-400" />
+          </div>}
 
           {/* Edit mode: Status */}
           {mode === "edit" && (

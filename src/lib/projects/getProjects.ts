@@ -75,16 +75,16 @@ export function getAllProjectsEnriched(): SagaProjectItem[] {
       const charCount = charsCountByProject.get(proj.id) || 0;
       const coverImg = coverByProject.get(proj.id);
 
-      let finalCover = proj.coverImage || coverImg || "/images/saga-got-cover.jpg";
+      let finalCover = proj.coverImage || coverImg || "/images/story-placeholder.svg";
       if (finalCover.startsWith("/api/images/")) {
         try {
           const fname = decodeURIComponent(finalCover.replace("/api/images/", ""));
           const fpath = path.join(imagesDir, path.basename(fname));
           if (!fs.existsSync(fpath)) {
-            finalCover = "/images/saga-got-cover.jpg";
+            finalCover = "/images/story-placeholder.svg";
           }
         } catch {
-          finalCover = "/images/saga-got-cover.jpg";
+          finalCover = "/images/story-placeholder.svg";
         }
       }
 

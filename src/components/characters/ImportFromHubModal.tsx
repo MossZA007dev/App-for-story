@@ -50,6 +50,7 @@ export function ImportFromHubModal({
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<"all" | "self" | "friend">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sourceUniverse, setSourceUniverse] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -57,6 +58,7 @@ export function ImportFromHubModal({
       fetchHubCharacters();
       setSelectedIds([]);
       setSearchQuery("");
+      setSourceUniverse("");
     }
   }, [isOpen]);
 
@@ -69,7 +71,7 @@ export function ImportFromHubModal({
       setCharacters(data.characters || []);
     } catch (err) {
       console.error(err);
-      toast.error("โหลดตัวละครจาก Me & Squad Hub ไม่สำเร็จ");
+      toast.error("โหลดตัวละครจาก คลังตัวละคร ไม่สำเร็จ");
     } finally {
       setLoading(false);
     }
@@ -79,6 +81,7 @@ export function ImportFromHubModal({
 
   // Filter characters
   const filteredList = characters.filter((char) => {
+    if (sourceUniverse && char.projectUniverse !== sourceUniverse) return false;
     if (filterType !== "all" && char.characterType !== filterType) {
       return false;
     }
@@ -126,7 +129,7 @@ export function ImportFromHubModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-3 sm:p-5 backdrop-blur-sm animate-fadeIn">
+    <div role="dialog" aria-modal="true" aria-label="นำเข้าตัวละครจากเรื่องเดิม" className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-3 sm:p-5 backdrop-blur-sm animate-fadeIn">
       <div className="bg-[#0e121a] border border-slate-800 rounded-2xl max-w-4xl w-full p-5 sm:p-7 space-y-5 shadow-2xl relative max-h-[90vh] flex flex-col font-thai">
         {/* Header */}
         <div className="flex items-start justify-between border-b border-slate-800/80 pb-4 flex-shrink-0">
@@ -136,16 +139,17 @@ export function ImportFromHubModal({
                 <Users className="w-4 h-4" />
               </div>
               <h2 className="text-lg sm:text-xl font-bold text-white font-heading tracking-wide">
-                ดึงตัวละครจาก Saga Forge | Me & Squad Hub
+                เลือกคุณและเพื่อนจากเรื่องเดิม
               </h2>
             </div>
             <p className="text-xs text-slate-400">
-              เลือกตัวละครที่คุณหรือเพื่อนๆ เคยสร้างไว้ใน Me & Squad Hub เพื่อนำเข้าสู่เรื่องใหม่นี้ได้ทันทีโดยไม่ต้องกรอกข้อมูลซ้ำ
+              เลือกตัวละครที่คุณหรือเพื่อนๆ เคยสร้างไว้ใน คลังตัวละคร เพื่อนำเข้าสู่เรื่องใหม่นี้ได้ทันทีโดยไม่ต้องกรอกข้อมูลซ้ำ
             </p>
           </div>
 
           <button
             onClick={onClose}
+            aria-label="ปิดการนำเข้าตัวละคร"
             className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -204,6 +208,12 @@ export function ImportFromHubModal({
           </div>
         </div>
 
+        <label className="flex flex-wrap gap-3 items-center text-sm text-slate-300">นำเข้าจากจักรวาล
+          <select aria-label="จักรวาลต้นทาง" className="studio-universe" value={sourceUniverse} onChange={e => {setSourceUniverse(e.target.value); setSelectedIds([]);}}>
+            <option value="">ทุกจักรวาล</option>{Array.from(new Set(characters.map(c => c.projectUniverse).filter(Boolean))).map(u => <option key={u} value={u}>{u}</option>)}
+          </select>
+          <span className="text-xs text-slate-400">ข้อมูลจะถูกคัดลอก ปรับชื่อ ฝ่าย และบทบาทให้เข้ากับโลกใหม่ได้ก่อนสร้างเรื่อง</span>
+        </label>
         {/* Character List Grid */}
         <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
           {loading ? (
@@ -221,7 +231,7 @@ export function ImportFromHubModal({
               <div>
                 <p className="text-sm font-semibold text-slate-300">
                   {characters.length === 0
-                    ? "ยังไม่มีตัวละครใน Me & Squad Hub"
+                    ? "ยังไม่มีตัวละครใน คลังตัวละคร"
                     : "ไม่พบตัวละครที่ตรงกับเงื่อนไขการค้นหา"}
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
@@ -238,7 +248,7 @@ export function ImportFromHubModal({
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs hover:bg-amber-400 transition-colors"
                 >
-                  <span>ไปที่ แดชบอร์ดตัวละคร (Me & Squad Hub)</span>
+                  <span>ไปที่ แดชบอร์ดตัวละคร (คลังตัวละคร)</span>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
               )}
@@ -250,7 +260,7 @@ export function ImportFromHubModal({
                 const isSelf = char.characterType === "self";
                 const isAlreadyInStory = currentCharactersList.some(
                   (c) =>
-                    c.realNickname === char.realNickname ||
+                    (Boolean(c.realNickname) && c.realNickname === char.realNickname) ||
                     (c.name && char.name && c.name === char.name)
                 );
 
@@ -357,8 +367,8 @@ export function ImportFromHubModal({
 
                     {/* Card Footer: 1-click import button */}
                     <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-[11px]">
-                      <span className="text-[10px] text-slate-500 truncate max-w-[180px]">
-                        จาก: {char.projectUniverse || char.projectTitle || "Saga Forge"}
+                      <span className="text-[10px] text-slate-400 line-clamp-2 max-w-[240px]">
+                        จาก: {[char.projectUniverse, char.projectTitle].filter(Boolean).join(" · ") || "ยังไม่ระบุเรื่อง"}
                       </span>
 
                       <button

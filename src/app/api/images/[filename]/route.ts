@@ -15,10 +15,10 @@ export async function GET(
 
     if (!buffer) {
       try {
-        const fallbackPath = path.join(process.cwd(), "public", "images", "saga-got-cover.jpg");
+        const fallbackPath = path.join(process.cwd(), "public", "images", "story-placeholder.svg");
         if (fs.existsSync(fallbackPath)) {
           buffer = await fs.promises.readFile(fallbackPath);
-          ext = ".jpg";
+          ext = ".svg";
         }
       } catch (err) {
         console.warn("Image fallback error:", err);
@@ -30,7 +30,8 @@ export async function GET(
     }
 
     let contentType = "image/png";
-    if (ext === ".jpg" || ext === ".jpeg" || ext === ".jfif") contentType = "image/jpeg";
+    if (ext === ".svg") contentType = "image/svg+xml";
+    else if (ext === ".jpg" || ext === ".jpeg" || ext === ".jfif") contentType = "image/jpeg";
     else if (ext === ".webp") contentType = "image/webp";
     else if (ext === ".gif") contentType = "image/gif";
     else if (ext === ".mp4") contentType = "video/mp4";

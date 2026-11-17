@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Sparkles,
@@ -17,6 +17,7 @@ import {
   HelpCircle,
   Scroll,
 } from "lucide-react";
+import { StoryPasteImport } from "@/components/projects/StoryPasteImport";
 import { DEFAULT_STORY_RULES } from "@/lib/templates/defaultStoryRules";
 import { toast } from "sonner";
 import { ImportFromHubModal, HubCharacterItem } from "@/components/characters/ImportFromHubModal";
@@ -60,19 +61,27 @@ interface CharacterForm {
 export default function NewProjectPage() {
   const router = useRouter();
   const [step, setStep] = useState<1 | 2>(1);
+  const [creationMode, setCreationMode] = useState<"manual" | "paste">("manual");
+  const [existingUniverses, setExistingUniverses] = useState<string[]>([]);
+  useEffect(() => {
+    fetch("/api/projects").then(res => res.ok ? res.json() : []).then(data => {
+      setExistingUniverses(Array.from(new Set(data.map((p: { universe: string }) => p.universe))));
+    }).catch(() => {});
+  }, []);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Step 1: Project Information
   const [title, setTitle] = useState("");
-  const [universe, setUniverse] = useState("Game of Thrones");
-  const [timelineScope, setTimelineScope] = useState("Season 2 AU (ช่วงสงครามห้ากษัตริย์)");
-  const [theme, setTheme] = useState("ความเสื่อมทรามของอำนาจ การทรยศ และการเอาชีวิตรอดในเงามืด");
+  const [universe, setUniverse] = useState("");
+  const [timelineScope, setTimelineScope] = useState("");
+  const [theme, setTheme] = useState("");
   const [worldNotes, setWorldNotes] = useState(
-    "จุดหักเหจาก Canon: Ned Stark ไม่ได้ถูกประหารชีวิต แต่ถูกขังและหลบหนีไปตั้งหลักที่ Dragonstone"
+    ""
   );
   const [storyRules, setStoryRules] = useState(DEFAULT_STORY_RULES);
   const [styleGuide, setStyleGuide] = useState(
-    "dark fantasy cinematic painting, muted palette, dramatic lighting, film still, highly detailed"
+    "cinematic composition, atmospheric lighting, film still, highly detailed"
   );
   const [showRulesEditor, setShowRulesEditor] = useState(false);
   const [showHubImportModal, setShowHubImportModal] = useState(false);
@@ -80,39 +89,10 @@ export default function NewProjectPage() {
   // Step 2: Characters (You & Your Squad)
   const [charactersList, setCharactersList] = useState<CharacterForm[]>([
     {
-      id: "char-1",
-      characterType: "self",
-      realNickname: "มอส",
-      name: "Lord Moss of House Blackwood",
-      gender: "ชาย",
-      startMbti: "INTJ",
-      faction: "อิสระ / พันธมิตรลับของฝ่ายเหนือ",
-      roleWishOrForbidden: "ต้องการเป็นผู้วางแผนเอาชีวิตรอดและผู้ถือความลับโบราณ ห้ามตายง่ายหรือเป็นหมากไร้ประโยชน์",
-      background: "ตัวฉันเองที่หลุดเข้ามาในโลกนี้พร้อมความทรงจำเดิม และต้องหาทางรอดในสงคราม",
-      isProposingRoles: false,
-      proposedRoles: [],
-      aiRecommendedIndex: 0,
-      recommendationReason: "",
-      chosenRoleIndex: null,
-      chosenRoleCustom: "",
-      chosenAbility: { name: "", origin: "", cost: "" },
-    },
-    {
-      id: "char-2",
-      characterType: "friend",
-      realNickname: "นนท์",
-      name: "Sir Nont the Ironbound",
-      gender: "ชาย",
-      startMbti: "ISTP",
-      faction: "Night's Watch / อัศวินเร่ร่อน",
-      roleWishOrForbidden: "ต้องการเป็นยอดนักดาบที่สู้เก่งแต่มีปมบาดแผลในใจ ห้ามทรยศเพื่อน",
-      background: "เพื่อนสนิทที่หลุดมิติมาด้วยกัน ถูกพลัดพรากไปอยู่แถบชายแดน",
-      isProposingRoles: false,
-      proposedRoles: [],
-      aiRecommendedIndex: 0,
-      recommendationReason: "",
-      chosenRoleIndex: null,
-      chosenRoleCustom: "",
+      id: "char-1", characterType: "self", realNickname: "", name: "", gender: "",
+      startMbti: "", faction: "", roleWishOrForbidden: "", background: "",
+      isProposingRoles: false, proposedRoles: [], aiRecommendedIndex: 0,
+      recommendationReason: "", chosenRoleIndex: null, chosenRoleCustom: "",
       chosenAbility: { name: "", origin: "", cost: "" },
     },
   ]);
@@ -405,14 +385,20 @@ export default function NewProjectPage() {
 
   return (
     <div className="max-w-5xl mx-auto w-full px-4 sm:px-8 py-6 space-y-8 pb-24">
+      <div className="story-creation-mode" role="group" aria-label="วิธีสร้างเรื่อง">
+        <button aria-pressed={creationMode === "manual"} onClick={() => setCreationMode("manual")}>กรอกข้อมูลเอง</button>
+        <button aria-pressed={creationMode === "paste"} onClick={() => setCreationMode("paste")}>วางข้อความจาก ChatGPT / AI</button>
+      </div>
+      <div hidden={creationMode !== "paste"}><StoryPasteImport /></div>
+      <div hidden={creationMode !== "manual"} className="space-y-8">
       {/* Wizard Step Bar */}
       <div className="flex items-center justify-between border-b border-slate-800 pb-4">
         <div>
           <h1 className="font-heading text-2xl font-bold text-white flex items-center gap-2">
-            <span>PROJECT SETUP WIZARD</span>
+            <span>สร้างเรื่องราวของคุณ</span>
           </h1>
           <p className="text-xs text-slate-400 font-thai">
-            ขั้นตอนการสร้างโลก นิยามกฎของเรื่อง และออกแบบตัวละครด้วย AI Diversity Engine
+            เลือกหนัง ซีรีส์ หนังสือ หรือโลกที่สร้างเอง แล้วออกแบบบทบาทให้คุณและเพื่อน
           </p>
         </div>
 
@@ -426,7 +412,7 @@ export default function NewProjectPage() {
             }`}
           >
             <BookOpen className="w-4 h-4" />
-            <span>1. ข้อมูลเรื่อง & กฎหลัก</span>
+            <span>1. เลือกโลกและตั้งเรื่อง</span>
           </button>
           <ChevronRight className="w-4 h-4 text-slate-600" />
           <button
@@ -438,7 +424,7 @@ export default function NewProjectPage() {
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>2. ตัวละคร & AI Role Proposal</span>
+            <span>2. พาคุณและเพื่อนเข้าเรื่อง</span>
           </button>
         </div>
       </div>
@@ -449,17 +435,17 @@ export default function NewProjectPage() {
           <div className="cinematic-card rounded-xl p-6 space-y-5">
             <h2 className="text-lg font-bold text-white flex items-center gap-2 font-heading">
               <Scroll className="w-5 h-5 text-amber-400" />
-              <span>MAIN PROJECT INPUT</span>
+              <span>โลกและเรื่องราวของคุณ</span>
             </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-300 font-thai">
-                  ชื่อโปรเจกต์ / ชื่อนิมิตเรื่อง <span className="text-red-400">*</span>
+                  ชื่อนิยายที่คุณและเพื่อนจะแต่ง <span className="text-red-400">*</span>
                 </label>
                 <input
                   type="text"
-                  placeholder="เช่น บัลลังก์เลือดแห่งเงามังกร (Game of Thrones AU)"
+                  placeholder="ตั้งชื่อเรื่องฉบับของคุณและเพื่อน"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400"
@@ -472,11 +458,15 @@ export default function NewProjectPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="เช่น Game of Thrones, Harry Potter, Cyberpunk, หรือ Original"
+                  list="existing-universes"
+                  aria-label="จักรวาลตั้งต้น"
+                  placeholder="เลือกจักรวาลเดิม หรือพิมพ์ชื่อหนัง ซีรีส์ หรือโลกใหม่"
                   value={universe}
                   onChange={(e) => setUniverse(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400"
                 />
+                <datalist id="existing-universes">{existingUniverses.map(u => <option key={u} value={u} />)}</datalist>
+                <p className="text-xs text-slate-400">ใช้ชื่อจักรวาลเดิมเพื่อรวมเรื่องไว้ด้วยกัน หรือพิมพ์ชื่อใหม่เพื่อเริ่มโลกอีกใบ</p>
               </div>
 
               <div className="space-y-1.5">
@@ -485,7 +475,7 @@ export default function NewProjectPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="เช่น Season 2-4 AU, หลังศึก Blackwater"
+                  placeholder="เช่น ก่อนเหตุการณ์ภาคแรก หลังตอนจบ หรือเส้นเวลาใหม่"
                   value={timelineScope}
                   onChange={(e) => setTimelineScope(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400"
@@ -498,7 +488,7 @@ export default function NewProjectPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="เช่น Dark Fantasy, การทรยศหักหลัง, ชะตากรรมที่ต้องแลก"
+                  placeholder="เช่น ผจญภัย มิตรภาพ สืบสวน โรแมนติก หรือดราม่า"
                   value={theme}
                   onChange={(e) => setTheme(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400"
@@ -512,7 +502,7 @@ export default function NewProjectPage() {
               </label>
               <textarea
                 rows={3}
-                placeholder="ระบุจุดที่เรื่องนี้ต่างจากเรื่องเดิม เช่น Ned Stark รอดชีวิต, Robb แต่งงานกับสาว Frey..."
+                placeholder="คุณกับเพื่อนเข้ามาในโลกนี้ได้อย่างไร และเหตุการณ์ใดต่างจากต้นฉบับ"
                 value={worldNotes}
                 onChange={(e) => setWorldNotes(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400"
@@ -579,7 +569,7 @@ export default function NewProjectPage() {
               }}
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-amber-500 text-slate-950 font-bold hover:bg-amber-400 transition-colors font-thai"
             >
-              <span>ต่อไป: กำหนดตัวละคร & AI Role Proposal</span>
+              <span>ต่อไป: เลือกตัวละครของคุณและเพื่อน</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
@@ -593,7 +583,7 @@ export default function NewProjectPage() {
             <div>
               <h2 className="text-lg font-bold text-white flex items-center gap-2 font-heading">
                 <Users className="w-5 h-5 text-amber-400" />
-                <span>YOU & YOUR SQUAD CASTING (แก๊งของเราที่จะข้ามมิติไป)</span>
+                <span>คุณและเพื่อนจะเป็นใครในโลกนี้</span>
               </h2>
               <p className="text-xs text-slate-400 font-thai">
                 กรอกตัวละครของคุณและเพื่อนๆ เพื่อให้ AI แปลงบุคลิกเป็นบทบาทในจักรวาล {universe}
@@ -607,7 +597,7 @@ export default function NewProjectPage() {
                 className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-sky-600 to-sky-700 hover:from-sky-500 hover:to-sky-600 text-white text-xs font-bold shadow-[0_0_15px_rgba(14,165,233,0.3)] transition-all font-thai whitespace-nowrap"
               >
                 <Users className="w-4 h-4" />
-                <span>+ ดึงตัวละครจาก Me & Squad Hub</span>
+                <span>นำเข้าตัวละครจากเรื่องเดิม</span>
               </button>
 
               <button
@@ -631,7 +621,7 @@ export default function NewProjectPage() {
                 ตัวละครดั้งเดิมในจักรวาล {universe} (CANON CHARACTERS)
               </h4>
               <p className="text-xs text-slate-300 font-thai leading-relaxed">
-                ตัวละครต้นฉบับในเรื่อง <span className="text-white font-semibold">{universe}</span> (เช่น Jon Snow, Daenerys Targaryen, Tyrion Lannister, Cersei, Arya...) <strong className="text-amber-400 font-semibold">ไม่ต้องกรอกในหน้านี้ครับ!</strong> AI จะดึงตัวละครต้นฉบับในจักรวาลมาร่วมดำเนินเรื่อง เป็นมิตร/ศัตรู และมีบทสนทนากับแก๊งของคุณโดยอัตโนมัติ
+                ตัวละครต้นฉบับในเรื่อง <span className="text-white font-semibold">{universe}</span>  <strong className="text-amber-400 font-semibold">ไม่ต้องกรอกในหน้านี้ครับ!</strong> AI จะดึงตัวละครต้นฉบับในจักรวาลมาร่วมดำเนินเรื่อง เป็นมิตร/ศัตรู และมีบทสนทนากับแก๊งของคุณโดยอัตโนมัติ
               </p>
             </div>
           </div>
@@ -695,7 +685,7 @@ export default function NewProjectPage() {
                       title="เลือกโปรไฟล์จาก Me & Squad Hub เพื่อนำข้อมูลมากรอกในช่องนี้"
                     >
                       <Users className="w-3 h-3 text-sky-400" />
-                      <span>ดึงจาก Hub</span>
+                      <span>นำเข้าจากเรื่องเดิม</span>
                     </button>
 
                     <h3 className="font-bold text-white text-base font-heading">
@@ -744,7 +734,7 @@ export default function NewProjectPage() {
                     </label>
                     <input
                       type="text"
-                      placeholder={`เช่น Lord ${char.realNickname || "Moss"} of Blackwood (เว้นว่างได้)`}
+                      placeholder="ชื่อหรือฉายาที่ใช้ในโลกนี้ (เว้นว่างได้)"
                       value={char.name}
                       onChange={(e) => updateCharacter(char.id, { name: e.target.value })}
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400"
@@ -758,6 +748,7 @@ export default function NewProjectPage() {
                       onChange={(e) => updateCharacter(char.id, { gender: e.target.value })}
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-thai"
                     >
+                      <option value="">เลือกเพศ / ยังไม่ระบุ</option>
                       <option value="ชาย">ชาย</option>
                       <option value="หญิง">หญิง</option>
                       <option value="ไม่ระบุ">ไม่ระบุ / อื่นๆ</option>
@@ -773,6 +764,8 @@ export default function NewProjectPage() {
                       onChange={(e) => updateCharacter(char.id, { startMbti: e.target.value })}
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-mono"
                     >
+                      <option value="">เลือก MBTI / ยังไม่ระบุ</option>
+                      {char.startMbti && !/^[IE][NS][TF][JP]$/.test(char.startMbti) && <option value={char.startMbti}>{char.startMbti}</option>}
                       {[
                         "INTJ",
                         "INTP",
@@ -802,11 +795,11 @@ export default function NewProjectPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-slate-300 font-thai">
-                      ฝ่าย / ตระกูลที่อยากสังกัดใน {universe}
+                      ฝ่าย / สังกัดใน {universe}
                     </label>
                     <input
                       type="text"
-                      placeholder="เช่น House Stark, Night's Watch, กลุ่มอิสระ"
+                      placeholder="เช่น ฝ่าย องค์กร โรงเรียน หรือกลุ่มอิสระ"
                       value={char.faction}
                       onChange={(e) => updateCharacter(char.id, { faction: e.target.value })}
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400 font-thai"
@@ -973,7 +966,7 @@ export default function NewProjectPage() {
             >
               <Sparkles className="w-4 h-4" />
               <span>
-                {isSubmitting ? "กำลังสร้างมหากาพย์และบันทึก..." : "เสร็จสิ้น: สร้างโปรเจกต์ Saga Forge"}
+                {isSubmitting ? "กำลังสร้างมหากาพย์และบันทึก..." : "สร้างเรื่องนี้"}
               </span>
             </button>
           </div>
@@ -987,6 +980,7 @@ export default function NewProjectPage() {
         onImportCharacters={handleImportFromHub}
         currentCharactersList={charactersList}
       />
+      </div>
     </div>
   );
 }

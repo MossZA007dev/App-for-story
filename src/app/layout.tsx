@@ -30,13 +30,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="th" className={`dark ${sarabun.variable} ${cinzel.variable}`}>
-      <body className="bg-[#070a11] text-slate-100 antialiased selection:bg-amber-500/30 selection:text-amber-200 min-h-screen flex flex-col">
+      <body className="bg-background text-slate-100 antialiased selection:bg-amber-500/30 selection:text-amber-200 min-h-screen flex flex-col">
         <Navbar />
-        <main className="flex-1 w-full">
+        <main id="main-content" className="flex-1 w-full" tabIndex={-1}>
           {children}
         </main>
         <footer className="border-t border-slate-800/60 py-6 text-center text-xs text-slate-500">
-          <p>Saga Forge © 2026 • AI-Powered Multi-Part AU Fiction Engine & Visual Studio</p>
+          <p>Saga Forge · พื้นที่สำหรับเรื่องราวของคุณ</p>
         </footer>
         <Toaster richColors position="top-right" theme="dark" />
       </body>

@@ -42,6 +42,10 @@ export async function PUT(
     if (body.scope !== undefined) updateData.scope = String(body.scope).trim();
     if (body.theme !== undefined) updateData.theme = String(body.theme).trim();
     if (body.peakSummary !== undefined) updateData.peakSummary = String(body.peakSummary).trim();
+    if (body.characterChangeSummary !== undefined) {
+      if (typeof body.characterChangeSummary !== "string" || body.characterChangeSummary.length > 80000) return NextResponse.json({error:"บันทึกภาคต้องเป็นข้อความไม่เกิน 80,000 ตัวอักษร"},{status:400});
+      updateData.characterChangeSummary = body.characterChangeSummary;
+    }
     if (body.status !== undefined) updateData.status = body.status;
 
     db.update(parts).set(updateData).where(eq(parts.id, partId)).run();

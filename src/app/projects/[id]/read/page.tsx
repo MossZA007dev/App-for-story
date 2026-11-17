@@ -182,6 +182,20 @@ export default function NovelReaderPage({
   const [activeDialogueIndex, setActiveDialogueIndex] = useState(0);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [readingSize, setReadingSize] = useState(19);
+  const [focusReading, setFocusReading] = useState(false);
+  useEffect(() => {
+    try {
+      const size = Number(localStorage.getItem("saga-reading-size"));
+      if (size >= 16 && size <= 26) setReadingSize(size);
+      setFocusReading(localStorage.getItem("saga-cinematic-focus") === "true");
+    } catch {}
+  }, []);
+  const changeReadingSize = (size: number) => {
+    setReadingSize(size);
+    try { localStorage.setItem("saga-reading-size", String(size)); } catch {}
+  };
+
 
   // Scene & Episode Popover Dropdowns
   const [isSceneDropdownOpen, setIsSceneDropdownOpen] = useState(false);
@@ -241,7 +255,7 @@ export default function NovelReaderPage({
   // Fullscreen & Reading View State
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [imageFitMode, setImageFitMode] = useState<"cover" | "contain">("contain");
-  const [isGalleryCollapsed, setIsGalleryCollapsed] = useState(false);
+  const [isGalleryCollapsed, setIsGalleryCollapsed] = useState(true);
 
   const handleToggleFullscreen = () => {
     if (typeof document === "undefined") return;
@@ -1498,21 +1512,28 @@ export default function NovelReaderPage({
 
   return (
     <div
-      className={`w-full bg-[#070A11] text-slate-100 flex flex-col ${
+      className={`story-reader ${focusReading ? "reader-focused" : ""} w-full bg-background text-slate-100 flex flex-col ${
         isFullscreen
           ? "fixed inset-0 z-50 h-screen w-screen p-2.5 sm:p-4 overflow-hidden gap-2.5 sm:gap-3"
-          : "min-h-screen lg:h-screen lg:max-h-screen lg:overflow-hidden p-3 sm:p-4 lg:p-5 gap-3"
+          : "min-h-screen lg:h-[calc(100dvh-76px)] lg:max-h-[calc(100dvh-76px)] lg:overflow-hidden p-3 sm:p-4 lg:p-5 gap-3"
       }`}
     >
+      <div className="reading-preferences" role="group" aria-label="ปรับการอ่าน">
+        <span className="text-sm text-slate-400">การอ่าน</span>
+        <button onClick={() => changeReadingSize(Math.max(16, readingSize - 1))} disabled={readingSize <= 16} aria-label="ลดขนาดตัวอักษร">ก−</button>
+        <output aria-live="polite">{readingSize}</output>
+        <button onClick={() => changeReadingSize(Math.min(26, readingSize + 1))} disabled={readingSize >= 26} aria-label="เพิ่มขนาดตัวอักษร">ก+</button>
+        <button aria-pressed={focusReading} onClick={() => { const next = !focusReading; setFocusReading(next); try {localStorage.setItem("saga-cinematic-focus", String(next));} catch {} }}>{focusReading ? "แสดงภาพประกอบ" : "โฟกัสเนื้อเรื่อง"}</button>
+      </div>
       {/* ========================================================================= */}
       {/* 1. TOP HEADER (Fullscreen Bar vs Standard Header)                         */}
       {/* ========================================================================= */}
       {isFullscreen ? (
-        <div className="relative z-50 flex-shrink-0 flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#121622]/95 border border-slate-800 rounded-2xl backdrop-blur-md shadow-2xl">
+        <div className="relative z-50 flex-shrink-0 flex items-center justify-between gap-3 px-3.5 py-2.5 bg-card/95 border border-slate-800 rounded-2xl backdrop-blur-md shadow-2xl">
           <div className="flex items-center gap-2.5 overflow-hidden">
             <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 font-black text-xs shadow-[0_0_15px_rgba(245,158,11,0.3)] whitespace-nowrap">
               <BookOpen className="w-3.5 h-3.5" />
-              <span>READING FULLSCREEN</span>
+              <span>อ่านเต็มจอ</span>
             </span>
             <div className="flex items-center gap-2 text-xs truncate">
               <span className="font-bold text-white truncate max-w-[150px] sm:max-w-xs">{project?.title}</span>
@@ -1694,7 +1715,7 @@ export default function NovelReaderPage({
                 className="text-slate-400 hover:text-white transition-colors flex items-center gap-1"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                <span>แดชบอร์ด</span>
+                <span>ชั้นหนังสือ</span>
               </Link>
               <span className="text-slate-600">/</span>
               <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30">
@@ -2141,12 +2162,12 @@ export default function NovelReaderPage({
         </div>
 
         {/* Navigation Tabs (Reader / Studio / Bible / Images) & Right-side Episode / Scene Dropdowns */}
-        <div className="flex items-center justify-between gap-3 text-xs font-thai font-semibold relative z-30">
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-thai font-semibold relative z-30">
           {/* Scrollable Navigation Tabs on Left */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1 flex-1 min-w-0 no-scrollbar">
             <span className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-500 text-slate-950 font-bold shadow-[0_0_15px_rgba(245,158,11,0.25)] flex-shrink-0">
               <BookOpen className="w-3.5 h-3.5" />
-              <span>📖 โหมดอ่านนิยาย (Reader)</span>
+              <span>อ่านนิยาย</span>
             </span>
 
             <Link
@@ -2154,7 +2175,7 @@ export default function NovelReaderPage({
               className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex-shrink-0"
             >
               <PenTool className="w-3.5 h-3.5 text-amber-400" />
-              <span>Studio แก้ไข & สตรีมฉาก</span>
+              <span>เขียนเรื่อง</span>
             </Link>
 
             <Link
@@ -2162,7 +2183,7 @@ export default function NovelReaderPage({
               className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex-shrink-0"
             >
               <User className="w-3.5 h-3.5 text-sky-400" />
-              <span>User Character Bible</span>
+              <span>ตัวละคร</span>
             </Link>
 
             <Link
@@ -2170,12 +2191,12 @@ export default function NovelReaderPage({
               className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex-shrink-0"
             >
               <Film className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Image Studio</span>
+              <span>คลังภาพ</span>
             </Link>
           </div>
 
           {/* Episode (EP) Switcher & Luxury Scene Selector on Right (Unclipped from overflow!) */}
-          <div className="flex items-center gap-2 flex-shrink-0 relative z-40">
+          <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full relative z-40">
             {/* Episode (EP) Switcher Pill */}
             {currentPartEpisodes.length > 0 && (
               <div ref={episodeDropdownRef} className="relative">
@@ -2396,9 +2417,9 @@ export default function NovelReaderPage({
         {/* ----------------------------------------------------------------------- */}
         {/* LEFT COLUMN: Large Image Card (Figma width: 1196px, 2/3 of screen)        */}
         {/* ----------------------------------------------------------------------- */}
-        <div className="lg:col-span-7 xl:col-span-8 flex flex-col justify-between rounded-[16px] p-3.5 sm:p-5 bg-[#313131] border border-slate-700/60 shadow-2xl h-[52vh] min-h-[380px] lg:h-full lg:min-h-0 overflow-hidden">
+        <div className="reader-media lg:col-span-8 xl:col-span-8 flex flex-col justify-between rounded-[16px] p-3.5 sm:p-5 bg-card border border-slate-700/60 shadow-2xl h-[52vh] min-h-[380px] lg:h-full lg:min-h-0 overflow-hidden">
           {/* Main Cinematic Image Display (Strict 16:9 Aspect Ratio) */}
-          <div className="relative w-full aspect-video rounded-[13px] overflow-hidden bg-black/95 group border border-slate-800 shadow-2xl mb-2 flex items-center justify-center flex-shrink-0">
+          <div className="cinema-frame relative w-full aspect-video rounded-[13px] overflow-hidden bg-black/95 group border border-slate-800 shadow-2xl mb-2 flex items-center justify-center flex-shrink-0">
             {currentFeaturedImage ? (
               <>
                 {isVideoMedia(currentFeaturedImage) ? (
@@ -2445,7 +2466,7 @@ export default function NovelReaderPage({
 
                 {/* Image Type Tag Badge (Hidden in fullscreen mode so the picture is fully visible without blockage) */}
                 {!isFullscreen && (
-                  <div className="absolute top-3.5 left-3.5 flex items-center gap-2 flex-wrap pointer-events-none">
+                  <div className="cinema-media-tag absolute top-3.5 left-3.5 flex items-center gap-2 flex-wrap pointer-events-none">
                     {isVideoMedia(currentFeaturedImage) ? (
                       <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-purple-950/90 text-purple-200 border border-purple-500/80 font-thai flex items-center gap-1.5 backdrop-blur-md shadow">
                         <Film className="w-3.5 h-3.5 text-purple-400" />
@@ -2670,7 +2691,7 @@ export default function NovelReaderPage({
         {/* ----------------------------------------------------------------------- */}
         {/* RIGHT COLUMN: Dialogue Card (Locked Stream with Internal Scroll)          */}
         {/* ----------------------------------------------------------------------- */}
-        <div className="lg:col-span-5 xl:col-span-4 flex flex-col justify-between rounded-[16px] p-3.5 sm:p-5 bg-[#313131] border border-slate-700/60 shadow-2xl h-[65vh] min-h-[460px] lg:h-full lg:min-h-0 overflow-hidden space-y-2.5">
+        <div className="reader-text-panel lg:col-span-4 xl:col-span-4 flex flex-col justify-between rounded-[16px] p-3.5 sm:p-5 bg-card border border-slate-700/60 shadow-2xl h-[65vh] min-h-[460px] lg:h-full lg:min-h-0 overflow-hidden space-y-2.5">
           {/* Header: Part subtitle & Clean Scene Title (No duplicated "ฉากที่ 1: ฉากที่ 1:") */}
           <div className="flex-shrink-0 space-y-2 border-b border-slate-700/50 pb-3">
             {currentPart && (
@@ -2706,7 +2727,7 @@ export default function NovelReaderPage({
 
           {/* Interactive Dialogue Reader Controls (Step Through Dialogue with Arrow Buttons) */}
           {parsedBlocks.length > 0 && (
-            <div className="flex-shrink-0 bg-[#252525] rounded-xl p-2.5 border border-slate-700/60 shadow-md space-y-2">
+            <div className="flex-shrink-0 bg-secondary rounded-xl p-2.5 border border-slate-700/60 shadow-md space-y-2">
               <div className="flex items-center justify-between gap-2">
                 {/* Step Backward Arrow Button */}
                 <button
@@ -2780,7 +2801,7 @@ export default function NovelReaderPage({
           )}
 
           {/* Inner Dialogue Container (#2D2D2D, rounded-[18px]) - FULLY SCROLLABLE */}
-          <div className="relative flex-1 min-h-0 rounded-[18px] bg-[#2D2D2D] p-4 sm:p-5 border border-slate-700/40 overflow-y-auto dialogue-scroll space-y-4 pr-3">
+          <div style={{ "--reading-size": `${readingSize}px` } as React.CSSProperties} className="reader-prose relative flex-1 min-h-0 rounded-[18px] bg-background p-4 sm:p-5 border border-slate-700/40 overflow-y-auto dialogue-scroll space-y-4 pr-3">
             {parsedBlocks.length > 0 ? (
               parsedBlocks.map((block, idx) => {
                 const isActive = idx === activeDialogueIndex;
@@ -2794,6 +2815,11 @@ export default function NovelReaderPage({
                       key={block.id}
                       ref={(el) => {
                         dialogueBlockRefs.current[idx] = el;
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") { event.preventDefault(); handleSelectDialogueBlock(idx); }
                       }}
                       onClick={() => handleSelectDialogueBlock(idx)}
                       className={`py-3 px-4 text-center font-thai text-sm italic tracking-widest cursor-pointer rounded-xl transition-all ${
@@ -2876,11 +2902,16 @@ export default function NovelReaderPage({
                       ref={(el) => {
                         dialogueBlockRefs.current[idx] = el;
                       }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") { event.preventDefault(); handleSelectDialogueBlock(idx); }
+                      }}
                       onClick={() => handleSelectDialogueBlock(idx)}
                       className={`flex items-start gap-3.5 group p-2.5 rounded-xl transition-all cursor-pointer ${
                         isActive
-                          ? "bg-amber-500/15 ring-2 ring-amber-400/90 border-l-4 border-l-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.25)] scale-[1.01]"
-                          : "hover:bg-black/20 opacity-80 hover:opacity-100"
+                          ? "bg-amber-500/15 border-l-2 border-l-amber-400"
+                          : "hover:bg-black/20"
                       }`}
                     >
                       <AvatarIcon />
@@ -2937,11 +2968,16 @@ export default function NovelReaderPage({
                       ref={(el) => {
                         dialogueBlockRefs.current[idx] = el;
                       }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") { event.preventDefault(); handleSelectDialogueBlock(idx); }
+                      }}
                       onClick={() => handleSelectDialogueBlock(idx)}
                       className={`flex items-start justify-end gap-3.5 group p-2.5 rounded-xl transition-all cursor-pointer ${
                         isActive
-                          ? "bg-amber-500/15 ring-2 ring-amber-400/90 border-r-4 border-r-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.25)] scale-[1.01]"
-                          : "hover:bg-black/20 opacity-80 hover:opacity-100"
+                          ? "bg-amber-500/15 border-r-2 border-r-amber-400"
+                          : "hover:bg-black/20"
                       }`}
                     >
                       <div className="flex-1 space-y-1 text-right">
@@ -3045,7 +3081,7 @@ export default function NovelReaderPage({
                   <p className="text-[10px] uppercase font-black text-slate-950/70 tracking-wider">
                     {nextSceneItem.episode && currentEpisode && nextSceneItem.episode.id !== currentEpisode.id
                       ? `NEXT EP (${nextSceneItem.episode.title}) ⏭️`
-                      : "NEXT SCENE ⏭️"}
+                      : "ฉากถัดไป"}
                   </p>
                   <p className="truncate max-w-[170px] text-xs font-black">
                     ฉากที่ {nextSceneItem.scene.order}: {nextSceneItem.scene.title.replace(/^ฉากที่\s*\d+\s*:\s*/i, "")}

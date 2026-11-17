@@ -1,19 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import {
-  X,
-  Upload,
-  User,
-  Users,
-  Camera,
-  Sparkles,
-  Check,
-  Shield,
-  Flame,
-  Trash2,
-  Crop,
-} from "lucide-react";
+import { useState, useEffect, useRef, useId } from "react";
+import { X, User, Camera, Check, Crop, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { AvatarCropModal } from "./AvatarCropModal";
 
@@ -61,9 +49,9 @@ export function CreateCharacterModal({
   const [realNickname, setRealNickname] = useState(editCharacter?.realNickname || "");
   const [name, setName] = useState(editCharacter?.name || "");
   const [startMbti, setStartMbti] = useState(
-    editCharacter?.currentMbti || editCharacter?.startMbti || "INTJ"
+    editCharacter?.currentMbti || editCharacter?.startMbti || ""
   );
-  const [gender, setGender] = useState(editCharacter?.gender || "ชาย");
+  const [gender, setGender] = useState(editCharacter?.gender || "");
   const [faction, setFaction] = useState(editCharacter?.faction || "");
   const [roleWish, setRoleWish] = useState(editCharacter?.chosenRole || "");
   const [background, setBackground] = useState(editCharacter?.background || "");
@@ -75,6 +63,22 @@ export function CreateCharacterModal({
 
   // Projects list for selecting target project
   const [projectsList, setProjectsList] = useState<ProjectOption[]>([]);
+  const formId = useId();
+  const panelRef = useRef<HTMLElement>(null);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projectsError, setProjectsError] = useState("");
+  useEffect(() => {
+    if (!isOpen) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    panelRef.current?.focus();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
+  }, [isOpen]);
+
   const [selectedProjectId, setSelectedProjectId] = useState<string>(
     editCharacter?.projectId || initialProjectId || ""
   );
@@ -85,8 +89,8 @@ export function CreateCharacterModal({
         setCharacterType((editCharacter.characterType as "self" | "friend" | "canon") || "self");
         setRealNickname(editCharacter.realNickname || "");
         setName(editCharacter.name || "");
-        setStartMbti(editCharacter.currentMbti || editCharacter.startMbti || "INTJ");
-        setGender(editCharacter.gender || "ชาย");
+        setStartMbti(editCharacter.currentMbti || editCharacter.startMbti || "");
+        setGender(editCharacter.gender || "");
         setFaction(editCharacter.faction || "");
         setRoleWish(editCharacter.chosenRole || "");
         setBackground(editCharacter.background || "");
@@ -101,11 +105,12 @@ export function CreateCharacterModal({
           setSelectedProjectId(editCharacter.projectId);
         }
       } else {
+        setSelectedProjectId(initialProjectId || "");
         setCharacterType(initialType);
         setRealNickname("");
         setName("");
-        setStartMbti("INTJ");
-        setGender("ชาย");
+        setStartMbti("");
+        setGender("");
         setFaction("");
         setRoleWish("");
         setBackground("");
@@ -116,17 +121,16 @@ export function CreateCharacterModal({
   }, [isOpen, initialType, editCharacter, initialProjectId]);
 
   const fetchProjects = async () => {
+    setProjectsLoading(true);
+    setProjectsError("");
     try {
       const res = await fetch("/api/projects");
-      if (res.ok) {
-        const data = await res.json();
-        setProjectsList(data);
-        if (data.length > 0 && !selectedProjectId) {
-          setSelectedProjectId(initialProjectId || data[0].id);
-        }
-      }
+      if (!res.ok) throw new Error("โหลดรายชื่อเรื่องไม่สำเร็จ");
+      setProjectsList(await res.json());
     } catch (err) {
-      console.error(err);
+      setProjectsError(err instanceof Error ? err.message : "โหลดรายชื่อเรื่องไม่สำเร็จ");
+    } finally {
+      setProjectsLoading(false);
     }
   };
 
@@ -173,6 +177,7 @@ export function CreateCharacterModal({
     const file = e.target.files?.[0];
     if (!file) return;
     await uploadCharacterAvatarFile(file);
+    e.target.value = "";
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -294,408 +299,120 @@ export function CreateCharacterModal({
   if (!isOpen) return null;
 
   const isEditing = Boolean(editCharacter && editCharacter.id);
+  const selectedProject = projectsList.find(project => project.id === selectedProjectId);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-[#0f1219] border border-slate-800 rounded-2xl max-w-xl w-full p-6 sm:p-7 space-y-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        {/* Modal Header */}
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-            <h2 className="text-lg font-bold text-white font-heading tracking-wide">
-              {isEditing
-                ? `✏️ แก้ไขข้อมูลตัวละคร: ${name || realNickname || editCharacter?.name}`
-                : characterType === "self"
-                ? "👑 สร้างตัวละครของคุณ (ตัวฉันเอง - ME)"
-                : characterType === "canon"
-                ? "🎬 เพิ่มตัวละครในหนัง / จักรวาล (MOVIE / CANON)"
-                : "🧑‍🤝‍🧑 เพิ่มเพื่อนในกลุ่มของคุณ (SQUAD FRIEND)"}
-            </h2>
+    <div className="character-form-backdrop">
+      <section
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`${formId}-title`}
+        aria-describedby={`${formId}-description`}
+        tabIndex={-1}
+        className="character-form-dialog"
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !isSubmitting && !isUploadingPhoto) {
+            event.stopPropagation();
+            onClose();
+          }
+          if (event.key === "Tab") {
+            const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex="0"]')).filter(el => el.getClientRects().length > 0);
+            const first = controls[0];
+            const last = controls[controls.length - 1];
+            if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) {
+              event.preventDefault(); last?.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault(); first?.focus();
+            }
+          }
+        }}
+      >
+        <header className="character-form-header">
+          <div>
+            <h2 id={`${formId}-title`}>{isEditing ? "แก้ไขตัวละคร" : "เพิ่มตัวละครในเรื่อง"}</h2>
+            <p id={`${formId}-description`}>กำหนดตัวตนและบทบาทสำหรับเวอร์ชันนี้</p>
           </div>
-          <p className="text-xs text-slate-400 font-thai">
-            {isEditing
-              ? "ปรับแต่งชื่อเล่น ชื่อในเรื่อง MBTI และรูปถ่ายโปรไฟล์ตัวละคร"
-              : characterType === "canon"
-              ? "ระบุชื่อตัวละครในภาพยนตร์ ฝ่าย/ตระกูล และอัปโหลดภาพโปสเตอร์/โปรไฟล์เพื่อใช้จัดหมวดหมู่และดำเนินเรื่อง"
-              : "กรอกชื่อจริงของคุณ MBTI และอัปโหลดรูปตัวเอง เพื่อให้ AI นำคุณและเพื่อนๆ ข้ามมิติไปโลดแล่นในมหากาพย์"}
-          </p>
-        </div>
+          <button type="button" className="character-form-close" onClick={onClose} disabled={isSubmitting || isUploadingPhoto} aria-label="ปิดหน้าต่างตัวละคร"><X size={20} /></button>
+        </header>
 
-        {/* Character Type Switcher (Me vs Friend vs Canon) */}
-        <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
-          <button
-            type="button"
-            onClick={() => setCharacterType("self")}
-            className={`flex-1 py-2 rounded-lg text-xs font-thai font-semibold transition-all flex items-center justify-center gap-1.5 ${
-              characterType === "self"
-                ? "bg-amber-500 text-slate-950 font-bold shadow-md"
-                : "text-slate-400 hover:text-white"
-            }`}
-          >
-            <span>👑 ตัวฉันเอง (Me)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setCharacterType("friend")}
-            className={`flex-1 py-2 rounded-lg text-xs font-thai font-semibold transition-all flex items-center justify-center gap-1.5 ${
-              characterType === "friend"
-                ? "bg-sky-600 text-white font-bold shadow-md"
-                : "text-slate-400 hover:text-white"
-            }`}
-          >
-            <span>🧑‍🤝‍🧑 เพื่อนในกลุ่ม (Squad)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setCharacterType("canon")}
-            className={`flex-1 py-2 rounded-lg text-xs font-thai font-semibold transition-all flex items-center justify-center gap-1.5 ${
-              characterType === "canon"
-                ? "bg-purple-600 text-white font-bold shadow-md"
-                : "text-slate-400 hover:text-white"
-            }`}
-          >
-            <span>🎬 ในหนัง (Canon)</span>
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Target Saga Project Dropdown */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-amber-300 font-thai flex items-center gap-1.5">
-              <Flame className="w-3.5 h-3.5" />
-              <span>เลือกเรื่องที่ต้องการให้ตัวละครนี้สังกัด</span>
-            </label>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-amber-400 font-thai"
-            >
-              {projectsList.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title} ({p.universe})
-                </option>
+        <form onSubmit={handleSubmit} className="character-form-layout">
+          <div className="character-form-body">
+            <div className="character-form-type" role="group" aria-label="ประเภทตัวละคร">
+              {([['self', 'ตัวฉันเอง'], ['friend', 'เพื่อน'], ['canon', 'ตัวละครต้นฉบับ']] as const).map(([value, label]) => (
+                <button key={value} type="button" aria-pressed={characterType === value} onClick={() => setCharacterType(value)} disabled={isSubmitting}>{label}</button>
               ))}
-            </select>
-          </div>
-
-          {/* Avatar Photo Upload & Preview Section */}
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setIsDraggingAvatar(true);
-            }}
-            onDragLeave={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setIsDraggingAvatar(false);
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setIsDraggingAvatar(false);
-              const file = e.dataTransfer.files?.[0];
-              if (file) uploadCharacterAvatarFile(file);
-            }}
-            className={`p-4 rounded-xl border flex flex-col sm:flex-row items-center gap-4 transition-all ${
-              isDraggingAvatar
-                ? "bg-amber-500/20 border-amber-400 ring-4 ring-amber-400/30 scale-[1.01]"
-                : "bg-slate-950/80 border-slate-800"
-            }`}
-          >
-            {/* Avatar Preview */}
-            <div className="relative w-20 h-20 rounded-full overflow-hidden bg-slate-900 border-2 border-amber-500/50 flex items-center justify-center flex-shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
-              {avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={typeof avatarUrl === "string" ? avatarUrl : (avatarUrl as any)?.url || ""}
-                  alt="Avatar Preview"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <User className="w-9 h-9 text-slate-500" />
-              )}
-
-              {isUploadingPhoto && (
-                <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
-                  <div className="animate-spin w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full" />
-                </div>
-              )}
             </div>
 
-            {/* Photo Uploader Controls */}
-            <div className="space-y-2 flex-1 text-center sm:text-left">
-              <div>
-                <span className="text-xs font-bold text-white font-thai block">
-                  รูปถ่ายของคุณ (Avatar Photo)
-                </span>
-                <span className="text-[11px] text-slate-400 font-thai">
-                  {isDraggingAvatar
-                    ? "ปล่อยรูปภาพที่นี่ (Drop Avatar Photo)"
-                    : "คลิกหรือลากวางรูปถ่ายจริงจากเครื่องมาที่นี่ (รองรับ JPG, JFIF, PNG, WebP)"}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 justify-center sm:justify-start flex-wrap">
-                <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/40 transition-colors font-thai">
-                  <Camera className="w-3.5 h-3.5" />
-                  <span>{avatarUrl ? "เปลี่ยนรูปถ่าย" : "เลือกรูปจากเครื่อง (JPG/PNG/JFIF)"}</span>
-                  <input
-                    type="file"
-                    accept="image/*,.jfif"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    disabled={isUploadingPhoto}
-                  />
-                </label>
-
-                {avatarUrl && (
-                  <button
-                    type="button"
-                    onClick={() => setShowCropModal(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 text-xs font-semibold border border-sky-500/40 transition-colors font-thai shadow-sm"
-                  >
-                    <Crop className="w-3.5 h-3.5" />
-                    <span>ปรับตำแหน่ง / ครอปรูป</span>
-                  </button>
-                )}
-
-                {avatarUrl && (
-                  <button
-                    type="button"
-                    onClick={() => setAvatarUrl("")}
-                    className="text-[11px] text-red-400 hover:underline font-thai ml-1"
-                  >
-                    ลบรูป
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Form Fields: Grid 1 */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {characterType === "canon" ? (
-              <>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-purple-300 font-thai flex items-center gap-1">
-                    <span>ชื่อตัวละครในหนัง / จักรวาล</span>
-                    <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="เช่น Arya Stark, Jaime Lannister, Harry Potter"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 font-thai"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-300 font-thai">
-                    ชื่อเล่น / คำเรียกสั้นๆ (ถ้ามี)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="เช่น อารยา, เจมี่ (เว้นว่างได้)"
-                    value={realNickname}
-                    onChange={(e) => setRealNickname(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 font-thai"
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-300 font-thai">
-                    ชื่อเล่นจริงในชีวิตจริง <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder={characterType === "self" ? "เช่น มอส, ก้อย, แบงค์" : "เช่น นนท์, บาส, ท็อป"}
-                    value={realNickname}
-                    onChange={(e) => setRealNickname(e.target.value)}
-                    required
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-thai"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-300 font-thai">
-                    ชื่อ/ฉายาในจักรวาลเรื่อง (In-universe Name)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder={`เช่น Lord ${realNickname || "Moss"} of Winterfell (เว้นว่างได้)`}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-thai"
-                  />
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Form Fields: Grid 2 (MBTI & Gender) */}
-          <div className="grid grid-cols-2 gap-3.5">
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-300 font-thai">
-                MBTI บุคลิกภาพ
-              </label>
-              <select
-                value={startMbti}
-                onChange={(e) => setStartMbti(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-mono"
-              >
-                {[
-                  "INTJ",
-                  "INTP",
-                  "ENTJ",
-                  "ENTP",
-                  "INFJ",
-                  "INFP",
-                  "ENFJ",
-                  "ENFP",
-                  "ISTJ",
-                  "ISFJ",
-                  "ESTJ",
-                  "ESFJ",
-                  "ISTP",
-                  "ISFP",
-                  "ESTP",
-                  "ESFP",
-                ].map((mbti) => (
-                  <option key={mbti} value={mbti}>
-                    {mbti}
-                  </option>
+            <div className="character-form-field character-form-project">
+              <label htmlFor={`${formId}-project`}>เรื่องที่ตัวละครนี้อยู่ <span className="field-required">*</span></label>
+              <select id={`${formId}-project`} required disabled={isEditing || projectsLoading || isSubmitting} value={selectedProjectId} onChange={e => setSelectedProjectId(e.target.value)} aria-describedby={`${formId}-world`}>
+                <option value="">{projectsLoading ? "กำลังโหลดเรื่อง…" : "เลือกเรื่อง…"}</option>
+                {Array.from(new Set(projectsList.map(p => p.universe))).map(universe => (
+                  <optgroup key={universe} label={universe}>{projectsList.filter(p => p.universe === universe).map(p => <option key={p.id} value={p.id}>{p.title}</option>)}</optgroup>
                 ))}
               </select>
+              <p id={`${formId}-world`} className="character-form-hint">{selectedProject ? `${selectedProject.universe} · ข้อมูลนี้ใช้เฉพาะเรื่องที่เลือก` : "คนเดียวกันมีชื่อและบทบาทต่างกันได้ในแต่ละเรื่อง"}</p>
+              {projectsError && <p className="character-form-error" role="alert">{projectsError} <button type="button" onClick={fetchProjects}>ลองอีกครั้ง</button></p>}
+              {!projectsLoading && !projectsError && projectsList.length === 0 && <p className="character-form-hint">ยังไม่มีเรื่อง <a href="/projects/new">สร้างเรื่องแรก</a>ก่อนเพิ่มตัวละคร</p>}
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-300 font-thai">เพศ</label>
-              <select
-                value={gender}
-                onChange={(e) => setGender(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-thai"
+            <section className="character-form-section" aria-labelledby={`${formId}-identity`}>
+              <h3 id={`${formId}-identity`}>ข้อมูลตัวละคร</h3>
+              <div
+                className={`character-form-photo ${isDraggingAvatar ? "is-dragging" : ""}`}
+                onDragOver={event => {event.preventDefault(); setIsDraggingAvatar(true);}}
+                onDragLeave={event => {if (!event.currentTarget.contains(event.relatedTarget as Node)) setIsDraggingAvatar(false);}}
+                onDrop={event => {event.preventDefault(); setIsDraggingAvatar(false); const file = event.dataTransfer.files?.[0]; if (file && !isUploadingPhoto && !isSubmitting) void uploadCharacterAvatarFile(file);}}
               >
-                <option value="ชาย">ชาย</option>
-                <option value="หญิง">หญิง</option>
-                <option value="ไม่ระบุ">ไม่ระบุ / อื่นๆ</option>
-              </select>
-            </div>
+                <div className="character-form-avatar">
+                  {avatarUrl ? <img src={avatarUrl} alt="รูปตัวละคร" /> : <User size={30} strokeWidth={1.5} />}
+                  {isUploadingPhoto && <span className="character-form-uploading" role="status" aria-label="กำลังอัปโหลดรูป"><RefreshCw size={20} className="animate-spin" /></span>}
+                </div>
+                <div className="character-form-photo-info">
+                  <div className="character-form-photo-actions">
+                    <label className={`character-form-upload ${isUploadingPhoto || isSubmitting ? "is-disabled" : ""}`}>
+                      <Camera size={16} /><span>{isUploadingPhoto ? "กำลังอัปโหลด…" : avatarUrl ? "เปลี่ยนรูป" : "เพิ่มรูปตัวละคร"}</span>
+                      <input type="file" accept="image/*,.jfif" aria-label="เลือกรูปตัวละคร" onChange={handleFileUpload} className="sr-only" disabled={isUploadingPhoto || isSubmitting} />
+                    </label>
+                    {avatarUrl && <button type="button" className="character-form-text-button" onClick={() => setShowCropModal(true)} disabled={isUploadingPhoto || isSubmitting}><Crop size={15} /> ปรับรูป</button>}
+                    {avatarUrl && <button type="button" className="character-form-text-button is-danger" onClick={() => setAvatarUrl("")} disabled={isUploadingPhoto || isSubmitting}>นำรูปออก</button>}
+                  </div>
+                  <p className="character-form-hint">{isDraggingAvatar ? "ปล่อยรูปที่นี่" : "หรือลากรูปมาวาง · JPG, PNG, WebP · เพิ่มภายหลังได้"}</p>
+                </div>
+              </div>
+
+              <div className="character-form-grid">
+                {characterType === "canon" ? <>
+                  <div className="character-form-field"><label htmlFor={`${formId}-name`}>ชื่อตัวละคร <span className="field-required">*</span></label><input id={`${formId}-name`} value={name} onChange={e => setName(e.target.value)} placeholder="ชื่อจากเรื่องต้นฉบับ" required /></div>
+                  <div className="character-form-field"><label htmlFor={`${formId}-nickname`}>ชื่อเรียกสั้น ๆ <span>ไม่บังคับ</span></label><input id={`${formId}-nickname`} value={realNickname} onChange={e => setRealNickname(e.target.value)} placeholder="ชื่อเล่นหรือคำเรียก" /></div>
+                </> : <>
+                  <div className="character-form-field"><label htmlFor={`${formId}-nickname`}>ชื่อเล่น <span className="field-required">*</span></label><input id={`${formId}-nickname`} value={realNickname} onChange={e => setRealNickname(e.target.value)} placeholder={characterType === "self" ? "ชื่อที่เพื่อนเรียกคุณ" : "ชื่อเล่นของเพื่อน"} required /></div>
+                  <div className="character-form-field"><label htmlFor={`${formId}-name`}>ชื่อในเรื่อง <span>ไม่บังคับ</span></label><input id={`${formId}-name`} value={name} onChange={e => setName(e.target.value)} placeholder="ใช้ชื่อเล่นได้ถ้าเว้นว่าง" /></div>
+                </>}
+                <div className="character-form-field"><label htmlFor={`${formId}-mbti`}>บุคลิกภาพ <span>MBTI</span></label><select id={`${formId}-mbti`} value={startMbti} onChange={e => setStartMbti(e.target.value)}><option value="">ยังไม่ระบุ</option>{startMbti && !/^[IE][NS][TF][JP]$/.test(startMbti) && <option value={startMbti}>{startMbti}</option>}{["INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP", "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP"].map(value => <option key={value}>{value}</option>)}</select></div>
+                <div className="character-form-field"><label htmlFor={`${formId}-gender`}>เพศ</label><select id={`${formId}-gender`} value={gender} onChange={e => setGender(e.target.value)}><option value="">ยังไม่ระบุ</option><option value="ชาย">ชาย</option><option value="หญิง">หญิง</option><option value="ไม่ระบุ">อื่น ๆ / ไม่ระบุ</option></select></div>
+              </div>
+            </section>
+
+            <section className="character-form-section" aria-labelledby={`${formId}-role`}>
+              <h3 id={`${formId}-role`}>บทบาทในเรื่อง <span>เพิ่มหรือแก้ไขภายหลังได้</span></h3>
+              <div className="character-form-grid">
+                <div className="character-form-field"><label htmlFor={`${formId}-faction`}>ฝ่าย / สังกัด</label><input id={`${formId}-faction`} value={faction} onChange={e => setFaction(e.target.value)} placeholder="ตระกูล บ้าน หรือองค์กร" /></div>
+                <div className="character-form-field"><label htmlFor={`${formId}-role-wish`}>บทบาท</label><input id={`${formId}-role-wish`} value={roleWish} onChange={e => setRoleWish(e.target.value)} placeholder="เช่น นักสำรวจ หรือผู้วางแผน" /></div>
+                <div className="character-form-field character-form-full"><label htmlFor={`${formId}-background`}>ภูมิหลัง</label><textarea id={`${formId}-background`} value={background} onChange={e => setBackground(e.target.value)} placeholder="เขาเป็นใคร เข้ามาในโลกนี้ได้อย่างไร และต้องการอะไร" rows={3} /></div>
+              </div>
+            </section>
           </div>
 
-          {/* Faction & Role Wish */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-300 font-thai">
-                {characterType === "canon"
-                  ? "ฝ่าย / สังกัด / หมวดหมู่ (Faction / Category)"
-                  : "ฝ่าย / สังกัดที่อยากสังกัด"}
-              </label>
-              <input
-                type="text"
-                placeholder={
-                  characterType === "canon"
-                    ? "เช่น House Stark, House Lannister, Night's Watch, Faceless Men"
-                    : "เช่น House Stark, Night's Watch, กลุ่มอิสระ"
-                }
-                value={faction}
-                onChange={(e) => setFaction(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-thai"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-300 font-thai">
-                {characterType === "canon" ? "บทบาทในเรื่อง / ตำแหน่ง" : "บทบาทที่อยากได้"}
-              </label>
-              <input
-                type="text"
-                placeholder={
-                  characterType === "canon"
-                    ? "เช่น นักฆ่าไร้หน้า, ผู้พิทักษ์แดนเหนือ, ลอร์ดผู้บัญชาการ"
-                    : "เช่น จอมวางแผน, นักรบเงา, ผู้รอดชีวิต"
-                }
-                value={roleWish}
-                onChange={(e) => setRoleWish(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-thai"
-              />
-            </div>
-          </div>
-
-          {/* Background / Description */}
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-300 font-thai">
-              {characterType === "canon" ? "ปูมหลัง / ข้อมูลตัวละครย่อ" : "ข้อมูลภูมิหลังตัวละคร"}
-            </label>
-            <textarea
-              rows={2}
-              placeholder={
-                characterType === "canon"
-                  ? "เช่น บุตรสาวคนเล็กของเน็ด สตาร์ค ที่ได้รับการฝึกฝนวิชาจากสมาคมนักฆ่าไร้หน้า..."
-                  : "เช่น คนจากโลกปัจจุบันที่หลุดเข้ามาในโลกนี้พร้อมความทรงจำเดิม..."
-              }
-              value={background}
-              onChange={(e) => setBackground(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-thai resize-none"
-            />
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-thai transition-colors"
-            >
-              ยกเลิก
-            </button>
-
-            <button
-              type="submit"
-              disabled={isSubmitting || isUploadingPhoto}
-              className={`inline-flex items-center gap-2 px-5 py-2 rounded-lg font-bold text-xs font-thai transition-all shadow-lg disabled:opacity-50 ${
-                characterType === "canon"
-                  ? "bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/30"
-                  : "bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/30"
-              }`}
-            >
-              <Check className="w-4 h-4" />
-              <span>
-                {isSubmitting
-                  ? "กำลังบันทึก..."
-                  : isEditing
-                  ? "บันทึกการแก้ไข"
-                  : characterType === "self"
-                  ? "บันทึกตัวละครของคุณ"
-                  : characterType === "canon"
-                  ? "บันทึกตัวละครในหนัง"
-                  : "บันทึกตัวละครเพื่อน"}
-              </span>
-            </button>
-          </div>
+          <footer className="character-form-footer">
+            <p><span className="field-required">*</span> ข้อมูลที่ต้องกรอก</p>
+            <div><button type="button" className="character-form-cancel" onClick={onClose} disabled={isSubmitting || isUploadingPhoto}>ยกเลิก</button><button type="submit" className="character-form-submit" disabled={isSubmitting || isUploadingPhoto || projectsLoading || !selectedProjectId}>{isSubmitting ? <RefreshCw size={17} className="animate-spin" /> : <Check size={17} />} {isSubmitting ? "กำลังบันทึก…" : isEditing ? "บันทึกการแก้ไข" : "เพิ่มตัวละคร"}</button></div>
+          </footer>
         </form>
-      </div>
+      </section>
 
-      {showCropModal && avatarUrl && (
-        <AvatarCropModal
-          isOpen={showCropModal}
-          onClose={() => setShowCropModal(false)}
-          imageSrc={typeof avatarUrl === "string" ? avatarUrl : (avatarUrl as any)?.url || ""}
-          onCropComplete={(newUrl) => setAvatarUrl(newUrl)}
-        />
-      )}
+      {showCropModal && avatarUrl && <AvatarCropModal isOpen={showCropModal} onClose={() => setShowCropModal(false)} imageSrc={avatarUrl} onCropComplete={newUrl => setAvatarUrl(newUrl)} />}
     </div>
   );
 }

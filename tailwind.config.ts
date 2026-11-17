@@ -14,6 +14,16 @@ const config: Config = {
         heading: ["var(--font-cinzel)", "var(--font-sarabun)", "serif"],
       },
       colors: {
+        slate: {
+          50: "#f3f6f4", 100: "#e6eee9", 200: "#d0ddd5", 300: "#b8c9bf",
+          400: "#9dafA3", 500: "#7b9083", 600: "#596e61", 700: "#36483e",
+          800: "#24342b", 900: "#17231c", 950: "#0b130e",
+        },
+        amber: {
+          50: "#eefbf7", 100: "#d4f2e7", 200: "#b0e5d3", 300: "#8ed8be",
+          400: "#69c4a6", 500: "#4eae90", 600: "#348b71", 700: "#2c6e5c",
+          800: "#26584b", 900: "#21493f", 950: "#102b25",
+        },
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         card: {

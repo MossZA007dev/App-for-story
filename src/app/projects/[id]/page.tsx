@@ -140,6 +140,7 @@ interface PartItem {
   scope: string;
   theme: string;
   peakSummary: string;
+  characterChangeSummary?: string;
   status: "planned" | "drafting" | "done";
   episodes?: EpisodeItem[];
   scenes: SceneItem[];
@@ -236,7 +237,7 @@ export default function StoryWorkspacePage({
   const [sceneImages, setSceneImages] = useState<SceneImage[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number>(0);
   const [imageFitMode, setImageFitMode] = useState<"contain" | "cover">("contain");
-  const [isGalleryCollapsed, setIsGalleryCollapsed] = useState(false);
+  const [isGalleryCollapsed, setIsGalleryCollapsed] = useState(true);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [showAiImageModal, setShowAiImageModal] = useState(false);
@@ -326,6 +327,7 @@ export default function StoryWorkspacePage({
   const [collaborators, setCollaborators] = useState<any[]>([]);
   const [showCollabModal, setShowCollabModal] = useState(false);
   const [showClaudeImportModal, setShowClaudeImportModal] = useState(false);
+  const [showLineTools, setShowLineTools] = useState(false);
   const [currentAuthorName, setCurrentAuthorName] = useState("");
 
   // Quick Add Character Modal State
@@ -3314,7 +3316,7 @@ export default function StoryWorkspacePage({
     "กลิ่นของไฟป่า (Wildfire) ยังคงติดแน่นอยู่ในชั้นบรรยากาศ มันไม่ได้มีกลิ่นเหมือนฟืนไหม้ทั่วไป แต่เป็นกลิ่นฉุนแสบจมูกของสารเคมีโบราณที่เผาผลาญทั้งไม้ เหล็ก และเนื้อมนุษย์จนกลายเป็นเถ้าสีมรกต";
 
   return (
-    <div className="max-w-[1720px] mx-auto w-full px-4 sm:px-8 py-6 space-y-6 pb-24">
+    <div data-line-tools={showLineTools} className="simple-editor max-w-[1720px] mx-auto w-full px-4 sm:px-8 py-6 space-y-6 pb-24">
       {/* Project Header */}
       {project && (
         <ProjectHeader
@@ -3328,6 +3330,37 @@ export default function StoryWorkspacePage({
       {/* ========================================================================= */}
       {/* 0. CO-AUTHOR PERSONA & SQUAD COLLABORATION STATUS RIBBON                  */}
       {/* ========================================================================= */}
+
+
+      {/* ========================================================================= */}
+      {/* 1. SCENE & AUDIO CONTROL RIBBON (Sleek, unified, easy-to-use)             */}
+      {/* ========================================================================= */}
+      <section className="editor-navigation" aria-label="เลือกตำแหน่งที่จะแต่ง">
+        <div className="editor-location-selectors">
+          <label>ภาค<select aria-label="เลือกภาค" value={activePartId} onChange={e => handleSelectPart(e.target.value)} disabled={!parts.length}>
+            {!parts.length && <option value="">ยังไม่มีภาค</option>}
+            {parts.map(part => <option key={part.id} value={part.id}>{part.title.replace(/^ภาคที่\s*\d+\s*:\s*/, "")}</option>)}
+          </select></label>
+          <label>ตอน<select aria-label="เลือกตอน" value={activeEpisodeId || currentEpisode?.id || ""} onChange={e => handleSelectEpisode(e.target.value)} disabled={!currentPartEpisodes.length}>
+            {!currentPartEpisodes.length && <option value="">ยังไม่มีตอน</option>}
+            {currentPartEpisodes.map(ep => <option key={ep.id} value={ep.id}>{ep.title}</option>)}
+          </select></label>
+          <label>ฉาก<select aria-label="เลือกฉาก" value={activeSceneId} onChange={e => handleSelectScene(e.target.value)} disabled={!currentEpisodeScenes.length}>
+            {!currentEpisodeScenes.length && <option value="">ยังไม่มีฉาก</option>}
+            {currentEpisodeScenes.map(scene => <option key={scene.id} value={scene.id}>{scene.order}. {scene.title.replace(/^ฉากที่\s*\d+\s*:\s*/, "")}</option>)}
+          </select></label>
+          <button className="editor-secondary" disabled={!currentPart} onClick={() => {setNewSceneTitle(`ฉากที่ ${currentEpisodeScenes.length + 1}: `); setNewSceneLocation(activeScene?.location || ""); setShowNewSceneModal(true);}}><Plus size={16} /> เพิ่มฉาก</button>
+        </div>
+        <div className="editor-document-actions">
+          <button className="editor-save" onClick={() => handleSaveAll(false)} disabled={isSavingScene || !activeScene}>
+            {isSavingScene ? <RefreshCw size={15} className="animate-spin" /> : <Check size={15} />}
+            <span aria-live="polite">{isSavingScene ? "กำลังบันทึก…" : hasUnsavedChanges ? "บันทึกการแก้ไข" : "บันทึกแล้ว"}</span>
+          </button>
+          <Link className="reader-primary" href={`/projects/${projectId}/read${activeScene ? `?sceneId=${activeScene.id}` : ""}`}><BookOpen size={16} /> เปิดอ่าน</Link>
+        </div>
+      </section>
+      <details className="editor-disclosure editor-management"><summary><SlidersHorizontal size={16} /> จัดการภาค ตอน และเพลง <span>เพิ่มตอน · เรียงฉาก · ตั้งค่าเสียง</span></summary>
+      <details className="editor-disclosure editor-collaboration"><summary><Users size={16} /> ผู้ร่วมเขียน <span>{currentAuthorName || "เลือกชื่อผู้แต่ง"}</span></summary>
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 shadow-md">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
@@ -3396,9 +3429,7 @@ export default function StoryWorkspacePage({
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* 1. SCENE & AUDIO CONTROL RIBBON (Sleek, unified, easy-to-use)             */}
-      {/* ========================================================================= */}
+      </details>
       <div className="cinematic-card rounded-2xl p-3 sm:p-4 border-slate-700/60 flex flex-wrap items-center justify-between gap-3 bg-slate-950/80 shadow-xl relative z-40">
         {/* Left: Part & Episode & Scene Selectors (3-Tier Hierarchy: SS -> EP -> Scene) */}
         <div className="flex flex-wrap items-center gap-2">
@@ -3781,7 +3812,7 @@ export default function StoryWorkspacePage({
         </div>
 
         {/* Center / Right: Scene BGM Audio Controls */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="editor-audio-controls flex flex-wrap items-center gap-3">
           {/* Scene BGM & Volume Controller */}
           <div className="flex items-center gap-2 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 shadow-sm">
             {/* Animated Equalizer when playing */}
@@ -3951,39 +3982,16 @@ export default function StoryWorkspacePage({
             </button>
           )}
 
-          {/* Save All Changes Button */}
-          <button
-            onClick={() => handleSaveAll(false)}
-            disabled={isSavingScene}
-            className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl font-bold text-xs font-thai transition-all shadow-md active:scale-95 ${
-              hasUnsavedChanges
-                ? "bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.35)] animate-pulse"
-                : "bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700"
-            }`}
-          >
-            {isSavingScene ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Check className="w-3.5 h-3.5 stroke-[3]" />
-            )}
-            <span>{isSavingScene ? "กำลังเซฟอัตโนมัติ..." : hasUnsavedChanges ? "บันทึกการแก้ไข (Auto-Save 3วิ)" : "✓ บันทึกแล้ว"}</span>
-          </button>
 
-          {/* Reader View Link */}
-          <Link
-            href={`/projects/${projectId}/read${activeScene ? `?sceneId=${activeScene.id}` : ""}`}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-slate-950 font-bold hover:brightness-110 font-thai text-xs shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all active:scale-95"
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>เปิดโหมดอ่านนิยาย (Reader View) →</span>
-          </Link>
         </div>
       </div>
+
+      </details>
 
       {/* ========================================================================= */}
       {/* 2. MAIN SPLIT-SCREEN WORKSPACE (Exact Layout matching Image 2 & Figma)    */}
       {/* ========================================================================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 xl:gap-8 items-stretch w-full">
+      <div className="editor-workspace grid grid-cols-1 lg:grid-cols-12 gap-6 xl:gap-8 items-stretch w-full">
         {/* ----------------------------------------------------------------------- */}
         {/* LEFT COLUMN: Visual Stage & Image Gallery (Figma width: 1196px, 2/3)     */}
         {/* ----------------------------------------------------------------------- */}
@@ -3992,7 +4000,7 @@ export default function StoryWorkspacePage({
           onDragOver={handleVisualStageDragOver}
           onDragLeave={handleVisualStageDragLeave}
           onDrop={handleVisualStageDrop}
-          className={`relative lg:col-span-7 xl:col-span-8 flex flex-col justify-between rounded-[16px] p-5 sm:p-6 bg-[#313131] border shadow-2xl h-[780px] sm:h-[840px] lg:h-[880px] xl:h-[920px] transition-all duration-200 ${
+          className={`editor-visual relative lg:col-span-7 xl:col-span-7 flex flex-col justify-between rounded-[16px] p-5 sm:p-6 bg-card border shadow-2xl h-[780px] sm:h-[840px] lg:h-[880px] xl:h-[920px] transition-all duration-200 ${
             isDraggingOverVisualStage
               ? "border-amber-400 ring-4 ring-amber-400/30 bg-[#262626]"
               : "border-slate-700/60"
@@ -4019,50 +4027,10 @@ export default function StoryWorkspacePage({
             </div>
           )}
 
-          {/* Main Cinematic Image Display (Strict 16:9 Aspect Ratio) */}
-          <div className="relative w-full aspect-video rounded-[13px] overflow-hidden bg-black/95 group border border-slate-800 shadow-2xl mb-3 flex items-center justify-center flex-shrink-0">
-            {currentFeaturedImage ? (
-              <>
-                {isVideoMedia(currentFeaturedImage) ? (
-                  <video
-                    key={currentFeaturedImage.id}
-                    src={currentFeaturedImage.filePath}
-                    autoPlay
-                    loop
-                    muted={isVideoMuted}
-                    playsInline
-                    onLoadedMetadata={(e) => {
-                      const timing = getVideoTiming(currentFeaturedImage);
-                      if (timing.startTime > 0) e.currentTarget.currentTime = timing.startTime;
-                    }}
-                    onTimeUpdate={(e) => {
-                      const timing = getVideoTiming(currentFeaturedImage);
-                      if (timing.endTime && e.currentTarget.currentTime >= timing.endTime) {
-                        e.currentTarget.currentTime = timing.startTime || 0;
-                        e.currentTarget.play().catch(() => {});
-                      }
-                    }}
-                    className={`w-full h-full transition-all duration-700 animate-fadeIn ${
-                      imageFitMode === "contain" ? "object-contain bg-black" : "object-cover"
-                    }`}
-                  />
-                ) : (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    key={currentFeaturedImage.id}
-                    src={currentFeaturedImage.filePath}
-                    alt={currentFeaturedImage.caption || currentFeaturedImage.prompt}
-                    className={`w-full h-full transition-all duration-700 group-hover:scale-102 animate-fadeIn ${
-                      imageFitMode === "contain" ? "object-contain bg-black" : "object-cover"
-                    }`}
-                  />
-                )}
-
-                {/* Gradient overlay for readability */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
-
+          <div className="editor-visual-heading"><div><h2>ภาพประกอบฉาก</h2><p>ภาพจะเปลี่ยนตามบทที่เลือก</p></div><button className="editor-secondary" onClick={() => imageFileInputRef.current?.click()} disabled={isUploadingImage}><Upload size={16} /> {isUploadingImage ? "กำลังอัปโหลด…" : "เพิ่มภาพ / วิดีโอ"}</button></div>
+          {currentFeaturedImage && <details className="editor-disclosure editor-image-settings"><summary><SlidersHorizontal size={15} /> ปรับภาพและสร้างด้วย AI</summary>
                 {/* Top Floating Controls */}
-                <div className="absolute top-3.5 left-3.5 flex items-center gap-2 flex-wrap max-w-[85%]">
+                <div className="editor-image-actions flex items-center gap-2 flex-wrap">
                   <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/95 text-slate-950 font-thai flex items-center gap-1.5 backdrop-blur-md shadow">
                     {isVideoMedia(currentFeaturedImage) ? (
                       <Video className="w-3.5 h-3.5" />
@@ -4071,10 +4039,10 @@ export default function StoryWorkspacePage({
                     )}
                     <span>
                       {isVideoMedia(currentFeaturedImage)
-                        ? "🎬 VIDEO CLIP"
+                        ? "วิดีโอ"
                         : currentFeaturedImage.kind === "movie_still"
-                        ? "CANON MOVIE STILL"
-                        : "CINEMATIC SCENE"}
+                        ? "ภาพจากต้นฉบับ"
+                        : "ภาพประกอบ"}
                     </span>
                   </span>
 
@@ -4168,9 +4136,52 @@ export default function StoryWorkspacePage({
                     className="px-2.5 py-1 rounded-full text-xs font-bold bg-black/80 hover:bg-black text-amber-300 font-thai flex items-center gap-1.5 backdrop-blur-md border border-amber-500/30 shadow transition-all active:scale-95"
                   >
                     <Sparkles className="w-3 h-3 text-amber-400" />
-                    <span>สร้างด้วย AI (Gemini)</span>
+                    <span>สร้างภาพด้วย AI</span>
                   </button>
                 </div>
+
+          </details>}
+          {/* Main Cinematic Image Display (Strict 16:9 Aspect Ratio) */}
+          <div className="editor-image-frame relative w-full aspect-video rounded-[13px] overflow-hidden bg-black/95 group border border-slate-800 shadow-2xl mb-3 flex items-center justify-center flex-shrink-0">
+            {currentFeaturedImage ? (
+              <>
+                {isVideoMedia(currentFeaturedImage) ? (
+                  <video
+                    key={currentFeaturedImage.id}
+                    src={currentFeaturedImage.filePath}
+                    autoPlay
+                    loop
+                    muted={isVideoMuted}
+                    playsInline
+                    onLoadedMetadata={(e) => {
+                      const timing = getVideoTiming(currentFeaturedImage);
+                      if (timing.startTime > 0) e.currentTarget.currentTime = timing.startTime;
+                    }}
+                    onTimeUpdate={(e) => {
+                      const timing = getVideoTiming(currentFeaturedImage);
+                      if (timing.endTime && e.currentTarget.currentTime >= timing.endTime) {
+                        e.currentTarget.currentTime = timing.startTime || 0;
+                        e.currentTarget.play().catch(() => {});
+                      }
+                    }}
+                    className={`w-full h-full transition-all duration-700 animate-fadeIn ${
+                      imageFitMode === "contain" ? "object-contain bg-black" : "object-cover"
+                    }`}
+                  />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    key={currentFeaturedImage.id}
+                    src={currentFeaturedImage.filePath}
+                    alt={currentFeaturedImage.caption || currentFeaturedImage.prompt}
+                    className={`w-full h-full transition-all duration-700 group-hover:scale-102 animate-fadeIn ${
+                      imageFitMode === "contain" ? "object-contain bg-black" : "object-cover"
+                    }`}
+                  />
+                )}
+
+                {/* Gradient overlay for readability */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
 
                 {/* Top Right Controls: Mute toggle & Zoom Lightbox */}
                 <div className="absolute top-3.5 right-3.5 flex items-center gap-2">
@@ -4390,6 +4401,7 @@ export default function StoryWorkspacePage({
             )}
           </div>
 
+          <details className="editor-disclosure editor-caption"><summary>คำบรรยายภาพ</summary>
           {/* Atmospheric sensory caption underneath the image (Matching Image 2) */}
           <div className="flex-shrink-0 p-3 pt-3 border-t border-slate-700/50 space-y-1">
             <div className="flex items-center justify-between text-[11px] font-thai text-amber-400 font-bold">
@@ -4408,17 +4420,18 @@ export default function StoryWorkspacePage({
               {leftCardCaption}
             </p>
           </div>
+          </details>
         </div>
 
         {/* ----------------------------------------------------------------------- */}
         {/* RIGHT COLUMN: Dialogue Card (Figma width: 596px, 1/3, Editable Beats)     */}
         {/* ----------------------------------------------------------------------- */}
-        <div className="lg:col-span-5 xl:col-span-4 flex flex-col justify-between rounded-[16px] p-5 sm:p-6 bg-[#313131] border border-slate-700/60 shadow-2xl h-[780px] sm:h-[840px] lg:h-[880px] xl:h-[920px] space-y-3">
+        <div className="editor-manuscript lg:col-span-5 xl:col-span-5 flex flex-col justify-between rounded-[16px] p-5 sm:p-6 bg-card border border-slate-700/60 shadow-2xl h-[780px] sm:h-[840px] lg:h-[880px] xl:h-[920px] space-y-3">
           {/* Header: Part subtitle & Clean Scene Title (Editable!) */}
           <div className="flex-shrink-0 space-y-2 border-b border-slate-700/50 pb-3">
             {currentPart && (
               <div className="text-[11px] font-mono font-bold text-[#FBBF24] tracking-wider uppercase">
-                PART {currentPart.number}: {currentPart.title}
+                ภาค {currentPart.number} · {currentPart.title}
               </div>
             )}
 
@@ -4479,7 +4492,7 @@ export default function StoryWorkspacePage({
               <button
                 type="button"
                 onClick={() => setShowAudioModal(true)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-thai font-bold transition-all active:scale-95 flex-shrink-0 shadow-sm ${
+                className={`editor-scene-music inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-thai font-bold transition-all active:scale-95 flex-shrink-0 shadow-sm ${
                   activeScene?.bgmUrl
                     ? "bg-purple-950/40 hover:bg-purple-900/60 text-purple-300 border-purple-500/50 hover:border-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.2)]"
                     : "bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-purple-300 border-slate-700/80 hover:border-purple-500/50"
@@ -4546,9 +4559,10 @@ export default function StoryWorkspacePage({
                   title="วางบทสคริปต์จาก Claude เพื่อจัดบทและตัวละครอัตโนมัติ"
                 >
                   <PenTool className="w-3 h-3 text-sky-400" />
-                  <span>วางบท Claude</span>
+                  <span>นำเข้าบท</span>
                 </button>
 
+                <details className="editor-extra-tools editor-disclosure"><summary>เพิ่มเติม <ChevronDown size={14} /></summary><div className="editor-extra-actions">
                 <button
                   onClick={handleAutoDistributeImages}
                   disabled={sceneImages.length === 0 || dialogueBlocks.length === 0}
@@ -4556,7 +4570,7 @@ export default function StoryWorkspacePage({
                   title="กระจายภาพทั้งหมดในฉากนี้ตามบทพูดโดยอัตโนมัติ"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                </button>
+                <span>จัดภาพตามบท</span></button>
 
                 <button
                   onClick={() => setIsRawMarkdownMode(!isRawMarkdownMode)}
@@ -4568,7 +4582,7 @@ export default function StoryWorkspacePage({
                   title={isRawMarkdownMode ? "สลับเป็นโหมดจัดบทพูด (Visual Mode)" : "สลับเป็นโหมด Markdown ดิบ"}
                 >
                   <Edit3 className="w-3.5 h-3.5" />
-                </button>
+                <span>{isRawMarkdownMode ? "กลับไปจัดบทพูด" : "แก้ไขข้อความรวม"}</span></button>
 
                 <button
                   disabled={isAnalyzing}
@@ -4577,7 +4591,7 @@ export default function StoryWorkspacePage({
                   title="ตรวจ Continuity & Moments"
                 >
                   <Shield className="w-3.5 h-3.5 text-amber-400" />
-                </button>
+                <span>ตรวจความต่อเนื่อง</span></button>
 
                 <div className="w-px h-4 bg-slate-800 mx-0.5" />
 
@@ -4588,13 +4602,15 @@ export default function StoryWorkspacePage({
                   title="ล้างบทสนทนาทั้งหมดในฉากนี้ (Clear All)"
                 >
                   <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                </button>
+                <span>ล้างบททั้งหมด</span></button>
+                </div></details>
               </div>
             </div>
           </div>
 
           {/* Interactive Studio Reader Stepper Bar (Adjusted dimensions & proportions) */}
           {dialogueBlocks.length > 0 && !isRawMarkdownMode && !isStreaming && (
+            <details className="editor-disclosure editor-audition"><summary><Play size={15} /> ทดลองอ่านตามบท <span>{activeBlockIndex + 1} / {dialogueBlocks.length}</span></summary>
             <div className="flex-shrink-0 rounded-xl bg-slate-950/95 border border-slate-700/80 p-2.5 sm:px-3.5 text-xs font-thai shadow-xl mb-2.5 space-y-2">
               {/* Row 1: Status & Active sentence information */}
               <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -4667,15 +4683,17 @@ export default function StoryWorkspacePage({
                 </Link>
               </div>
             </div>
+            </details>
           )}
 
+          <div className="editor-line-mode"><span>{dialogueBlocks.length} บท · คลิกข้อความเพื่อแก้ไข</span><button className="editor-secondary" aria-pressed={showLineTools} onClick={() => {setShowLineTools(!showLineTools); setActiveMediaPicker(null); setActiveSpeakerDropdownIdx(null);}}><SlidersHorizontal size={15} /> {showLineTools ? "ซ่อนเครื่องมือรายบท" : "ภาพ เสียง และจัดลำดับ"}</button></div>
           {/* Inner Dialogue Container (#2D2D2D, rounded-[18px]) - FULLY INTERACTIVE & EDITABLE */}
           <div
             ref={dialogueContainerRef}
             onScroll={(e) => {
               dialogueScrollPosRef.current = e.currentTarget.scrollTop;
             }}
-            className="relative flex-1 min-h-0 rounded-[18px] bg-[#2D2D2D] p-4 sm:p-5 border border-slate-700/40 overflow-y-auto dialogue-scroll space-y-3 pr-2.5"
+            className="editor-prose relative flex-1 min-h-0 rounded-[18px] bg-background p-4 sm:p-5 border border-slate-700/40 overflow-y-auto dialogue-scroll space-y-3 pr-2.5"
           >
             {isStreaming ? (
               <div className="space-y-4 p-2">
@@ -4789,7 +4807,7 @@ export default function StoryWorkspacePage({
 
                       {/* Line Tools Bar on Hover / Active */}
                       <div
-                        className={`flex items-center justify-center gap-1.5 mt-1.5 transition-opacity flex-wrap ${
+                        className={`editor-sound-tools flex items-center justify-center gap-1.5 mt-1.5 transition-opacity flex-wrap ${
                           activeMediaPicker?.blockIdx === idx
                             ? "opacity-100"
                             : "opacity-0 group-hover:opacity-100"
@@ -4993,7 +5011,7 @@ export default function StoryWorkspacePage({
                     onDragOver={(e) => handleBlockDragOver(e, idx)}
                     onDragLeave={(e) => handleBlockDragLeave(e, idx)}
                     onDrop={(e) => handleBlockDrop(e, idx)}
-                    className={`group relative p-2.5 rounded-xl border transition-all ${
+                    className={`editor-dialogue-block group relative p-2.5 rounded-xl border transition-all ${
                       dragOverBlockIdx === idx
                         ? "bg-amber-500/25 border-amber-400 ring-4 ring-amber-400/50 border-dashed"
                         : isActive
@@ -5034,6 +5052,7 @@ export default function StoryWorkspacePage({
                           onClose={() => setActiveSpeakerDropdownIdx(null)}
                         />
 
+                        <div className="editor-line-media flex items-center gap-2 flex-wrap">
                         {/* Image / Video Binding Dropdown */}
                         <MediaBindingDropdown
                           assignedImageId={assignedImageId}
@@ -5089,10 +5108,11 @@ export default function StoryWorkspacePage({
                           }
                           onClose={() => setActiveMediaPicker(null)}
                         />
+                        </div>
                       </div>
 
                       {/* Right: Action Buttons Toolbar (In normal flow with flex-shrink-0 - NEVER overlapping!) */}
-                      <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-700/80 rounded-lg p-0.5 flex-shrink-0 shadow-sm opacity-90 group-hover:opacity-100 transition-opacity">
+                      <div className="editor-line-actions flex items-center gap-0.5 bg-slate-900 border border-slate-700/80 rounded-lg p-0.5 flex-shrink-0 shadow-sm opacity-90 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => handleToggleBlockSide(idx)}
                           className={`px-2 py-0.5 rounded text-[10px] font-thai font-semibold transition-colors ${
@@ -5145,7 +5165,7 @@ export default function StoryWorkspacePage({
 
                     {/* Dialogue Row Body: Avatar + Speech Textarea */}
                     <div
-                      className={`flex items-start gap-3 ${
+                      className={`editor-line-body flex items-start gap-3 ${
                         block.side === "right" ? "flex-row-reverse" : "flex-row"
                       }`}
                     >
@@ -5154,7 +5174,8 @@ export default function StoryWorkspacePage({
                       <div className={`flex-1 space-y-1 ${block.side === "right" ? "text-right" : "text-left"}`}>
                         {/* Editable Speech Text */}
                         <textarea
-                          rows={2}
+                          rows={3}
+                          aria-label={`บทที่ ${idx + 1} ${displayName}`}
                           value={block.text}
                           onChange={(e) => handleUpdateBlockText(idx, e.target.value)}
                           className={`w-full bg-slate-950/40 p-2 rounded-xl font-thai text-sm leading-relaxed text-[#E2E8F0] border border-slate-800/80 focus:bg-slate-950 focus:border focus:border-amber-400/60 focus:outline-none resize-none transition-all shadow-inner ${
@@ -5165,7 +5186,7 @@ export default function StoryWorkspacePage({
                         {/* Assigned Miniature Preview Tags (Image/Video & Audio Mood) */}
                         {((assignedImage || assignedImageId) || assignedAudioValue) && (
                           <div
-                            className={`flex items-center gap-2 pt-0.5 flex-wrap ${
+                            className={`editor-line-bindings flex items-center gap-2 pt-0.5 flex-wrap ${
                               block.side === "right" ? "justify-end" : "justify-start"
                             }`}
                           >
@@ -5259,14 +5280,14 @@ export default function StoryWorkspacePage({
             <div className="flex flex-wrap items-center gap-1.5">
               <button
                 onClick={() => handleAddBlock("self")}
-                className="flex-1 min-w-[100px] inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-thai font-bold transition-all shadow-sm active:scale-95"
+                className="editor-quick-special flex-1 min-w-[100px] inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-thai font-bold transition-all shadow-sm active:scale-95"
               >
                 <Plus className="w-3 h-3" />
                 <span>+ บทพูดฉัน</span>
               </button>
               <button
                 onClick={() => handleAddBlock("friend")}
-                className="flex-1 min-w-[100px] inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-[11px] font-thai font-bold transition-all shadow-sm active:scale-95"
+                className="editor-quick-special flex-1 min-w-[100px] inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-[11px] font-thai font-bold transition-all shadow-sm active:scale-95"
               >
                 <Plus className="w-3 h-3" />
                 <span>+ บทพูดเพื่อน</span>
@@ -5294,7 +5315,7 @@ export default function StoryWorkspacePage({
                   className="w-full h-full min-h-[30px] inline-flex items-center justify-center px-2 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-[11px] font-thai font-bold transition-all shadow-sm cursor-pointer outline-none"
                   title="เพิ่มบทพูดสำหรับตัวละครใดก็ได้"
                 >
-                  <option value="" className="bg-slate-900">+ บทตัวละครอื่น ▾</option>
+                  <option value="" className="bg-slate-900">เพิ่มบทพูดของตัวละคร…</option>
                   {characters.map((c) => (
                     <option key={c.id} value={c.id} className="bg-slate-900">
                       + บท: {c.name} {c.realNickname ? `(${c.realNickname})` : ""}
@@ -5314,48 +5335,14 @@ export default function StoryWorkspacePage({
               </button>
               <button
                 onClick={() => handleAddBlock("sound")}
-                className="flex-1 min-w-[90px] inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-thai font-bold transition-all shadow-sm active:scale-95"
+                className="editor-quick-special flex-1 min-w-[90px] inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-thai font-bold transition-all shadow-sm active:scale-95"
               >
                 <Plus className="w-3 h-3" />
                 <span>+ เสียงประกอบ</span>
               </button>
             </div>
 
-            {/* Bottom Actions Row */}
-            <div className="flex items-center justify-between gap-3 pt-1">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleSaveAll(false)}
-                  disabled={isSavingScene}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all active:scale-95"
-                >
-                  {isSavingScene ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Check className="w-3.5 h-3.5 stroke-[3]" />
-                  )}
-                  <span>{isSavingScene ? "กำลังบันทึก..." : "บันทึกการแก้ไขทั้งหมด"}</span>
-                </button>
 
-                {(dialogueBlocks.length > 0 || editableMarkdown.trim().length > 0) && (
-                  <button
-                    onClick={handleClearAllDialogue}
-                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-red-950/20 hover:bg-red-950/50 text-red-400 hover:text-red-300 border border-red-900/40 hover:border-red-700/60 text-xs font-thai font-semibold transition-all active:scale-95 shadow-sm"
-                    title="ล้างบทสนทนาทั้งหมดในฉากนี้"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                    <span>ล้างบททั้งหมด</span>
-                  </button>
-                )}
-              </div>
-
-              <Link
-                href={`/projects/${projectId}/read${activeScene ? `?sceneId=${activeScene.id}` : ""}`}
-                className="inline-flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 font-thai font-bold underline"
-              >
-                <span>เปิดอ่านใน Reader →</span>
-              </Link>
-            </div>
           </div>
         </div>
       </div>

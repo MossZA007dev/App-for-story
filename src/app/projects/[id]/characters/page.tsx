@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, use } from "react";
+import Link from "next/link";
 import { ProjectHeader } from "@/components/projects/ProjectHeader";
 import {
   Users,
@@ -294,12 +295,16 @@ export default function CharacterBiblePage({
         />
       )}
 
+      <div className="world-context">
+        <div><h2>ตัวละครในเรื่องนี้</h2><p>{project?.universe} · บทบาทและพัฒนาการเป็นข้อมูลเฉพาะเรื่องนี้</p></div>
+        <Link className="workspace-text-link" href={`/characters?project=${projectId}`}>ดูในคลังตัวละครและจักรวาล →</Link>
+      </div>
       {/* Top action bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="font-heading text-xl font-bold text-white flex items-center gap-2">
             <Users className="w-5 h-5 text-amber-400" />
-            <span>CHARACTER BIBLE</span>
+            <span>บทบาทและพัฒนาการ</span>
             <span className="text-sm font-normal text-slate-400 font-thai">
               ({characters.length} ตัวละคร)
             </span>

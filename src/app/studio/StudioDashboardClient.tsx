@@ -27,6 +27,7 @@ export default function StudioDashboardClient({
   const [projects, setProjects] = useState<SagaProjectItem[]>(initialProjects);
   const [loading, setLoading] = useState(initialProjects.length === 0);
   const [searchQuery, setSearchQuery] = useState("");
+  const [universeFilter, setUniverseFilter] = useState("");
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -64,7 +65,7 @@ export default function StudioDashboardClient({
       clearTimeout(timer);
       if (!res.ok) throw new Error("โหลดข้อมูลไม่สำเร็จ");
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         setProjects(data);
         try {
           localStorage.setItem("saga_cached_projects_list", JSON.stringify(data));
@@ -105,14 +106,14 @@ export default function StudioDashboardClient({
   };
 
   const filteredProjects = projects.filter(
-    (p) =>
+    (p) => (!universeFilter || p.universe === universeFilter) && (
       p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.universe.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.theme && p.theme.toLowerCase().includes(searchQuery.toLowerCase()))
+      (p.theme && p.theme.toLowerCase().includes(searchQuery.toLowerCase())))
   );
 
   return (
-    <div className="w-full min-h-[calc(100vh-64px)] bg-[#070A11] text-slate-100 flex flex-col justify-start pb-20">
+    <div className="w-full min-h-[calc(100vh-64px)] bg-background text-slate-100 flex flex-col justify-start pb-20">
       <div className="max-w-[1720px] mx-auto w-full px-4 sm:px-8 py-6 space-y-8">
         {/* Studio Top Banner & Quick Controls */}
         <div className="cinematic-card rounded-2xl p-6 sm:p-8 border border-slate-800 bg-gradient-to-r from-slate-900 via-slate-900/90 to-amber-950/40 shadow-2xl relative overflow-hidden">
@@ -122,15 +123,15 @@ export default function StudioDashboardClient({
             <div className="space-y-2 max-w-2xl">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
                 <PenTool className="w-3.5 h-3.5" />
-                <span>Story Editing & Visual Studio Workspace</span>
+                <span>ทุกเรื่องราว ในทุกจักรวาล</span>
               </div>
 
               <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-white">
-                STUDIO แดชบอร์ดเนื้อเรื่อง (EDIT & ASSETS)
+                ห้องเขียนของคุณและเพื่อน
               </h1>
 
               <p className="text-slate-300 font-thai text-xs sm:text-sm leading-relaxed">
-                ศูนย์กลางสำหรับแก้ไขเนื้อหา สตรีมมิ่งฉากใหม่ด้วย Claude ใส่รูปภาพ AI
+                ศูนย์กลางสำหรับแก้ไขเนื้อหา เขียนฉากใหม่ด้วย AI ใส่รูปภาพ AI
                 จับคู่ภาพจริงจากหนัง และจัดการตัวละครในกลุ่มเพื่อนของคุณ
               </p>
             </div>
@@ -145,7 +146,7 @@ export default function StudioDashboardClient({
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai transition-all shadow-md hover:scale-[1.02]"
               >
                 <User className="w-4 h-4" />
-                <span>👑 สร้างตัวละครของคุณ (ตัวฉันเอง)</span>
+                <span>เพิ่มตัวฉันเองในเรื่อง</span>
               </button>
 
               <button
@@ -156,7 +157,7 @@ export default function StudioDashboardClient({
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs font-thai transition-all shadow-md hover:scale-[1.02]"
               >
                 <Users className="w-4 h-4" />
-                <span>🧑‍🤝‍🧑 สร้างกลุ่มเพื่อนของคุณ (Squad)</span>
+                <span>เพิ่มเพื่อนในเรื่อง</span>
               </button>
 
               <Link
@@ -177,7 +178,7 @@ export default function StudioDashboardClient({
               className="text-white font-bold tracking-[0.5px] uppercase font-heading text-xl"
               style={{ fontFamily: "Cinzel, serif" }}
             >
-              STORIES READY FOR EDITING
+              เลือกเรื่องที่จะแต่งต่อ
             </h2>
             <span className="text-[#94A3B8] font-normal text-sm font-thai">
               ({projects.length} เรื่อง)
@@ -188,7 +189,7 @@ export default function StudioDashboardClient({
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="ค้นหาเรื่องที่จะ Edit..."
+              placeholder="ค้นหาชื่อเรื่องหรือจักรวาล…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 w-64 font-thai"
@@ -196,6 +197,14 @@ export default function StudioDashboardClient({
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="text-sm text-slate-400">จักรวาล
+            <select aria-label="กรองเรื่องตามจักรวาล" className="studio-universe ml-3" value={universeFilter} onChange={e => setUniverseFilter(e.target.value)}>
+              <option value="">ทุกจักรวาล</option>{Array.from(new Set(projects.map(p => p.universe))).map(u => <option key={u}>{u}</option>)}
+            </select>
+          </label>
+          <Link href="/characters" className="workspace-text-link">จัดตัวละครข้ามเรื่องและจักรวาล</Link>
+        </div>
         {/* Loading Spinner */}
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -228,7 +237,7 @@ export default function StudioDashboardClient({
               return (
                 <div
                   key={project.id}
-                  className="cinematic-card rounded-2xl p-5 border border-slate-800 hover:border-amber-500/40 transition-all flex flex-col justify-between space-y-5 bg-[#0f1219] group"
+                  className="cinematic-card rounded-2xl p-5 border border-slate-800 hover:border-amber-500/40 transition-all flex flex-col justify-between space-y-5 bg-card group"
                 >
                   <div className="space-y-4">
                     {/* Top Row: Universe + Trash */}
@@ -257,13 +266,13 @@ export default function StudioDashboardClient({
                     <div className="flex gap-4 items-start">
                       <div className="w-20 h-28 rounded-xl overflow-hidden bg-slate-950 flex-shrink-0 border border-slate-800">
                         <img
-                          src={project.coverImage || "/images/saga-got-cover.jpg"}
+                          src={project.coverImage || "/images/story-placeholder.svg"}
                           alt={project.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                           onError={(e) => {
                             const target = e.currentTarget;
-                            if (!target.src.includes("saga-got-cover.jpg")) {
-                              target.src = "/images/saga-got-cover.jpg";
+                            if (!target.src.includes("story-placeholder.svg")) {
+                              target.src = "/images/story-placeholder.svg";
                             }
                           }}
                         />

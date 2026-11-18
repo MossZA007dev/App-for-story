@@ -9,6 +9,8 @@ export async function GET(
   try {
     const { filename } = await params;
     const decodedFilename = decodeURIComponent(filename);
+    const extension = path.extname(decodedFilename).toLowerCase();
+    if (decodedFilename !== path.basename(decodedFilename) || ![".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".webm"].includes(extension)) return new NextResponse("Audio not found", { status: 404 });
     const buffer = await audioStorage.getAudio(decodedFilename);
 
     if (!buffer) {

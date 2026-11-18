@@ -103,3 +103,60 @@ API: `POST /api/projects/import/preview` (`text`, `useAI`) และ `POST /api/
 การแยกเนื้อหารักษาข้อความแต่ละฉากจากต้นฉบับโดยตรง แม้ใช้ AI ช่วยแยกข้อมูลประกอบ ตารางบุคลิกสิ้นปีไม่ทับบุคลิกเริ่มต้น สถานที่แยกเป็นข้อมูลฉาก บันทึกสิ้นปีเก็บในบันทึกภาค (เปิดแก้ไขภาคเพื่ออ่าน/แก้ได้) และภาคถัดไปที่ยังเป็นแผนจะมีสถานะ planned โดยไม่สร้างฉากสมมติ ผู้พูดเพิ่มเติมจะปรากฏในตัวอย่างให้ตรวจประเภทก่อนสร้าง
 
 ชุดทดสอบ `scripts/fixtures/price-of-power.md` ตรวจครบ 8 ฉากแบบเทียบข้อความทุกตัวอักษร รวมการเก็บบันทึกและโครงปีถัดไปในฐานข้อมูลชั่วคราว
+
+## Read aloud
+
+The reader includes device speech with play, pause/resume, stop, voice selection and 0.75-1.5x speed. It starts from the selected paragraph, highlights each paragraph and ends at the end of the current scene. Sound-effect blocks are skipped. Changing scenes, leaving the page or editing the source stops speech. Resume restarts the current short chunk and may repeat a few words.
+
+Music is reduced to 20% of its previous level while speaking and restored on pause/end. No AI API key is needed. Thai voice availability and quality depend on the device; some OS/browser voices require internet. Install a Thai system voice if none is available.
+
+Run speech lifecycle tests with Node 22: `node scripts/test-read-aloud.cjs`.
+
+## ElevenLabs preview and cached narration
+
+In Settings, save an ElevenLabs API key (Text to Speech, Voices, Models and User permissions), or set `ELEVENLABS_API_KEY`. The saved key lives in `data/audio/.private/elevenlabs.json` with mode 0600, under the ignored audio folder. It is not returned to the browser or served by the audio endpoint. Back up that private file separately if needed.
+
+In the reader, select ElevenLabs and expand the narration panel. Choose a stock voice, edit a short sample (up to 300 characters), then prepare the plan to see quota and missing segments. Confirm generation separately. Switch to whole-scene mode after listening to a sample. Existing segments are reused by a hash of text, voice and model; editing one paragraph invalidates only its audio. Reopen the plan after refresh to recover cached audio.
+
+Generation supports the Free and Starter subscription tiers and available stock voices. The backend checks current quota before each missing segment; it does not enable overage, upgrade subscriptions or buy credits. API errors or interruption preserve previously generated files; retries reuse these files. Requests already accepted by the provider may consume credits even if the browser closes or stops. Native audio controls provide pause, seek and playback rate; each clip highlights its source paragraph and ducks music during playback. Preview text has no paragraph mapping.
+
+Model: `eleven_v3` with Thai language code, MP3 44.1 kHz/128 kbps. Model availability, Thai support and the credit multiplier are checked against the provider models endpoint. API reference: https://elevenlabs.io/docs/api-reference/text-to-speech/convert and https://elevenlabs.io/docs/api-reference/user/subscription/get
+
+Test with Node 22: `node scripts/test-elevenlabs.cjs`. It uses a temporary database and mocked provider responses, never real API credentials or credits. Real voice quality and account eligibility require a configured account and a user-confirmed sample generation.
+
+## Scene voice casting and attachments
+
+The narration panel now defaults to whole-scene mode. The server identifies the narrator and actual dialogue speakers from the scene. Default male/female voices are selected using ElevenLabs gender labels; character genders come from stored character records. Unknown gender uses narrator voice until the author chooses a voice explicitly. Speaker overrides can select the default male, default female, narrator, or a specific stock voice. Narrator defaults to Brian when available, male dialogue to George, and female dialogue to Sarah.
+
+Generation plans include each segment's resolved voice. Hashes include voice, model and text, so recasting one speaker regenerates only that speaker's uncached segments. Complete scene generation automatically attaches the playlist to the scene. Existing cached playlists and short samples can also be attached explicitly. Attached audio, casting and source fingerprints live under `data/audio/.private/scenes/` and load automatically on reopening the scene. Nothing is stored in background-music bindings, preserving existing music and SFX. Partial generation never replaces the previous scene attachment.
+
+Source or character changes mark attached audio as an older version; it remains playable without highlighting the wrong paragraph. Replanning reuses unchanged audio. The source fingerprint is rechecked before generating or attaching, even when only character metadata changed. API: GET/POST `/api/projects/:id/scenes/:sceneId/narration`, actions `plan`, `generate`, `attach`.
+
+`node scripts/test-elevenlabs.cjs` also checks male/female/unknown casting, character overrides, automatic-ready attachment primitives, preview attachment, refresh restoration, per-speaker invalidation and source/character conflicts with a mocked provider.
+
+## OpenAI scene assistant
+
+Settings contains a separate OpenAI API key and model field (default `gpt-5.4-mini`). `OPENAI_API_KEY` and `OPENAI_STORY_MODEL` can also be configured server-side. Saved credentials are private, ignored files under `data/audio/.private/openai-story.json`, mode 0600, and are never returned to the browser. This key is independent of image-provider keys and a ChatGPT subscription.
+
+In the writing room, expand the OpenAI assistant. Analyze the current unsaved manuscript for dialogue voice, emotional pacing and continuity, or provide a direction and generate a full scene draft. The existing story-context assembler supplies universe, rules, characters, ledger and preceding scenes. OpenAI Responses API requests use `store:false`, bounded output tokens and no automatic retries. Analysis and generation are read-only: neither endpoint modifies the scene. The author reviews/edits the draft and explicitly applies it through the existing manuscript import flow. Changed manuscript/title/location blocks applying an outdated draft. Switching scenes aborts the UI request.
+
+Test with Node 22: `node scripts/test-openai-story.cjs`. Tests mock the SDK and use an isolated SQLite database; they cover private settings, ownership, unsaved source context, both actions, incomplete/refused output, sanitized errors and no scene writes. Live model access requires a configured OpenAI account and credits and was not exercised automatically.
+
+Official implementation reference: https://developers.openai.com/api/reference/resources/responses/methods/create
+
+## Manuscript Undo/Redo and recovery
+
+The manuscript toolbar supports Undo/Redo with Ctrl+Z or Cmd+Z, Ctrl+Shift+Z or Cmd+Shift+Z, and Ctrl+Y. It retains up to 60 local snapshots per active scene, coalesces short typing bursts and restores manuscript blocks, title/location, director notes and media bindings together. Undo restores are eligible for the existing autosave. Switching scenes or receiving a conflicting remote revision starts a new history boundary. Inputs in dialogs and AI prompts retain their native text undo. Reloading clears local undo; use the saved-version dialog for older persisted content.
+
+The history dialog previews saved versions before explicit restoration. Scene saves preserve the initial baseline as well as subsequent revisions. AI continuation now decodes SSE events, accepts text only, requires a completion marker, and rejects error or truncated responses without changing the manuscript. Continuations append to existing content; successful regeneration is one undoable action. Local edits or navigation while AI is running block applying the delayed response.
+
+Test with Node 22: `node scripts/test-editor-undo.cjs`. Coverage includes typing groups, redo branches, immutable/bounded snapshots, stream chunks and failure handling, first-version preservation and safe recovery using isolated SQLite and mocked AI.
+
+
+### One-click scene images with OpenAI
+
+In the writer, open “ปรับภาพและสร้างด้วย AI” → “สร้างภาพด้วย AI”. The new dialog uses the current manuscript, including unsaved edits, to analyze the scene and generate a cinematic image. No prompt is required; 16:9 is selected by default. Optional controls allow direction, aspect ratio, and manual character selection.
+
+The server uses the existing private OpenAI configuration for text analysis and `gpt-image-2` for images (`OPENAI_SCENE_IMAGE_MODEL` overrides the image model). Relevant local character photos are sent directly as references when enabled. Credentials remain server-side. Successful images are attached to the scene without replacing or reloading the manuscript. Failed analysis, provider errors, and duplicate requests do not create image records.
+
+Validation: `scripts/test-scene-image.cjs` uses mocked OpenAI responses and temporary storage; it does not spend API credits. The new dialog was checked in the browser. Live image generation has not been exercised as part of this change.

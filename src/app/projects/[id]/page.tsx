@@ -6,6 +6,8 @@ import { ProjectHeader } from "@/components/projects/ProjectHeader";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  Undo2,
+  Redo2,
   PenTool,
   Sparkles,
   RefreshCw,
@@ -55,9 +57,14 @@ import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
 import { extractYouTubeVideoId } from "@/lib/audio/audioHelpers";
 import { SceneAudioModal } from "@/components/audio/SceneAudioModal";
+import { OpenAISceneImageDialog } from "@/components/images/OpenAISceneImageDialog";
 import { ImageCropModal, AspectRatioType } from "@/components/images/ImageCropModal";
 import { VideoTrimModal } from "@/components/media/VideoTrimModal";
 import { CollaboratorModal } from "@/components/collaboration/CollaboratorModal";
+import { UndoTimeline } from "@/lib/story/undoTimeline";
+import { readStoryStream } from "@/lib/story/storyStream";
+import { SceneVersionHistory } from "@/components/story/SceneVersionHistory";
+import { OpenAISceneAssistant } from "@/components/story/OpenAISceneAssistant";
 import { ClaudeScriptImportModal } from "@/components/story/ClaudeScriptImportModal";
 import { CharacterAvatarModal, AvatarCharacterInfo } from "@/components/characters/CharacterAvatarModal";
 import { PartModal, PartModalData } from "@/components/parts/PartModal";
@@ -233,6 +240,56 @@ export default function StoryWorkspacePage({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSavingScene, setIsSavingScene] = useState(false);
 
+  const [isStreaming, setIsStreaming] = useState(false);
+  type ManuscriptSnapshot={blocks:DialogueBlock[];markdown:string;title:string;location:string;note:string;bindings:Record<string,string>};
+  const activeSceneIdRef=useRef(activeSceneId);activeSceneIdRef.current=activeSceneId;
+  const undoState=useRef<{sceneId:string;timeline:UndoTimeline<ManuscriptSnapshot>}|null>(null);
+  const skipUndoRecord=useRef(false);
+  const [undoAvailability,setUndoAvailability]=useState({undo:false,redo:false});
+  const manuscriptSnapshot:ManuscriptSnapshot={blocks:dialogueBlocks,markdown:isRawMarkdownMode ? editableMarkdown:blocksToMarkdown(dialogueBlocks),title:sceneTitleInput,location:sceneLocationInput,note:directorsNote,bindings:localDialogueBindings};
+  const latestManuscript=useRef(manuscriptSnapshot);latestManuscript.current=manuscriptSnapshot;
+  const manuscriptKey=JSON.stringify(manuscriptSnapshot);
+  const updateUndoAvailability=()=>setUndoAvailability({undo:undoState.current?.timeline.canUndo || false,redo:undoState.current?.timeline.canRedo || false});
+  useEffect(()=>{
+    if(!activeSceneId || activeScene?.id!==activeSceneId)return;
+    const snapshot=latestManuscript.current;
+    const equal=(a:ManuscriptSnapshot,b:ManuscriptSnapshot)=>JSON.stringify(a)===JSON.stringify(b);
+    if(!undoState.current || undoState.current.sceneId!==activeSceneId){undoState.current={sceneId:activeSceneId,timeline:new UndoTimeline(snapshot,equal)};skipUndoRecord.current=false;}
+    else if(skipUndoRecord.current)skipUndoRecord.current=false;
+    else if(hasUnsavedChanges){
+      const element=document.activeElement;
+      const typing=element instanceof HTMLTextAreaElement && !element.closest('.openai-scene-assistant');
+      undoState.current.timeline.record(snapshot,typing ? `typing:${Array.from(document.querySelectorAll('textarea')).indexOf(element as HTMLTextAreaElement)}:${dialogueBlocks.length}`:undefined);
+    }else if(!equal(snapshot,undoState.current.timeline.current)){
+      // A remote collaborator changed the scene: start a fresh local history boundary.
+      undoState.current={sceneId:activeSceneId,timeline:new UndoTimeline(snapshot,equal)};
+    }
+    updateUndoAvailability();
+  },[activeSceneId,activeScene?.id,manuscriptKey,hasUnsavedChanges]);
+  const restoreManuscript=(direction:'undo'|'redo')=>{
+    const state=undoState.current;
+    if(!state || state.sceneId!==activeSceneId || isStreaming || isSavingScene)return;
+    if(hasUnsavedChanges)state.timeline.record(latestManuscript.current);
+    const snapshot=direction==='undo' ? state.timeline.undo():state.timeline.redo();
+    if(!snapshot)return;
+    skipUndoRecord.current=true;latestManuscript.current=snapshot;
+    setDialogueBlocks(snapshot.blocks);setEditableMarkdown(snapshot.markdown);setSceneTitleInput(snapshot.title);setSceneLocationInput(snapshot.location);setDirectorsNote(snapshot.note);setLocalDialogueBindings(snapshot.bindings);setHasUnsavedChanges(true);
+    updateUndoAvailability();
+  };
+  useEffect(()=>{
+    const handleUndo=(event:KeyboardEvent)=>{
+      if(!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing)return;
+      const key=event.key.toLowerCase();if(key!=='z' && key!=='y')return;
+      const element=event.target instanceof Element ? event.target:null;
+      if(element?.closest('dialog,[role="dialog"],.openai-scene-assistant,input,select,[contenteditable="true"]'))return;
+      if(element?.closest('textarea') && !element.closest('.editor-manuscript'))return;
+      const direction=key==='y' || event.shiftKey ? 'redo':'undo';
+      if(isStreaming || isSavingScene){event.preventDefault();return;}
+      if(direction==='undo' ? undoAvailability.undo:undoAvailability.redo){event.preventDefault();restoreManuscript(direction);}
+    };
+    window.addEventListener('keydown',handleUndo);return()=>window.removeEventListener('keydown',handleUndo);
+  },[activeSceneId,isStreaming,isSavingScene,hasUnsavedChanges,undoAvailability]);
+
   // Images State
   const [sceneImages, setSceneImages] = useState<SceneImage[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number>(0);
@@ -301,7 +358,6 @@ export default function StoryWorkspacePage({
   }, [projectSfxList]);
 
   // Streaming State (Anthropic Claude)
-  const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
 
   // Modals
@@ -1876,85 +1932,7 @@ export default function StoryWorkspacePage({
   };
 
   // AI Image Generator
-  const handleOpenAiImageModal = () => {
-    const charsWithAvatar = characters.filter((c) => !!c.avatarUrl);
-    let presentNames: string[] = [];
-    try {
-      if (activeScene?.charactersPresent?.startsWith("[")) {
-        presentNames = JSON.parse(activeScene.charactersPresent);
-      } else if (activeScene?.charactersPresent) {
-        presentNames = activeScene.charactersPresent.split(",").map((s) => s.trim());
-      }
-    } catch {}
-
-    const defaultSelected = charsWithAvatar
-      .filter((c) =>
-        presentNames.length > 0
-          ? presentNames.includes(c.name) ||
-            (c.realNickname && presentNames.includes(c.realNickname)) ||
-            presentNames.includes(c.id)
-          : true
-      )
-      .map((c) => c.id);
-
-    setSelectedAvatarCharIds(
-      defaultSelected.length > 0 ? defaultSelected : charsWithAvatar.map((c) => c.id)
-    );
-    setUseAvatarReferences(true);
-
-    const charNamesStr = (defaultSelected.length > 0 ? defaultSelected : charsWithAvatar.map((c) => c.id))
-      .map((id) => characters.find((c) => c.id === id)?.realNickname || characters.find((c) => c.id === id)?.name)
-      .filter(Boolean)
-      .join(", ");
-
-    const initialPrompt = `${activeScene?.title || ""}${activeScene?.location ? `, ${activeScene.location}` : ""}${
-      charNamesStr ? `, มี ${charNamesStr} อยู่ในฉาก` : ""
-    }, cinematic lighting, photorealistic dramatic film still`;
-
-    setAiImagePromptInput(initialPrompt);
-    setShowAiImageModal(true);
-  };
-
-  const handleGenerateAiImage = async () => {
-    if (!aiImagePromptInput.trim()) {
-      toast.error("กรุณาระบุ Prompt คำอธิบายภาพ");
-      return;
-    }
-
-    try {
-      setIsGeneratingAiImage(true);
-      const res = await fetch(`/api/projects/${projectId}/images/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sceneId: activeSceneId,
-          prompt: aiImagePromptInput,
-          characterIds: useAvatarReferences ? selectedAvatarCharIds : [],
-          useAvatarReferences,
-          kind: "scene",
-          size: aiImageSize,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "สร้างภาพ AI ไม่สำเร็จ");
-
-      if (data.referencedCharacters && data.referencedCharacters.length > 0) {
-        toast.success(`✨ สร้างภาพ AI สำเร็จ! โดยวิเคราะห์และอิงใบหน้าของ: ${data.referencedCharacters.join(", ")}`);
-      } else {
-        toast.success("✨ สร้างภาพ AI สำเร็จและเพิ่มเข้าคลังภาพของฉากนี้แล้ว!");
-      }
-
-      setShowAiImageModal(false);
-      setAiImagePromptInput("");
-      if (activeSceneId) loadSceneDetails(activeSceneId, true, true);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "เกิดข้อผิดพลาดในการสร้างภาพ");
-    } finally {
-      setIsGeneratingAiImage(false);
-    }
-  };
+  const handleOpenAiImageModal = () => setShowAiImageModal(true);
 
   // 5. Dialogue Blocks Manipulation (Interactive Visual Novel Editor)
   const handleUpdateBlockText = (index: number, newText: string) => {
@@ -3007,11 +2985,12 @@ export default function StoryWorkspacePage({
 
   // 7. AI Story Streaming (Claude 3.5 Sonnet)
   const handleStartStream = async (actionType: "write_next" | "regenerate" = "write_next") => {
-    if (!activeScene) return;
+    if (!activeScene || isStreaming) return;
 
     try {
       setIsStreaming(true);
       setStreamingText("");
+      const generationSource=JSON.stringify(latestManuscript.current);
 
       const charsPresent = activeScene.charactersPresentParsed || [];
 
@@ -3024,32 +3003,25 @@ export default function StoryWorkspacePage({
           sceneTitle: sceneTitleInput || activeScene.title,
           location: sceneLocationInput || activeScene.location,
           charactersPresent: charsPresent,
-          directorNote: directorsNote,
+          directorsNote: directorsNote,
           existingContent: actionType === "write_next" ? blocksToMarkdown(dialogueBlocks) : "",
-          action: actionType,
+          actionType,
         }),
       });
 
       if (!res.ok) throw new Error("เริ่มการสร้างเนื้อเรื่องไม่สำเร็จ");
 
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-      let fullStory = "";
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          fullStory += chunk;
-          setStreamingText(fullStory);
-        }
-      }
+      if(!res.body || !res.headers.get('content-type')?.includes('text/event-stream'))throw new Error('AI ไม่ได้ส่งบทที่ถูกต้อง เนื้อหาเดิมยังอยู่');
+      const fullStory = await readStoryStream(res.body,setStreamingText);
+      if(JSON.stringify(latestManuscript.current)!==generationSource)throw new Error('บทเปลี่ยนระหว่างรอ AI จึงยังไม่แทนเนื้อหาเดิม');
+      if(activeSceneIdRef.current!==activeScene.id)throw new Error('เปลี่ยนฉากระหว่างสร้าง จึงไม่นำบทมาทับฉากปัจจุบัน');
 
       // Convert streamed story into editable dialogue blocks!
-      const parsedBlocks = parseSceneToDialogueBlocks(fullStory, characters);
+      const manuscript=actionType==='write_next' ? [latestManuscript.current.markdown,fullStory].filter(Boolean).join('\n\n'):fullStory;
+      const parsedBlocks = parseSceneToDialogueBlocks(manuscript, characters);
       setDialogueBlocks(parsedBlocks);
-      setEditableMarkdown(fullStory);
+      setEditableMarkdown(manuscript);
+      if(actionType==='regenerate')setLocalDialogueBindings({});
       setHasUnsavedChanges(true);
 
       toast.success("AI ประพันธ์เนื้อเรื่องเสร็จสิ้น! คุณสามารถแก้ไขบทพูดได้ทันที");
@@ -4230,7 +4202,7 @@ export default function StoryWorkspacePage({
                     className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 font-bold text-xs font-thai flex items-center gap-2 transition-all"
                   >
                     <Sparkles className="w-4 h-4" />
-                    <span>สั่งให้ AI วาดรูป (Gemini + อิงรูปโปรไฟล์)</span>
+                    <span>สร้างภาพฉากด้วย OpenAI</span>
                   </button>
                 </div>
               </div>
@@ -4515,6 +4487,15 @@ export default function StoryWorkspacePage({
                 </span>
               </button>
             </div>
+
+            <div className="editor-undo-toolbar" role="group" aria-label="เลิกทำและทำซ้ำ">
+              <button type="button" disabled={!undoAvailability.undo || isStreaming || isSavingScene} onClick={()=>restoreManuscript('undo')} title="เลิกทำ (Ctrl+Z / ⌘Z)"><Undo2 size={15}/>เลิกทำ</button>
+              <button type="button" disabled={!undoAvailability.redo || isStreaming || isSavingScene} onClick={()=>restoreManuscript('redo')} title="ทำซ้ำ (Ctrl+Shift+Z / ⌘Shift+Z / Ctrl+Y)"><Redo2 size={15}/>ทำซ้ำ</button>
+              <button type="button" disabled={!activeSceneId || isStreaming || isSavingScene} onClick={()=>setShowVersionModal(true)}><History size={15}/>ประวัติฉาก</button>
+            </div>
+            {showVersionModal && <SceneVersionHistory projectId={projectId} sceneId={activeSceneId} onClose={()=>setShowVersionModal(false)} onRestore={handleConvertAndApplyScript}/>}
+
+            <OpenAISceneAssistant key={activeSceneId} projectId={projectId} sceneId={activeSceneId} title={sceneTitleInput || activeScene?.title || "ฉากใหม่"} location={sceneLocationInput} content={isRawMarkdownMode ? editableMarkdown : blocksToMarkdown(dialogueBlocks)} onApply={handleConvertAndApplyScript} />
 
             {/* Location & AI Toolbar Row */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
@@ -5708,177 +5689,7 @@ export default function StoryWorkspacePage({
       {/* ========================================================================= */}
       {/* MODAL 1: AI Image Generator Modal (with Avatar Face References)           */}
       {/* ========================================================================= */}
-      {showAiImageModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-          <div className="cinematic-card w-full max-w-xl rounded-2xl p-6 border-slate-700 space-y-4 bg-slate-950 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-amber-400" />
-                <span>สั่ง AI สร้างภาพประจำฉาก (Gemini / Imagen 3)</span>
-              </h3>
-              <button
-                onClick={() => setShowAiImageModal(false)}
-                className="text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4 font-thai">
-              {/* Character Profile Avatars Reference Selector */}
-              <div className="p-3.5 rounded-xl border border-sky-900/60 bg-sky-950/20 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-bold text-sky-300">
-                    <Camera className="w-4 h-4 text-sky-400" />
-                    <span>ใช้อ้างอิงรูปโปรไฟล์ของเพื่อน (Face & Identity Reference)</span>
-                  </div>
-                  <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={useAvatarReferences}
-                      onChange={(e) => setUseAvatarReferences(e.target.checked)}
-                      className="accent-sky-400 rounded"
-                    />
-                    <span>เปิดใช้ภาพอ้างอิง</span>
-                  </label>
-                </div>
-
-                {useAvatarReferences && (
-                  <div>
-                    {characters.filter((c) => !!c.avatarUrl).length > 0 ? (
-                      <div className="space-y-2">
-                        <p className="text-[11px] text-slate-400">
-                          เลือกตัวละครที่ต้องการให้ Gemini ดึงรูปหน้าโปรไฟล์มาผสานเข้ากับตัวละครในฉากนี้:
-                        </p>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                          {characters
-                            .filter((c) => !!c.avatarUrl)
-                            .map((char) => {
-                              const isSelected = selectedAvatarCharIds.includes(char.id);
-                              return (
-                                <button
-                                  type="button"
-                                  key={char.id}
-                                  onClick={() => {
-                                    setSelectedAvatarCharIds((prev) =>
-                                      isSelected ? prev.filter((id) => id !== char.id) : [...prev, char.id]
-                                    );
-                                  }}
-                                  className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all ${
-                                    isSelected
-                                      ? "border-sky-400 bg-sky-500/20 text-white shadow-[0_0_10px_rgba(56,189,248,0.2)]"
-                                      : "border-slate-800 bg-slate-900/50 text-slate-400 hover:border-slate-700 opacity-60"
-                                  }`}
-                                >
-                                  <img
-                                    src={char.avatarUrl}
-                                    alt={char.name}
-                                    className="w-8 h-8 rounded-full object-cover border border-slate-600 flex-shrink-0"
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-xs font-bold truncate text-white">
-                                      {char.realNickname || char.name}
-                                    </p>
-                                    <p className="text-[10px] text-sky-300/80 truncate">
-                                      {char.chosenRole || "ตัวละคร"}
-                                    </p>
-                                  </div>
-                                  <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[10px] ${
-                                    isSelected ? "border-sky-400 bg-sky-400 text-slate-950 font-bold" : "border-slate-600"
-                                  }`}>
-                                    {isSelected ? "✓" : ""}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] text-slate-400 flex items-center gap-2">
-                        <Users className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                        <span>ยังไม่มีตัวละครที่มีรูปโปรไฟล์ (คุณสามารถเพิ่มรูปให้เพื่อนในแถบตัวละครเพื่อให้อ้างอิงหน้าได้)</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Prompt Textarea */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300">
-                  คำอธิบายภาพ (Prompt):
-                </label>
-                <textarea
-                  rows={4}
-                  value={aiImagePromptInput}
-                  onChange={(e) => setAiImagePromptInput(e.target.value)}
-                  placeholder="เช่น กองทัพบาราเธียนแตกพ่ายบนชายหาดแบล็กวอเตอร์ เปลวไฟสีเขียวสว่างวาบ..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-400"
-                />
-              </div>
-
-              {/* Image Size / Aspect Ratio Selection */}
-              <div className="flex items-center gap-3">
-                <label className="text-xs font-semibold text-slate-300">
-                  สัดส่วนภาพ:
-                </label>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setAiImageSize("1024x1024")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium border transition-all ${
-                      aiImageSize === "1024x1024"
-                        ? "border-amber-400 bg-amber-500/20 text-amber-300"
-                        : "border-slate-800 bg-slate-900 text-slate-400"
-                    }`}
-                  >
-                    1:1 (จัตุรัส)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAiImageSize("1792x1024")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium border transition-all ${
-                      aiImageSize === "1792x1024"
-                        ? "border-amber-400 bg-amber-500/20 text-amber-300"
-                        : "border-slate-800 bg-slate-900 text-slate-400"
-                    }`}
-                  >
-                    16:9 (แนวนอนหนัง)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAiImageSize("1024x1792")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium border transition-all ${
-                      aiImageSize === "1024x1792"
-                        ? "border-amber-400 bg-amber-500/20 text-amber-300"
-                        : "border-slate-800 bg-slate-900 text-slate-400"
-                    }`}
-                  >
-                    9:16 (แนวตั้ง)
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
-              <button
-                onClick={() => setShowAiImageModal(false)}
-                className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-thai"
-              >
-                ยกเลิก
-              </button>
-              <button
-                disabled={isGeneratingAiImage || !aiImagePromptInput.trim()}
-                onClick={handleGenerateAiImage}
-                className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai shadow transition-all disabled:opacity-50 flex items-center gap-1.5"
-              >
-                {isGeneratingAiImage ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                <span>{isGeneratingAiImage ? "กำลังวิเคราะห์และวาดภาพ..." : "สร้างภาพทันที"}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {showAiImageModal && <OpenAISceneImageDialog key={activeSceneId} projectId={projectId} sceneId={activeSceneId} title={sceneTitleInput || activeScene?.title || "ฉากปัจจุบัน"} location={sceneLocationInput} content={isRawMarkdownMode ? editableMarkdown:blocksToMarkdown(dialogueBlocks)} characters={characters} defaultCharacterIds={Array.from(new Set(dialogueBlocks.filter(block=>block.type==='dialogue' && block.speaker?.id && !block.isNarrator).map(block=>block.speaker!.id!)))} onClose={()=>setShowAiImageModal(false)} onCreated={(image,sourceSceneId)=>{if(activeSceneIdRef.current===sourceSceneId){setSceneImages(previous=>[image,...previous.filter(existing=>existing.id!==image.id)]);setSelectedImageIndex(0);}setShowAiImageModal(false);toast.success("สร้างภาพด้วย OpenAI และเพิ่มเข้าฉากแล้ว");}} />}
 
       {/* ========================================================================= */}
       {/* MODAL 1.8: Create New Episode Modal (New EP)                              */}

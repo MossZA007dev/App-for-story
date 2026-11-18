@@ -4,7 +4,7 @@
 Cinematic, image-led fiction. The first visible story uses an edge-to-edge landscape feature; subsequent covers are generous 16:9 images. Reader media occupies eight of twelve desktop columns and the available viewport height. Mobile stacks a large visual above readable prose. Text focus remains optional.
 
 ## Tokens
-Charcoal green background #0c100f, surface #141b18, raised #1c2622, line #303e37, text #edf2ee, secondary #a7b8ae, celadon accent #8ed8be. CSS custom properties are defined in globals.css; existing amber Tailwind utilities map to the celadon scale and slate utilities map to green-tinted neutrals for consistent controls across workspaces. Error and status colors remain semantic.
+Monochrome cinema: background #080808, surface #141414, raised #202020, line #333333, text #f5f5f5, secondary #aaaaaa, white accent #ffffff. CSS custom properties are defined in globals.css; existing amber Tailwind utilities map to the white/gray scale and slate utilities map to neutral grays for consistent controls across workspaces. Error and status colors remain semantic.
 
 ## Typography and behavior
 Sarabun for Thai UI/prose; Cinzel only for the brand. Display story titles 28–48px; reader text 16–26px. Media scrims protect text contrast. Shared two-row mobile navigation, visible focus, reduced motion and existing local APIs are retained. Reading font size persists. Cinematic focus uses its own preference key so images are visible by default on first use of this layout.
@@ -22,3 +22,25 @@ The shared create/edit dialog uses a fixed header and footer with a scrolling fo
 The new-story page offers manual and pasted-text modes. Paste mode preserves rendered HTML tables as Markdown, previews editable story metadata, cast and part/scene content, and creates through one transactional endpoint. Local extraction requires no key; AI extraction is a separate explicit action using the configured text provider. Missing title/universe must be supplied by the author. Character types are reviewed explicitly; future skill goals remain role notes. Original text is retained in world notes. No draft is persisted until the create action.
 
 Paste previews expose scene locations, character counts, source character counts per scene and editable per-part notes. Initial profiles are isolated from later change logs. Scene bodies are sliced from source even when AI enriches metadata, preventing model output limits from truncating prose. Future outlines create planned parts without fabricated scenes. Part notes remain accessible through the existing edit-part dialog after creation.
+
+## Read aloud
+A compact player stays available in standard, focus and fullscreen reader modes. Device speech reads short Thai-aware chunks, advances the existing paragraph highlight, supports voice/rate selection and pause/resume/stop. Sound-effect blocks are skipped. Generation tokens prevent cancelled utterances from advancing after seeking or changing scenes. Background music ducks while speaking and restores on pause/end; speech has independent audibility from music mute. No AI API key is needed, and Thai voice availability is surfaced explicitly.
+
+## ElevenLabs narration
+The reader offers device speech and an expandable ElevenLabs panel. A short editable sample is the default; whole-scene generation is explicit. Planning shows missing versus cached segments and estimated credits before a separate confirmation. Cached MP3 clips have native audio controls and preserve the existing paragraph highlight and music ducking. The empty state links directly to private API key setup. Missing keys, quota exhaustion and provider failures leave existing audio intact. The panel scrolls within desktop reader height constraints.
+
+## Scene voice panel
+Saved scene playback is shown before generation controls. Whole-scene and short-test modes are a two-option switch; casting lives in a single disclosure with three default voices and speaker rows. Gender comes only from stored character data, with a narrator fallback for unknown values and explicit per-person overrides. Credit review stays separate from generation confirmation. Complete scene audio is attached automatically and restored on refresh. A stale attachment is labelled and its paragraph highlighting disabled until refreshed. Desktop panel height is bounded so the cinematic reader remains usable; mobile controls stack.
+
+The cinematic library uses a large photographic feature, black scrims, generous white titles and white action buttons. Artwork and house heraldry retain their original color; interface chrome is black, white and gray. Status and error colors remain semantic.
+
+## OpenAI scene assistant
+A named disclosure in the manuscript panel separates analysis from full-scene generation. Authors enter direction and length, see analysis and edit a proposed draft before explicitly applying it. Missing-key states link to settings, unavailable actions are disabled, and stale drafts cannot overwrite newer manuscript metadata or content. This feature uses the monochrome form and action styles.
+
+## Undo and recovery
+Three compact controls above the manuscript expose Undo, Redo and saved scene history. Standard Mac/Windows shortcuts mirror the controls; undo availability is visible and disabled during saving/streaming. A native modal dialog provides a version selector, read-only preview and explicit restore action. AI errors never enter manuscript state.
+
+
+### Automatic scene-image dialog
+
+Scene images now use a compact monochrome OpenAI dialog. The default path requires only “สร้างภาพฉาก”; prompt writing and character selection are optional advanced controls. The server reads the current scene, selects relevant characters, prepares the image brief, and attaches the result without overwriting unsaved writing. The dialog shows progress, prevents duplicate submissions, and preserves the form after errors.

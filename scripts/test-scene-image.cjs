@@ -1,0 +1,33 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),Module=require('node:module'),crypto=require('node:crypto'),ts=require('typescript');
+const root=path.resolve(__dirname,'..'),resolve=Module._resolveFilename,load=Module._load;
+Module._resolveFilename=function(request,...args){return resolve.call(this,request.startsWith('@/')?path.join(root,'src',request.slice(2)):request,...args);};
+Module._extensions['.ts']=(mod,file)=>mod._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,file);
+let brief={prompt:'A cinematic view of a quiet library.',characterIds:[],summary:'A quiet library'},status='completed',analysisCalls=[],imageCalls=[],failure=0;
+class FakeOpenAI{constructor(options){assert.equal(options.maxRetries,0);this.responses={create:async body=>{analysisCalls.push(body);return {status,output_text:JSON.stringify(brief)};}};}}
+Module._load=function(request,...args){if(request==='openai')return FakeOpenAI;if(request==='@/lib/ai/gemini')throw new Error('Gemini must not be used in this workflow');return load.call(this,request,...args);};
+const original=process.cwd(),temp=fs.mkdtempSync(path.join(os.tmpdir(),'saga-scene-image-')),originalFetch=global.fetch;
+(async()=>{try{
+ process.chdir(temp);
+ const {saveOpenAIStorySettings}=require('../src/lib/ai/openaiStory.ts');await saveOpenAIStorySettings({apiKey:'test-not-real-secret',model:'test-text-model'});
+ const png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.from('mock-png')]);
+ const {storage}=require('../src/lib/storage/index.ts');const avatar=await storage.saveImage(png,'portrait.png');
+ global.fetch=async(url,init)=>{assert(String(url).startsWith('https://api.openai.com/v1/images/'));imageCalls.push({url:String(url),body:init.body});if(failure)return Response.json({error:'private provider detail'},{status:failure});return Response.json({data:[{b64_json:png.toString('base64')}]});};
+ const {createImportedStory}=require('../src/lib/story/createImportedStory.ts'),{db}=require('../src/lib/db/index.ts'),schema=require('../src/lib/db/schema.ts'),{eq}=require('drizzle-orm');
+ const projectId=crypto.randomUUID();createImportedStory({requestId:projectId,sourceText:'Original story',draft:{title:'Image test',universe:'Original',characters:[{name:'Moss',gender:'male'},{name:'Eve',gender:'female'}],parts:[{title:'Part',scenes:[{title:'Library',contentMarkdown:'Moss: A quiet moment.'}]}]}});
+ const part=db.select().from(schema.parts).where(eq(schema.parts.projectId,projectId)).get(),scene=db.select().from(schema.scenes).where(eq(schema.scenes.partId,part.id)).get();
+ const cast=db.select().from(schema.characters).where(eq(schema.characters.projectId,projectId)).all();for(const c of cast)db.update(schema.characters).set({avatarUrl:avatar.url}).where(eq(schema.characters.id,c.id)).run();
+ const moss=cast.find(c=>c.name==='Moss');brief.characterIds=[moss.id];
+ const route=require('../src/app/api/projects/[id]/scenes/[sceneId]/image/route.ts'),{NextRequest}=require('next/server');const params={params:Promise.resolve({id:projectId,sceneId:scene.id})};
+ const req=body=>new NextRequest('http://localhost/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ assert.equal((await route.POST(req({}),{params:Promise.resolve({id:'other',sceneId:scene.id})})).status,404);
+ assert.equal((await route.POST(req({content:''}),params)).status,400);assert.equal(imageCalls.length,0);
+ const result=await route.POST(req({content:'Moss: This is the current unsaved dialogue.',aspect:'16:9'}),params);assert.equal(result.status,200);const data=await result.json();assert.equal(data.image.provider,'openai');assert.deepEqual(data.referencedCharacters,['Moss']);assert.equal(analysisCalls.length,1);assert(analysisCalls[0].input.includes('current unsaved dialogue'));assert.equal(analysisCalls[0].store,false);
+ assert.equal(imageCalls[0].url,'https://api.openai.com/v1/images/edits');assert.equal(imageCalls[0].body.getAll('image[]').length,1,'Only the selected scene character photo is sent, not all cast');assert.equal(imageCalls[0].body.get('size'),'1536x864');assert.equal(imageCalls[0].body.get('model'),'gpt-image-2');
+ assert.deepEqual(db.select().from(schema.scenes).where(eq(schema.scenes.id,scene.id)).get(),scene,'Image generation must not change the manuscript');
+ brief.characterIds=[];const landscape=await route.POST(req({characterIds:[],useReferences:false,aspect:'9:16'}),params);assert.equal(landscape.status,200);assert(imageCalls.at(-1).url.endsWith('/generations'));assert.equal(JSON.parse(imageCalls.at(-1).body).size,'864x1536');
+ const count=db.select().from(schema.images).where(eq(schema.images.sceneId,scene.id)).all().length;status='incomplete';const before=imageCalls.length;assert.equal((await route.POST(req({}),params)).status,400);assert.equal(imageCalls.length,before);status='completed';
+ brief.characterIds=['unknown-character'];assert.equal((await route.POST(req({}),params)).status,400);assert.equal(imageCalls.length,before);brief.characterIds=[];
+ failure=403;const denied=await (await route.POST(req({useReferences:false}),params)).json();assert(!JSON.stringify(denied).includes('private provider detail'));assert.equal(db.select().from(schema.images).where(eq(schema.images.sceneId,scene.id)).all().length,count);failure=0;
+ const lockDir=path.join(temp,'data/audio/.private/image-locks');fs.mkdirSync(lockDir,{recursive:true});const lock=path.join(lockDir,crypto.createHash('sha256').update(scene.id).digest('hex')+'.lock');fs.writeFileSync(lock,'');assert.equal((await route.POST(req({}),params)).status,409);fs.unlinkSync(lock);
+ console.log('PASS: one-click OpenAI analysis and image generation, unsaved scene context, selected photo references, environment-only selection, true 16:9/9:16 sizes, image attachment without manuscript edits, cross-project protection, incomplete analysis, unavailable characters, sanitized provider failures and duplicate locks. No real API calls or credits.');
+}finally{global.fetch=originalFetch;Module._load=load;if(global.__sqlite_db){global.__sqlite_db.close();delete global.__sqlite_db;}process.chdir(original);fs.rmSync(temp,{recursive:true,force:true});}})().catch(error=>{console.error(error);process.exitCode=1;});

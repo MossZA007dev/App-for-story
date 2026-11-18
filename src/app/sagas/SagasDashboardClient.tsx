@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   BookOpen,
@@ -98,16 +98,16 @@ export default function SagasDashboardClient({ initialProjects = [] }: SagasDash
       </section>
       {loading && projects.length === 0 ? <div className="bookshelf" aria-label="กำลังโหลดนิยาย" aria-busy="true">{[1,2,3].map(i => <div key={i} className="h-96 bg-slate-900 rounded-xl animate-pulse" />)}</div> : filteredProjects.length === 0 ? (
         <div className="library-empty"><BookOpen size={36} className="mx-auto text-amber-300" /><h2>{projects.length ? "ไม่พบเรื่องที่ค้นหา" : "ชั้นหนังสือกำลังรอเรื่องแรก"}</h2><p>{projects.length ? "ลองเปลี่ยนคำค้นหรือเลือกจักรวาลอื่น" : "สร้างเรื่องใหม่ แล้วกลับมาอ่านได้ที่นี่"}</p>{projects.length ? <button onClick={() => {setSearchQuery(""); setSelectedUniverse("all");}} className="reader-primary">ล้างตัวกรอง</button> : <Link href="/projects/new" className="reader-primary">สร้างเรื่องแรก</Link>}</div>
-      ) : <div className="bookshelf">{filteredProjects.map((project, index) => (
-        <article key={project.id} className={`book-card ${index === 0 ? "book-featured" : ""}`}>
+      ) : <div className="bookshelf">{[filteredProjects.find(project => project.coverImage && !project.coverImage.includes("story-placeholder")) || filteredProjects[0], ...filteredProjects].map((project, index) => (
+        <Fragment key={`${project.id}-${index}`}>{index === 1 && <h2 className="library-row-heading">เรื่องราวทั้งหมด <span>{filteredProjects.length} เรื่องในคลัง</span></h2>}<article className={`book-card ${index === 0 ? "book-featured" : ""}`}>
           <Link href={`/projects/${project.id}/read`} className="book-cover" aria-label={`อ่าน ${project.title}`}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={project.coverImage || "/images/story-placeholder.svg"} alt="" loading={index === 0 ? "eager" : "lazy"} onError={e => { e.currentTarget.onerror = null; e.currentTarget.src = "/images/story-placeholder.svg"; }} />
             <span className="book-cover-action"><BookOpen size={17} /> เริ่มอ่าน</span>
           </Link>
-          <div className="book-details"><p className="book-universe">{index === 0 && <span className="featured-label">เปิดโลกเรื่องราว</span>}{project.universe}</p><Link href={`/projects/${project.id}/read`}><h2>{project.title}</h2></Link><p className="book-description">{project.theme || "ยังไม่มีคำโปรยสำหรับเรื่องนี้"}</p><p className="book-meta">{project.partCount || 0} ภาค <span>·</span> {project.sceneCount || 0} ฉาก</p>
+          <div className="book-details"><p className="book-universe">{index === 0 && <span className="featured-label">เรื่องเด่นในคลัง</span>}{project.universe}</p><Link href={`/projects/${project.id}/read`}><h2>{project.title}</h2></Link><p className="book-description">{project.theme || "ยังไม่มีคำโปรยสำหรับเรื่องนี้"}</p><p className="book-meta">{project.partCount || 0} ภาค <span>·</span> {project.sceneCount || 0} ฉาก</p>
           <div className="book-actions"><Link className="reader-primary" href={`/projects/${project.id}/read`}><BookOpen size={16} /> อ่านเรื่องนี้</Link><Link className="book-tool" href={`/projects/${project.id}`} aria-label={`เขียนต่อ ${project.title}`} title="เขียนต่อ"><PenTool size={17} /></Link><button className="book-tool" onClick={() => setSelectedCollabProject(project)} aria-label={`เชิญเพื่อนร่วมแต่ง ${project.title}`} title="เชิญเพื่อนร่วมแต่ง"><Users size={17} /></button></div></div>
-        </article>
+        </article></Fragment>
       ))}</div>}
       {selectedCollabProject && <CollaboratorModal isOpen onClose={() => setSelectedCollabProject(null)} projectId={selectedCollabProject.id} projectTitle={selectedCollabProject.title} universe={selectedCollabProject.universe} />}
     </div>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { scenes, sceneVersions, images } from "@/lib/db/schema";
-import { eq, desc, asc } from "drizzle-orm";
+import { and, eq, desc, asc } from "drizzle-orm";
 import crypto from "crypto";
 import { z } from "zod";
 
@@ -81,6 +81,9 @@ export async function PUT(
       validated.contentMarkdown !== undefined &&
       validated.contentMarkdown !== currentScene.contentMarkdown
     ) {
+      // Preserve the baseline too: the first edit must not discard the imported original.
+      const previousVersion=db.select().from(sceneVersions).where(and(eq(sceneVersions.sceneId,sceneId),eq(sceneVersions.versionNumber,currentScene.version || 1))).get();
+      if(!previousVersion)db.insert(sceneVersions).values({id:crypto.randomUUID(),sceneId,versionNumber:currentScene.version || 1,title:currentScene.title,contentMarkdown:currentScene.contentMarkdown || "",summary:currentScene.summary,directorNote:currentScene.directorNote,createdAt:currentScene.updatedAt}).run();
       newVersion = (currentScene.version || 1) + 1;
 
       db.insert(sceneVersions)

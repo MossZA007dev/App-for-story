@@ -1,4 +1,5 @@
 export interface CharacterMeta {
+  gender?: string | null;
   id?: string;
   name: string;
   characterType?: "self" | "friend" | "canon" | "narrator";

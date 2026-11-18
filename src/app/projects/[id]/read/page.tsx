@@ -43,6 +43,7 @@ import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
 import { extractYouTubeVideoId } from "@/lib/audio/audioHelpers";
 import { PartModal } from "@/components/parts/PartModal";
+import { NarrationPlayer } from "@/components/audio/NarrationPlayer";
 import { SceneAudioModal } from "@/components/audio/SceneAudioModal";
 import {
   parseSceneToDialogueBlocks,
@@ -174,6 +175,7 @@ export default function NovelReaderPage({
 
   const [project, setProject] = useState<any>(null);
   const [parts, setParts] = useState<PartItem[]>([]);
+  const [selectedPartId, setSelectedPartId] = useState("");
   const [characters, setCharacters] = useState<CharacterItem[]>([]);
   const [activeScene, setActiveScene] = useState<SceneItem | null>(null);
   const [allScenesList, setAllScenesList] = useState<FlatSceneEntry[]>([]);
@@ -182,6 +184,7 @@ export default function NovelReaderPage({
   const [activeDialogueIndex, setActiveDialogueIndex] = useState(0);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [narrationDucking, setNarrationDucking] = useState(false);
   const [readingSize, setReadingSize] = useState(19);
   const [focusReading, setFocusReading] = useState(false);
   useEffect(() => {
@@ -358,6 +361,7 @@ export default function NovelReaderPage({
   };
 
   const handleSelectSceneItem = (scene: SceneItem) => {
+    setSelectedPartId(scene.partId);
     setActiveScene(scene);
     setActiveDialogueIndex(0);
     loadSceneImages(scene.id);
@@ -1217,7 +1221,7 @@ export default function NovelReaderPage({
 
   const currentPart = activeScene
     ? parts.find((p) => p.id === activeScene.partId) || parts[0]
-    : parts[0] || null;
+    : parts.find((p) => p.id === selectedPartId) || parts[0] || null;
 
   const currentEpisode = activeScene
     ? (allScenesList.find((item) => item.scene.id === activeScene.id)?.episode ||
@@ -1231,6 +1235,32 @@ export default function NovelReaderPage({
   const scenesInCurrentEpisode = currentEpisode
     ? allScenesList.filter((item) => item.episode?.id === currentEpisode.id)
     : (currentPart ? allScenesList.filter((item) => item.part.id === currentPart.id) : allScenesList);
+
+  const handleSelectPart = (partId: string) => {
+    setSelectedPartId(partId);
+    setIsEpisodeDropdownOpen(false);
+    setIsSceneDropdownOpen(false);
+    setIsFullscreenSceneDropdownOpen(false);
+    const firstScene = allScenesList.find(item => item.part.id === partId);
+    if (firstScene) handleSelectSceneItem(firstScene.scene);
+    else {
+      setActiveScene(null);
+      setActiveSceneImages([]);
+      setSelectedImageIndex(0);
+      setActiveDialogueIndex(0);
+    }
+  };
+
+  const partSelector = <label className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900 border border-amber-500/40 text-xs font-bold text-amber-200 min-w-0 max-w-[180px] sm:max-w-[230px]">
+    <Layers className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+    <select aria-label="เลือกภาค / SS" value={currentPart?.id || ""} onChange={e=>handleSelectPart(e.target.value)} disabled={!parts.length}
+      className="min-w-0 w-full bg-slate-900 text-amber-200 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400" title={currentPart?.title || "เลือกภาค / SS"}>
+      {!parts.length && <option value="">ยังไม่มีภาค</option>}
+      {[...parts].sort((a,b)=>a.number-b.number).map(part=><option key={part.id} value={part.id}>
+        SS {part.number}: {part.title}{!allScenesList.some(item=>item.part.id===part.id) ? " · ยังไม่มีฉาก" : ""}
+      </option>)}
+    </select>
+  </label>;
 
   const handleSelectEpisode = (epId: string) => {
     const firstSceneOfEp = allScenesList.find((item) => item.episode?.id === epId);
@@ -1424,6 +1454,19 @@ export default function NovelReaderPage({
     }
   }, [activeDialogueIndex, dialogueBindings, activeScene?.id, activeScene?.bgmUrl, activeScene?.bgmTitle, volume, isMuted, parsedBlocks.length]);
 
+  // Run after the scene/dialogue engines so speech remains audible.
+  useEffect(() => {
+    const apply = () => {
+      const level = isMuted ? 0 : volume * (narrationDucking ? 0.2 : 1);
+      ambientSound.setVolume(level);
+      for (const audio of [audioPlayerRef.current, dialogueAudioPlayerRef.current, activeDialogueSfxPlayerRef.current]) if (audio) audio.volume = level;
+      for (const iframe of [youtubeIframeRef.current, dialogueYoutubeIframeRef.current]) iframe?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "setVolume", args: [Math.round(level * 100)] }), "*");
+    };
+    apply();
+    const retry = window.setTimeout(apply, 1200);
+    return () => window.clearTimeout(retry);
+  }, [narrationDucking, volume, isMuted, activeDialogueIndex, activeScene?.id, activeYouTubeVideoId, dialogueYouTubeVideoId]);
+
   // Smoothly scroll active dialogue block into view (centered)
   useEffect(() => {
     if (activeDialogueIndex >= 0 && dialogueBlockRefs.current[activeDialogueIndex]) {
@@ -1438,7 +1481,7 @@ export default function NovelReaderPage({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const targetTag = (e.target as HTMLElement)?.tagName?.toLowerCase();
-      if (targetTag === "input" || targetTag === "textarea" || targetTag === "select") {
+      if (targetTag === "input" || targetTag === "textarea" || targetTag === "select" || targetTag === "button" || targetTag === "a") {
         return;
       }
 
@@ -1493,7 +1536,7 @@ export default function NovelReaderPage({
     "กลิ่นของไฟป่า (Wildfire) ยังคงติดแน่นอยู่ในชั้นบรรยากาศ มันไม่ได้มีกลิ่นเหมือนฟืนไหม้ทั่วไป แต่เป็นกลิ่นฉุนแสบจมูกของสารเคมีโบราณที่เผาผลาญทั้งไม้ เหล็ก และเนื้อมนุษย์จนกลายเป็นเถ้าสีมรกต";
 
   // Formatted clean title without duplicate "ฉากที่ 1: ฉากที่ 1:"
-  const rawTitle = activeScene?.title || "เถ้าถ่านสีมรกตเหนืออ่าวแบล็กวอเตอร์";
+  const rawTitle = activeScene?.title || currentPart?.title || "ยังไม่มีฉาก";
   const cleanSceneTitle = rawTitle.startsWith("ฉากที่")
     ? rawTitle
     : `ฉากที่ ${activeScene?.order || 1}: ${rawTitle}`;
@@ -1526,6 +1569,7 @@ export default function NovelReaderPage({
         <button aria-pressed={focusReading} onClick={() => { const next = !focusReading; setFocusReading(next); try {localStorage.setItem("saga-cinematic-focus", String(next));} catch {} }}>{focusReading ? "แสดงภาพประกอบ" : "โฟกัสเนื้อเรื่อง"}</button>
       </div>
       {/* ========================================================================= */}
+      <NarrationPlayer projectId={projectId} sceneId={activeScene?.id || ""} key={activeScene?.id || "empty-scene"} blocks={parsedBlocks} activeIndex={activeDialogueIndex} onIndex={setActiveDialogueIndex} onDucking={setNarrationDucking} />
       {/* 1. TOP HEADER (Fullscreen Bar vs Standard Header)                         */}
       {/* ========================================================================= */}
       {isFullscreen ? (
@@ -1543,6 +1587,7 @@ export default function NovelReaderPage({
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0 relative z-50">
+            {partSelector}
             {/* Quick Scene Selector in Fullscreen */}
             <div ref={fullscreenSceneDropdownRef} className="relative z-50">
               <button
@@ -2197,6 +2242,7 @@ export default function NovelReaderPage({
 
           {/* Episode (EP) Switcher & Luxury Scene Selector on Right (Unclipped from overflow!) */}
           <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full relative z-40">
+            {partSelector}
             {/* Episode (EP) Switcher Pill */}
             {currentPartEpisodes.length > 0 && (
               <div ref={episodeDropdownRef} className="relative">
@@ -2410,6 +2456,10 @@ export default function NovelReaderPage({
       </div>
       )}
 
+      {!activeScene && currentPart && <div role="status" className="rounded-xl border border-slate-700 bg-slate-900 p-4 text-sm font-thai">
+        <p className="font-semibold text-slate-100">SS {currentPart.number} ยังไม่มีฉากให้อ่าน</p>
+        <Link href={`/projects/${projectId}`} className="inline-flex mt-2 text-amber-300 underline underline-offset-4">ไปห้องเขียนเพื่อเพิ่มฉาก</Link>
+      </div>}
       {/* ========================================================================= */}
       {/* 2. MAIN SPLIT-SCREEN CONTAINER (Locked Responsive Viewport Layout)        */}
       {/* ========================================================================= */}

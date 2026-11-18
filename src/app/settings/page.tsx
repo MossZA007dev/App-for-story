@@ -16,6 +16,8 @@ import {
   Camera,
 } from "lucide-react";
 import { toast } from "sonner";
+import { OpenAIStorySettings } from "@/components/projects/OpenAIStorySettings";
+import { ElevenLabsSettings } from "@/components/audio/ElevenLabsSettings";
 
 interface SettingsState {
   anthropicApiKey: string;
@@ -151,6 +153,8 @@ export default function SettingsPage() {
         <div className="h-96 rounded-xl bg-slate-900/60 animate-pulse border border-slate-800" />
       ) : (
         <form onSubmit={handleSave} className="space-y-6">
+          <OpenAIStorySettings />
+          <ElevenLabsSettings />
           {/* Section: Text AI Provider Selection */}
           <div className="cinematic-card rounded-xl p-5 border-slate-800 bg-slate-900/50 space-y-3">
             <label className="text-xs font-bold text-amber-300 font-heading flex items-center gap-2">

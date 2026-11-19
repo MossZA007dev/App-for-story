@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import {z} from "zod";
 import crypto from "node:crypto";
 import path from "node:path";
-import {openAIStorySettings,responseText,StoryAssistantError} from "./openaiStory";
+import {openAIStorySettings,responseText,StoryAssistantError,openAIErrorMessage} from "./openaiStory";
 import {storage} from "@/lib/storage";
 export const SCENE_IMAGE_MODEL="gpt-image-2";
 export const imageSize=(aspect:"16:9"|"1:1"|"9:16")=>aspect==="16:9" ? "1536x864":aspect==="9:16" ? "864x1536":"1024x1024";
@@ -22,7 +22,7 @@ export async function generateOpenAISceneImage(input:SceneImageInput){
   const settings=await openAIStorySettings();if(!settings.apiKey)throw new SceneImageError('เพิ่ม OpenAI API Key ในหน้าตั้งค่าก่อนสร้างภาพฉาก');
   const client=new OpenAI({apiKey:settings.apiKey,maxRetries:0,timeout:120000});
   let brief;
-  try{brief=await analyzeSceneImage(input,client,settings.model);}catch(error){if(error instanceof SceneImageError || error instanceof StoryAssistantError)throw error;throw new SceneImageError('วิเคราะห์ฉากด้วย OpenAI ไม่สำเร็จ กรุณาตรวจ API Key โมเดล และเครดิต');}
+  try{brief=await analyzeSceneImage(input,client,settings.model);}catch(error){if(error instanceof SceneImageError || error instanceof StoryAssistantError)throw error;throw new SceneImageError(openAIErrorMessage(error));}
   const selected=input.characters.filter(c=>(input.characterIds ?? brief.characterIds).includes(c.id));
   const references:{name:string;buffer:Buffer;type:string}[]=[],warnings:string[]=[];
   if(input.useReferences)for(const character of selected){

@@ -160,3 +160,12 @@ In the writer, open “ปรับภาพและสร้างด้วย
 The server uses the existing private OpenAI configuration for text analysis and `gpt-image-2` for images (`OPENAI_SCENE_IMAGE_MODEL` overrides the image model). Relevant local character photos are sent directly as references when enabled. Credentials remain server-side. Successful images are attached to the scene without replacing or reloading the manuscript. Failed analysis, provider errors, and duplicate requests do not create image records.
 
 Validation: `scripts/test-scene-image.cjs` uses mocked OpenAI responses and temporary storage; it does not spend API credits. The new dialog was checked in the browser. Live image generation has not been exercised as part of this change.
+
+
+### Paste a complete part into an existing project
+
+The writer’s “นำเข้าบท” dialog previews an editable Part → EP → Scene hierarchy from plain text or Markdown. It recognizes Thai/English numbered headings and Thai numerals, preserves all scene text and locations, and keeps introductory text in the EP summary. When EP headings are absent, it creates one EP named after the part. Missing scene names use a short content excerpt; the parser does not invent plot-based titles or require an AI API.
+
+Imports create new parts without replacing existing manuscripts. Occupied part numbers use the next available number. Existing characters are reused by name/nickname, dialogue speakers can be added, initial scene versions are recorded, and all records commit in a single transaction. Stable request IDs prevent duplicate writes on retries. The writer saves pending changes before importing and navigates to the first new scene.
+
+Validation: `node scripts/test-structured-import.cjs` (Node 22). The year-three fixture produces one part, one inferred EP, and all 12 scenes with every non-heading line preserved. Database tests use temporary storage.

@@ -15,6 +15,18 @@ export async function saveOpenAIStorySettings(data:{apiKey?:string;model:string}
   await fs.writeFile(temp,JSON.stringify({apiKey:data.apiKey || previous.apiKey,model:data.model}),{mode:0o600});await fs.rename(temp,file);
 }
 export class StoryAssistantError extends Error {}
+export function openAIErrorMessage(error:unknown):string {
+  const detail=error as {status?:number;code?:string;type?:string;name?:string};
+  if(detail?.status===401 || detail?.code==='invalid_api_key')return 'OpenAI ปฏิเสธ API Key ที่แอปบันทึกไว้ (401 invalid_api_key) กรุณาใส่ API Key ที่ใช้งานได้ใหม่ใน ตั้งค่า → OpenAI แล้วบันทึก';
+  if(detail?.code==='credit_balance_exhausted')return 'เครดิต OpenAI API หมดแล้ว กรุณาเพิ่มเครดิตใน OpenAI Platform → Settings → Billing ของบัญชีที่สร้าง API Key แล้วลองใหม่ การเปลี่ยน API Key ไม่เพิ่มเครดิต';
+  if(detail?.type==='insufficient_quota' || detail?.code==='insufficient_quota' || detail?.code==='billing_hard_limit_reached')return 'เครดิตหรือวงเงิน API ของ OpenAI ไม่เพียงพอ กรุณาตรวจ Billing ของโปรเจกต์ที่สร้าง key';
+  if(detail?.status===403)return 'OpenAI ไม่อนุญาตให้บัญชีหรือโปรเจกต์นี้ใช้โมเดล กรุณาตรวจสิทธิ์ของโปรเจกต์';
+  if(detail?.status===404 || detail?.code==='model_not_found')return 'ไม่พบโมเดล OpenAI ที่ตั้งค่าไว้ หรือโปรเจกต์นี้ยังใช้ไม่ได้ กรุณาตรวจชื่อโมเดลในหน้าตั้งค่า';
+  if(detail?.status===429)return 'OpenAI จำกัดจำนวนคำขอชั่วคราว กรุณารอสักครู่แล้วลองใหม่';
+  if(detail?.name==='APIConnectionError' || detail?.name==='APIConnectionTimeoutError')return 'เชื่อมต่อ OpenAI ไม่สำเร็จหรือหมดเวลา กรุณาตรวจอินเทอร์เน็ตแล้วลองใหม่';
+  return 'เรียก OpenAI ไม่สำเร็จ เนื้อหาเดิมยังอยู่ กรุณาลองใหม่ภายหลัง';
+}
+
 export function responseText(response:{status?:string;output_text?:string;output?:unknown[]}):string {
   if(response.status!=="completed")throw new StoryAssistantError("AI ยังส่งผลลัพธ์ไม่ครบ จึงยังไม่นำมาใช้ ลองลดความยาวหรือปรับคำสั่ง");
   const text=response.output_text?.trim();
@@ -30,7 +42,6 @@ export async function runOpenAIStory(instructions:string,input:string,action:"an
     return {text:responseText(response),model:settings.model};
   }catch(error){
     if(error instanceof StoryAssistantError)throw error;
-    const status=error instanceof OpenAI.APIError ? error.status:undefined;
-    throw new StoryAssistantError(status===401 || status===403 ? "ตรวจ OpenAI API Key และสิทธิ์ใช้โมเดลในหน้าตั้งค่า":status===429 ? "OpenAI จำกัดการใช้งานหรือเครดิต API ไม่พอ กรุณาตรวจบัญชี API":"เรียก OpenAI ไม่สำเร็จ เนื้อหาเดิมยังอยู่ กรุณาลองใหม่ภายหลัง");
+    throw new StoryAssistantError(openAIErrorMessage(error));
   }
 }

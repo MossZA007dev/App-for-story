@@ -622,15 +622,16 @@ export default function StoryWorkspacePage({
       }
 
       if (data.parts && data.parts.length > 0) {
-        const matchedPart = data.parts.find((p: any) => p.id === activePartId) || data.parts[0];
+        const matchedPart = (overrideSceneId ? data.parts.find((p: any) => p.scenes?.some((scene: any) => scene.id === overrideSceneId)) : null) || data.parts.find((p: any) => p.id === activePartId) || data.parts[0];
         setActivePartId(matchedPart.id);
 
         const matchedEp =
-          matchedPart.episodes?.find((ep: any) => ep.id === activeEpisodeId) ||
+          (overrideSceneId ? matchedPart.episodes?.find((ep: any) => ep.scenes?.some((scene: any) => scene.id === overrideSceneId)) : null) || matchedPart.episodes?.find((ep: any) => ep.id === activeEpisodeId) ||
           (matchedPart.episodes && matchedPart.episodes.length > 0 ? matchedPart.episodes[0] : null);
 
         if (overrideSceneId !== undefined) {
           setActiveSceneId(overrideSceneId);
+          if (matchedEp) setActiveEpisodeId(matchedEp.id);
         } else if (matchedEp) {
           setActiveEpisodeId(matchedEp.id);
           const epScenes = matchedEp.scenes || [];
@@ -4537,7 +4538,7 @@ export default function StoryWorkspacePage({
                 <button
                   onClick={() => setShowClaudeImportModal(true)}
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-xs font-bold font-thai transition-all active:scale-95 shadow-sm"
-                  title="วางบทสคริปต์จาก Claude เพื่อจัดบทและตัวละครอัตโนมัติ"
+                  title="วางเนื้อเรื่องเพื่อแยกภาค EP ฉาก และตัวละครอัตโนมัติ"
                 >
                   <PenTool className="w-3 h-3 text-sky-400" />
                   <span>นำเข้าบท</span>
@@ -6192,6 +6193,14 @@ export default function StoryWorkspacePage({
         currentSceneTitle={sceneTitleInput || activeScene?.title}
         onApplySingleScene={handleConvertAndApplyScript}
         onApplyMultiScenes={handleImportAllScenes}
+        projectId={projectId}
+        onBeforeImport={async () => {
+          if (!hasUnsavedChanges || !activeSceneId) return;
+          const res = await fetch(`/api/projects/${projectId}/scenes/${activeSceneId}`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:sceneTitleInput,location:sceneLocationInput,contentMarkdown:isRawMarkdownMode?editableMarkdown:blocksToMarkdown(dialogueBlocks),dialogueBindings:JSON.stringify(localDialogueBindings),directorNote:directorsNote})});
+          if(!res.ok)throw new Error('บันทึกฉากปัจจุบันไม่สำเร็จ จึงยังไม่นำเข้า กรุณาลองบันทึกอีกครั้ง');
+          setHasUnsavedChanges(false);
+        }}
+        onImported={async result => { await loadProjectData(result.firstSceneId); toast.success('นำเข้าภาค EP และฉากครบแล้ว'); }}
       />
 
       {/* Part / Season (SS) Modal */}

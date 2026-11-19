@@ -65,6 +65,7 @@ import { UndoTimeline } from "@/lib/story/undoTimeline";
 import { readStoryStream } from "@/lib/story/storyStream";
 import { SceneVersionHistory } from "@/components/story/SceneVersionHistory";
 import { OpenAISceneAssistant } from "@/components/story/OpenAISceneAssistant";
+import { MasterStoryImportModal } from "@/components/story/MasterStoryImportModal";
 import { ClaudeScriptImportModal } from "@/components/story/ClaudeScriptImportModal";
 import { CharacterAvatarModal, AvatarCharacterInfo } from "@/components/characters/CharacterAvatarModal";
 import { PartModal, PartModalData } from "@/components/parts/PartModal";
@@ -383,6 +384,7 @@ export default function StoryWorkspacePage({
   const [collaborators, setCollaborators] = useState<any[]>([]);
   const [showCollabModal, setShowCollabModal] = useState(false);
   const [showClaudeImportModal, setShowClaudeImportModal] = useState(false);
+  const [showMasterImportModal, setShowMasterImportModal] = useState(false);
   const [showLineTools, setShowLineTools] = useState(false);
   const [currentAuthorName, setCurrentAuthorName] = useState("");
 
@@ -2727,8 +2729,8 @@ export default function StoryWorkspacePage({
 
   // Bulk import multiple scenes into current part
   const handleImportAllScenes = async (bulkText: string) => {
-    if (!activePartId) {
-      toast.error("กรุณาเลือกภาคก่อนสร้างฉาก");
+    if (!activePartId || !activeEpisodeId) {
+      toast.error("กรุณาเลือก EP ก่อนสร้างฉาก");
       return;
     }
 
@@ -2739,7 +2741,7 @@ export default function StoryWorkspacePage({
     }
 
     try {
-      toast.info(`กำลังสร้าง ${multiScenes.length} ฉากลงในภาคนี้...`);
+      toast.info(`กำลังสร้าง ${multiScenes.length} ฉากลงใน EP นี้...`);
 
       // 1. Collect all characters across all scenes and register them
       const allDetectedChars = new Set<string>();
@@ -2758,6 +2760,7 @@ export default function StoryWorkspacePage({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            episodeId: activeEpisodeId,
             title: sc.title || parsed.sceneTitle || `ฉากที่ ${i + 1}`,
             location: sc.location || parsed.location || "",
             charactersPresent: parsed.detectedCharacters,
@@ -2765,6 +2768,7 @@ export default function StoryWorkspacePage({
             directorNote: "",
           }),
         });
+        if (!res.ok) throw new Error("สร้างฉากไม่สำเร็จ กรุณาตรวจฉากที่เพิ่มไปแล้วก่อนลองใหม่");
         if (res.ok) {
           const data = await res.json();
           if (i === 0) firstCreatedSceneId = data.scene.id;
@@ -3445,6 +3449,10 @@ export default function StoryWorkspacePage({
           >
             <Plus className="w-3.5 h-3.5 text-amber-400" />
             <span>+ เพิ่มภาคใหม่ (SS)</span>
+          </button>
+
+          <button type="button" onClick={() => setShowMasterImportModal(true)} className="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/20" title="วางบททั้งภาคเพื่อสร้าง EP และฉากย่อยอัตโนมัติ">
+            <Layers className="w-4 h-4" /><span>นำเข้าทั้งภาค (Master)</span>
           </button>
 
           {/* 2. Episode (EP) Selector */}
@@ -4538,7 +4546,7 @@ export default function StoryWorkspacePage({
                 <button
                   onClick={() => setShowClaudeImportModal(true)}
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-xs font-bold font-thai transition-all active:scale-95 shadow-sm"
-                  title="วางเนื้อเรื่องเพื่อแยกภาค EP ฉาก และตัวละครอัตโนมัติ"
+                  title="นำเข้าบทเฉพาะฉากหรือ EP ปัจจุบัน"
                 >
                   <PenTool className="w-3 h-3 text-sky-400" />
                   <span>นำเข้าบท</span>
@@ -6184,10 +6192,20 @@ export default function StoryWorkspacePage({
         onSuccess={handleAvatarSuccess}
       />
 
-      {/* Claude Script Import Modal */}
       <ClaudeScriptImportModal
         isOpen={showClaudeImportModal}
         onClose={() => setShowClaudeImportModal(false)}
+        characters={characters}
+        activePartTitle={currentPart?.title}
+        currentSceneTitle={sceneTitleInput || activeScene?.title}
+        onApplySingleScene={handleConvertAndApplyScript}
+        onApplyMultiScenes={handleImportAllScenes}
+      />
+
+      {/* Claude Script Import Modal */}
+      <MasterStoryImportModal
+        isOpen={showMasterImportModal}
+        onClose={() => setShowMasterImportModal(false)}
         characters={characters}
         activePartTitle={currentPart?.title}
         currentSceneTitle={sceneTitleInput || activeScene?.title}

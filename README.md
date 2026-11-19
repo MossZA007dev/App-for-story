@@ -164,8 +164,10 @@ Validation: `scripts/test-scene-image.cjs` uses mocked OpenAI responses and temp
 
 ### Paste a complete part into an existing project
 
-The writer’s “นำเข้าบท” dialog previews an editable Part → EP → Scene hierarchy from plain text or Markdown. It recognizes Thai/English numbered headings and Thai numerals, preserves all scene text and locations, and keeps introductory text in the EP summary. When EP headings are absent, it creates one EP named after the part. Missing scene names use a short content excerpt; the parser does not invent plot-based titles or require an AI API.
+The writer’s “นำเข้าบท” dialog previews an editable Part → EP → Scene hierarchy from plain text or Markdown. It recognizes Thai/English numbered headings and Thai numerals, preserves all scene text and locations, and keeps introductory text in the EP summary. When EP headings are absent, Master import creates one EP per scene, using the scene title and keeping that scene inside the EP. Missing scene names use a short content excerpt; the parser does not invent plot-based titles or require an AI API.
 
 Imports create new parts without replacing existing manuscripts. Occupied part numbers use the next available number. Existing characters are reused by name/nickname, dialogue speakers can be added, initial scene versions are recorded, and all records commit in a single transaction. Stable request IDs prevent duplicate writes on retries. The writer saves pending changes before importing and navigates to the first new scene.
 
-Validation: `node scripts/test-structured-import.cjs` (Node 22). The year-three fixture produces one part, one inferred EP, and all 12 scenes with every non-heading line preserved. Database tests use temporary storage.
+Validation: `node scripts/test-structured-import.cjs` (Node 22). The year-three fixture produces one part, 12 inferred EPs, and all 12 scenes with every non-heading line preserved. Database tests use temporary storage.
+
+Master import is available beside the Part/SS controls in the writer’s management toolbar. The normal “นำเข้าบท” button remains scoped to the current scene or EP; importing several scenes there adds them to the selected EP without creating a new part.

@@ -40,5 +40,9 @@ export function parseStoryStructure(text:string,fallback='ภาคใหม่'
    for(const s of e.scenes){if(/^ฉากที่ \d+$/.test(s.title)){const first=s.contentMarkdown.split('\n').map(clean).find(l=>l && !/^(สถานที่|location|เสียง)\s*[:：]/i.test(l));if(first)s.title=first.slice(0,80);}}
   }
  }
+ // Master fallback: every source scene becomes an episode when EP headings are absent.
+ for(const p of result.parts){
+  p.episodes=p.episodes.flatMap(e=>e.inferred?e.scenes.map((scene,index)=>({title:scene.title,summary:index===0?e.summary:'',inferred:true,scenes:[scene]})):[e]);
+ }
  return StructureSchema.parse(result);
 }

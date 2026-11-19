@@ -142,10 +142,10 @@ export default function SettingsPage() {
       <div className="border-b border-slate-800 pb-4">
         <h1 className="font-heading text-2xl font-bold text-white flex items-center gap-2.5">
           <Settings className="w-6 h-6 text-amber-400" />
-          <span>SYSTEM & AI SETTINGS</span>
+          <span>ตั้งค่าและผู้ช่วย AI</span>
         </h1>
         <p className="text-slate-400 text-xs font-thai mt-1">
-          กำหนดค่า AI Providers (Google Gemini & Anthropic Claude) สำหรับสร้างฉาก วิเคราะห์รูปโปรไฟล์เพื่อน และสร้างภาพประกอบ
+          จัดการบริการสำหรับช่วยเขียน สร้างภาพ และอ่านเรื่องด้วยเสียง
         </p>
       </div>
 

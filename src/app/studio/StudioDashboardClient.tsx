@@ -12,6 +12,8 @@ import {
   Trash2,
   User,
   Search,
+  ArrowUpRight,
+  MoreHorizontal,
 } from "lucide-react";
 import { CreateCharacterModal } from "@/components/characters/CreateCharacterModal";
 import { toast } from "sonner";
@@ -113,10 +115,10 @@ export default function StudioDashboardClient({
   );
 
   return (
-    <div className="w-full min-h-[calc(100vh-64px)] bg-background text-slate-100 flex flex-col justify-start pb-20">
+    <div className="studio-dashboard w-full min-h-[calc(100vh-64px)] bg-background text-slate-100 flex flex-col justify-start pb-20">
       <div className="max-w-[1720px] mx-auto w-full px-4 sm:px-8 py-6 space-y-8">
         {/* Studio Top Banner & Quick Controls */}
-        <div className="cinematic-card rounded-2xl p-6 sm:p-8 border border-slate-800 bg-gradient-to-r from-slate-900 via-slate-900/90 to-amber-950/40 shadow-2xl relative overflow-hidden">
+        <div className="studio-welcome">
           <div className="absolute top-0 right-0 -mr-16 -mt-16 w-80 h-80 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
 
           <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
@@ -127,12 +129,11 @@ export default function StudioDashboardClient({
               </div>
 
               <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-white">
-                ห้องเขียนของคุณและเพื่อน
+                ทุกเรื่อง เริ่มจากจินตนาการ
               </h1>
 
               <p className="text-slate-300 font-thai text-xs sm:text-sm leading-relaxed">
-                ศูนย์กลางสำหรับแก้ไขเนื้อหา เขียนฉากใหม่ด้วย AI ใส่รูปภาพ AI
-                จับคู่ภาพจริงจากหนัง และจัดการตัวละครในกลุ่มเพื่อนของคุณ
+                เลือกเรื่องที่อยากเขียนต่อ แล้วสร้างฉากต่อไปในแบบของคุณ
               </p>
             </div>
 
@@ -146,7 +147,7 @@ export default function StudioDashboardClient({
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai transition-all shadow-md hover:scale-[1.02]"
               >
                 <User className="w-4 h-4" />
-                <span>เพิ่มตัวฉันเองในเรื่อง</span>
+                <span>เพิ่มตัวฉันเอง</span>
               </button>
 
               <button
@@ -157,7 +158,7 @@ export default function StudioDashboardClient({
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs font-thai transition-all shadow-md hover:scale-[1.02]"
               >
                 <Users className="w-4 h-4" />
-                <span>เพิ่มเพื่อนในเรื่อง</span>
+                <span>เพิ่มเพื่อน</span>
               </button>
 
               <Link
@@ -171,40 +172,10 @@ export default function StudioDashboardClient({
           </div>
         </div>
 
-        {/* Section Header with Search */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
-          <div className="flex items-center gap-3">
-            <h2
-              className="text-white font-bold tracking-[0.5px] uppercase font-heading text-xl"
-              style={{ fontFamily: "Cinzel, serif" }}
-            >
-              เลือกเรื่องที่จะแต่งต่อ
-            </h2>
-            <span className="text-[#94A3B8] font-normal text-sm font-thai">
-              ({projects.length} เรื่อง)
-            </span>
-          </div>
-
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="ค้นหาชื่อเรื่องหรือจักรวาล…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 w-64 font-thai"
-            />
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="text-sm text-slate-400">จักรวาล
-            <select aria-label="กรองเรื่องตามจักรวาล" className="studio-universe ml-3" value={universeFilter} onChange={e => setUniverseFilter(e.target.value)}>
-              <option value="">ทุกจักรวาล</option>{Array.from(new Set(projects.map(p => p.universe))).map(u => <option key={u}>{u}</option>)}
-            </select>
-          </label>
-          <Link href="/characters" className="workspace-text-link">จัดตัวละครข้ามเรื่องและจักรวาล</Link>
-        </div>
+        <section className="studio-project-filters" aria-label="ค้นหาเรื่องที่จะแต่ง">
+          <div className="studio-projects-heading"><h2>เรื่องราวของคุณ <span>{filteredProjects.length} เรื่อง</span></h2><Link href="/characters">จัดการตัวละคร <ArrowUpRight size={13}/></Link></div>
+          <div className="studio-filter-fields"><label className="studio-filter-search"><Search size={17}/><span className="sr-only">ค้นหาเรื่องที่จะแต่ง</span><input type="search" placeholder="ค้นหาชื่อเรื่องหรือจักรวาล…" value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}/></label><select aria-label="กรองเรื่องตามจักรวาล" value={universeFilter} onChange={e=>setUniverseFilter(e.target.value)}><option value="">ทุกจักรวาล</option>{Array.from(new Set(projects.map(p=>p.universe))).map(u=><option key={u}>{u}</option>)}</select></div>
+        </section>
         {/* Loading Spinner */}
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -226,160 +197,27 @@ export default function StudioDashboardClient({
             </p>
           </div>
         ) : (
-          /* Studio Editor Cards Grid */
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="studio-story-grid">
             {filteredProjects.map((project) => {
-              const progressPct =
-                project.partCount > 0
-                  ? Math.round((project.completedParts / project.partCount) * 100)
-                  : 0;
-
-              return (
-                <div
-                  key={project.id}
-                  className="cinematic-card rounded-2xl p-5 border border-slate-800 hover:border-amber-500/40 transition-all flex flex-col justify-between space-y-5 bg-card group"
-                >
-                  <div className="space-y-4">
-                    {/* Top Row: Universe + Trash */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                          {project.universe}
-                        </span>
-                        {project.timelineScope && (
-                          <span className="px-2 py-0.5 rounded text-xs bg-slate-800 text-slate-400 font-thai">
-                            {project.timelineScope}
-                          </span>
-                        )}
-                      </div>
-
-                      <button
-                        onClick={() => handleDelete(project.id, project.title)}
-                        className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-slate-800/80 transition-colors"
-                        title="ลบโปรเจกต์"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    {/* Cover & Title Banner */}
-                    <div className="flex gap-4 items-start">
-                      <div className="w-20 h-28 rounded-xl overflow-hidden bg-slate-950 flex-shrink-0 border border-slate-800">
-                        <img
-                          src={project.coverImage || "/images/story-placeholder.svg"}
-                          alt={project.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                          onError={(e) => {
-                            const target = e.currentTarget;
-                            if (!target.src.includes("story-placeholder.svg")) {
-                              target.src = "/images/story-placeholder.svg";
-                            }
-                          }}
-                        />
-                      </div>
-
-                      <div className="space-y-1.5 flex-1 min-w-0">
-                        <Link
-                          href={`/projects/${project.id}`}
-                          className="block font-heading text-base sm:text-lg font-bold text-white group-hover:text-amber-300 transition-colors line-clamp-2"
-                        >
-                          {project.title}
-                        </Link>
-                        <p className="text-xs text-slate-400 font-thai line-clamp-2 leading-relaxed">
-                          {project.theme || "ไม่มีคำอธิบายธีม"}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Progress Bar & Stats */}
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex items-center justify-between text-xs font-thai text-slate-400">
-                        <span>ความคืบหน้าภาค</span>
-                        <span className="font-mono text-amber-400 font-semibold">
-                          {project.completedParts} / {project.partCount} ภาค ({progressPct}%)
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-800/80 h-1.5 rounded-full overflow-hidden">
-                        <div
-                          className="bg-gradient-to-r from-amber-600 to-amber-400 h-full rounded-full transition-all duration-500"
-                          style={{ width: `${Math.max(5, progressPct)}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Numbers Summary */}
-                    <div className="grid grid-cols-3 gap-2 py-2.5 px-3 rounded-xl bg-slate-950/80 border border-slate-800/80 text-center font-mono">
-                      <div>
-                        <p className="text-[11px] text-slate-500 font-thai">ตัวละคร</p>
-                        <p className="text-xs font-bold text-white">{project.characterCount}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] text-slate-500 font-thai">ฉากทั้งหมด</p>
-                        <p className="text-xs font-bold text-white">{project.sceneCount}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] text-slate-500 font-thai">คำสะสม</p>
-                        <p className="text-xs font-bold text-white">
-                          {project.totalWordCount.toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Studio Navigation Buttons (Workspace, Images, Characters, Timeline) */}
-                  <div className="space-y-2 pt-2 border-t border-slate-800/80">
-                    {/* Primary Button: Open Story Workspace */}
-                    <Link
-                      href={`/projects/${project.id}`}
-                      className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-thai shadow-md transition-all group-hover:shadow-[0_0_15px_rgba(245,158,11,0.2)]"
-                    >
-                      <PenTool className="w-4 h-4" />
-                      <span>✍️ เข้า Studio แก้ไข & สตรีมมิ่งฉาก</span>
-                    </Link>
-
-                    {/* Sub-tools Grid */}
-                    <div className="grid grid-cols-3 gap-1.5 text-[11px] font-thai">
-                      <Link
-                        href={`/projects/${project.id}/images`}
-                        className="inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-colors"
-                        title="Image Studio: คัดเลือกจังหวะ & สร้างภาพ AI"
-                      >
-                        <ImageIcon className="w-3.5 h-3.5 text-sky-400" />
-                        <span>ใส่รูปภาพ</span>
-                      </Link>
-
-                      <Link
-                        href={`/projects/${project.id}/characters`}
-                        className="inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-colors"
-                        title="Character Bible: ดูชีตตัวละคร & MBTI"
-                      >
-                        <Users className="w-3.5 h-3.5 text-amber-400" />
-                        <span>ตัวละคร</span>
-                      </Link>
-
-                      <Link
-                        href={`/projects/${project.id}/timeline`}
-                        className="inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-colors"
-                        title="Timeline & Relations: ไทม์ไลน์และกราฟความสัมพันธ์"
-                      >
-                        <GitBranch className="w-3.5 h-3.5 text-purple-400" />
-                        <span>ไทม์ไลน์</span>
-                      </Link>
-                    </div>
-
-                    {/* Reader preview link */}
-                    <div className="pt-1 text-center">
-                      <Link
-                        href={`/projects/${project.id}/read`}
-                        className="text-[11px] text-slate-400 hover:text-amber-300 inline-flex items-center gap-1 font-thai transition-colors"
-                      >
-                        <BookOpen className="w-3 h-3" />
-                        <span>พรีวิวดูในโหมดอ่านนิยาย (Reader View) &rarr;</span>
-                      </Link>
-                    </div>
-                  </div>
+              const progressPct=project.partCount>0 ? Math.min(100,Math.max(0,Math.round(project.completedParts/project.partCount*100))):0;
+              const hasCover=Boolean(project.coverImage && !project.coverImage.includes('story-placeholder'));
+              return <article key={project.id} className={`studio-story-card ${hasCover?'has-cover':'no-cover'}`}>
+                <div className="studio-story-art">
+                  <Link className="studio-art-link" href={`/projects/${project.id}`} aria-label={`เปิดห้องเขียน ${project.title}`}>
+                    <img src={project.coverImage || '/images/story-placeholder.svg'} alt="" loading="lazy" onError={e=>{e.currentTarget.onerror=null;e.currentTarget.src='/images/story-placeholder.svg';e.currentTarget.closest('article')?.classList.add('no-cover');}} />
+                  </Link>
+                  <div className="studio-story-shade" />
+                  <span className="studio-universe-tag">{project.universe}</span>
+                  <details className="studio-story-menu"><summary aria-label={`ตัวเลือกเรื่อง ${project.title}`}><MoreHorizontal size={19}/></summary><div><button type="button" onClick={()=>handleDelete(project.id,project.title)}><Trash2 size={15}/>ลบเรื่องนี้</button></div></details>
+                  <div className="studio-story-title"><p>{project.partCount} ภาค <span>·</span> {project.sceneCount} ฉาก{project.timelineScope && <> <span>·</span> {project.timelineScope}</>}</p><Link href={`/projects/${project.id}`}><h3>{project.title}</h3></Link><p className="studio-story-description">{project.theme || 'เรื่องราวบทใหม่ กำลังรอให้คุณเขียนต่อ'}</p></div>
                 </div>
-              );
+                <div className="studio-story-content">
+                  <dl className="studio-story-stats"><div><dt>ตัวละคร</dt><dd>{project.characterCount.toLocaleString()}</dd></div><div><dt>ฉากทั้งหมด</dt><dd>{project.sceneCount.toLocaleString()}</dd></div><div><dt>คำสะสม</dt><dd>{project.totalWordCount.toLocaleString()}</dd></div></dl>
+                  <div className="studio-story-progress"><div><span>ความคืบหน้าภาค</span><span>{project.completedParts} / {project.partCount} <small>({progressPct}%)</small></span></div><progress aria-label={`ความคืบหน้า ${project.title}`} value={progressPct} max={100}/></div>
+                  <div className="studio-story-primary-actions"><Link className="studio-write-link" href={`/projects/${project.id}`}><PenTool size={17}/>เขียนต่อ<ArrowUpRight size={16}/></Link><Link className="studio-read-link" href={`/projects/${project.id}/read`}><BookOpen size={17}/>เปิดอ่าน</Link></div>
+                  <nav className="studio-story-tools" aria-label={`เครื่องมือ ${project.title}`}><Link href={`/projects/${project.id}/images`}><ImageIcon size={16}/>ภาพประกอบ</Link><Link href={`/projects/${project.id}/characters`}><Users size={16}/>ตัวละคร</Link><Link href={`/projects/${project.id}/timeline`}><GitBranch size={16}/>ไทม์ไลน์</Link></nav>
+                </div>
+              </article>;
             })}
           </div>
         )}

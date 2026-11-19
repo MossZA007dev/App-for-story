@@ -54,7 +54,7 @@ export function ProjectHeader({
   ];
 
   return (
-    <div className="space-y-4 mb-6 border-b border-slate-800 pb-4">
+    <div className="project-heading space-y-4 mb-6 border-b border-slate-800 pb-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
@@ -96,7 +96,7 @@ export function ProjectHeader({
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+      <div className="project-tabs flex items-center gap-2 overflow-x-auto pb-1">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = pathname === tab.href;

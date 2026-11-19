@@ -43,6 +43,7 @@ import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
 import { extractYouTubeVideoId } from "@/lib/audio/audioHelpers";
 import { PartModal } from "@/components/parts/PartModal";
+import { ImmersiveReader } from "@/components/reader/ImmersiveReader";
 import { NarrationPlayer } from "@/components/audio/NarrationPlayer";
 import { SceneAudioModal } from "@/components/audio/SceneAudioModal";
 import {
@@ -186,6 +187,7 @@ export default function NovelReaderPage({
   const [loading, setLoading] = useState(true);
   const [narrationDucking, setNarrationDucking] = useState(false);
   const [readingSize, setReadingSize] = useState(19);
+  const immersiveExperience = searchParams.get("view") !== "classic";
   const [focusReading, setFocusReading] = useState(false);
   useEffect(() => {
     try {
@@ -343,15 +345,17 @@ export default function NovelReaderPage({
     return () => window.removeEventListener("message", handleMessage);
   }, []);
 
+  const readerSceneRequest = useRef(0);
   // Load scene images & details
   const loadSceneImages = async (sceneId: string) => {
+    const request = ++readerSceneRequest.current;
     try {
       const res = await fetch(`/api/projects/${projectId}/scenes/${sceneId}`);
       if (!res.ok) return;
       const data = await res.json();
+      if(request !== readerSceneRequest.current) return;
       setActiveSceneImages(data.images || []);
       setSelectedImageIndex(0);
-      setActiveDialogueIndex(0);
       if (data.scene) {
         setActiveScene((prev) => (prev ? { ...prev, ...data.scene } : data.scene));
       }
@@ -365,6 +369,11 @@ export default function NovelReaderPage({
     setActiveScene(scene);
     setActiveDialogueIndex(0);
     loadSceneImages(scene.id);
+    if (immersiveExperience) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('sceneId', scene.id);
+      window.history.replaceState(window.history.state, '', url.pathname + url.search);
+    }
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -467,7 +476,9 @@ export default function NovelReaderPage({
       });
       setAllScenesList(flatList);
 
-      const toSelectId = targetSceneId || initialSceneId;
+      let savedSceneId='';
+      try {savedSceneId=JSON.parse(localStorage.getItem(`saga-immersive:${projectId}`)||'null')?.sceneId||'';}catch{}
+      const toSelectId = targetSceneId || initialSceneId || savedSceneId;
       if (flatList.length > 0) {
         if (toSelectId) {
           const found = flatList.find((item) => item.scene.id === toSelectId);
@@ -495,6 +506,7 @@ export default function NovelReaderPage({
 
   // Fetch project and scene data
   useEffect(() => {
+    if (activeScene?.id === initialSceneId) return;
     setLoading(true);
     reloadProjectData().finally(() => setLoading(false));
   }, [projectId, initialSceneId]);
@@ -1353,7 +1365,7 @@ export default function NovelReaderPage({
   const hasAttemptedAutoPlayRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!activeScene || !activeScene.id) return;
+    if (immersiveExperience || !activeScene || !activeScene.id) return;
     if (hasAttemptedAutoPlayRef.current === activeScene.id) return;
     hasAttemptedAutoPlayRef.current = activeScene.id;
 
@@ -1409,7 +1421,7 @@ export default function NovelReaderPage({
 
   // Synchronize audio / mood automatically when activeDialogueIndex changes
   useEffect(() => {
-    if (!activeScene || parsedBlocks.length === 0) return;
+    if (immersiveExperience || !activeScene || parsedBlocks.length === 0) return;
 
     const audioResolved = resolveAudioForDialogueIndex(
       activeDialogueIndex,
@@ -1469,7 +1481,7 @@ export default function NovelReaderPage({
 
   // Smoothly scroll active dialogue block into view (centered)
   useEffect(() => {
-    if (activeDialogueIndex >= 0 && dialogueBlockRefs.current[activeDialogueIndex]) {
+    if (!immersiveExperience && activeDialogueIndex >= 0 && dialogueBlockRefs.current[activeDialogueIndex]) {
       dialogueBlockRefs.current[activeDialogueIndex]?.scrollIntoView({
         behavior: "smooth",
         block: "center",
@@ -1480,6 +1492,7 @@ export default function NovelReaderPage({
   // Keyboard navigation for dialogue stepping (ArrowUp, ArrowDown, Spacebar, F for Fullscreen)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (immersiveExperience) return;
       const targetTag = (e.target as HTMLElement)?.tagName?.toLowerCase();
       if (targetTag === "input" || targetTag === "textarea" || targetTag === "select" || targetTag === "button" || targetTag === "a") {
         return;
@@ -1552,6 +1565,8 @@ export default function NovelReaderPage({
       </div>
     );
   }
+
+  if (immersiveExperience) return <ImmersiveReader projectId={projectId} title={project?.title || 'เรื่องราวของคุณ'} universe={project?.universe || ''} scene={activeScene} entries={allScenesList} blocks={parsedBlocks} index={activeDialogueIndex} onIndex={setActiveDialogueIndex} onScene={id => {const found=allScenesList.find(e=>e.scene.id===id);if(found)handleSelectSceneItem(found.scene);}} media={currentFeaturedImage} onDucking={setNarrationDucking}/>;
 
   return (
     <div

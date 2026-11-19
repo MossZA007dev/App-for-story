@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Sarabun, Cinzel } from "next/font/google";
 import "./globals.css";
+import "./app-theme.css";
 import { Navbar } from "@/components/common/Navbar";
 import { Toaster } from "sonner";
 
@@ -29,8 +30,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th" className={`dark ${sarabun.variable} ${cinzel.variable}`}>
-      <body className="bg-background text-slate-100 antialiased selection:bg-amber-500/30 selection:text-amber-200 min-h-screen flex flex-col">
+    <html lang="th" className={`${sarabun.variable} ${cinzel.variable}`}>
+      <body className="glass-app bg-background text-slate-100 antialiased selection:bg-amber-500/30 selection:text-amber-200 min-h-screen flex flex-col">
         <Navbar />
         <main id="main-content" className="flex-1 w-full" tabIndex={-1}>
           {children}

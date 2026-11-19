@@ -1,3 +1,29 @@
+## Immersive reading experience
+
+The reader is a separate full-viewport story stage with no editor/sidebar controls. Keep real scene media prominent, dim edges with layered gradients, use restrained crossfades and slow artwork movement, and render dialogue in consistent per-speaker left/right positions. Narration is centered and unboxed with a soft gradient. Display the active passage and a small amount of prior dialogue; support manual and automatic stepping, plus a continuous text mode sharing the same active passage.
+
+A floating glass dock contains previous/next, timed auto advance, TOC, audio, preferences, and fullscreen. Settings and TOC use modal dialogs with native keyboard focus management. Support large text, long passages, small screens, reduced motion, video pauses, visible focus, and local reading-position persistence. Use honest empty states when scenes or artwork are missing. Do not generate speech automatically or imply that timed text progression is spoken narration.
+
+# Current theme: smoked-glass cinema
+
+The latest user reference supersedes the light paper palette: use deep olive/charcoal backgrounds, translucent smoky panels, off-white text, subtle reflective borders, and restrained red primary actions. Keep the sidebar and the compact card/toolbar layouts. Do not copy Netflix branding or add fictional profile data. The Studio uses large landscape story artwork with legible overlays, compact real statistics, an accurate progress indicator, and separate write/read actions. Deletion remains behind the existing confirmation flow via the overflow menu.
+
+Shared theme and responsive styles now live in `src/app/app-theme.css`, loaded after the base component styles. Light paper colors are replaced across inputs, dialogs, characters, library, writer, reader, and settings. The old paper-theme file is retired. Keep focus outlines, readable contrast, keyboard access, and reduced-motion behavior.
+
+---
+
+# Current visual direction: Paper library
+
+The current UI follows a minimal reading-library direction inspired by the user's Kindle reference. This supersedes the earlier monochrome cinema direction below. Use warm off-white (#f7f6f2), white surfaces, charcoal text (#292823), quiet sand borders, and a restrained amber action color. Color comes primarily from covers and scene artwork.
+
+Desktop navigation is a fixed left rail; mobile uses a compact top navigation. The library features a small “หยิบมาอ่าน” row and a portrait-cover bookshelf, with no duplicate full-screen featured story. Keep controls compact, text readable, borders subtle, and avoid glow effects. Do not invent profile data or reading-progress values. Existing universe filters, collaboration, writing tools, imports, character variants, and reading controls remain functional.
+
+Shared light tokens and layout live in `src/app/paper-theme.css`, loaded after the foundational component styles in `globals.css`. Its compatibility palette supports legacy workspace utilities while screens move to semantic surfaces. Modals, narration controls, forms, project tabs, and reader panels share the paper palette. Artwork and video frames retain appropriate contrast. Respect reduced-motion preferences and keep keyboard focus visible.
+
+Verification: visually checked library, character hub, studio, settings, writer, and reader; tested library search at 390px with no horizontal overflow, and checked the desktop sidebar at 1440px. No manuscript or credential changes are part of the redesign.
+
+---
+
 # Saga Forge design system
 
 ## Direction

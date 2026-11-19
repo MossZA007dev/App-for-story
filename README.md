@@ -171,3 +171,10 @@ Imports create new parts without replacing existing manuscripts. Occupied part n
 Validation: `node scripts/test-structured-import.cjs` (Node 22). The year-three fixture produces one part, 12 inferred EPs, and all 12 scenes with every non-heading line preserved. Database tests use temporary storage.
 
 Master import is available beside the Part/SS controls in the writer’s management toolbar. The normal “นำเข้าบท” button remains scoped to the current scene or EP; importing several scenes there adds them to the selected EP without creating a new part.
+
+
+### Immersive reader
+
+Project `/read` now opens a reader-only full-viewport experience: scene artwork/video, stable left/right speaker cards, gradient narration, manual stepping, timed automatic stepping, and continuous reading. The scene TOC, reading preferences, fullscreen, and existing narration live in compact panels. Automatic stepping does not synthesize speech or spend API credits; narration remains explicitly controlled in the audio panel. Scene BGM starts only on user request.
+
+Reading mode, text size, motion preference, and scene/paragraph position are saved locally on the current device. Reduced-motion preferences are respected, motion can be disabled, and background videos pause when disabled. Deep links update as the reader selects scenes. The previous reader remains available using `?view=classic`. No manuscript or database migration is required.

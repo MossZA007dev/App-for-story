@@ -1,0 +1,931 @@
+/* Reader experience: artwork is the stage, text is the focus. */
+body.immersive-reading {
+  padding: 0 !important;
+  overflow: hidden;
+  background: #101612 !important;
+}
+body.immersive-reading > .app-header,
+body.immersive-reading > footer {
+  display: none !important;
+}
+body.immersive-reading > #main-content {
+  height: 100dvh;
+  min-height: 0;
+}
+.immersive-reader {
+  --ir-font-size: 22px;
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  color: #faf9f3;
+  background: #121914;
+  font-family: var(--font-sarabun), sans-serif;
+  --ir-line: #ffffff24;
+}
+.immersive-reader:fullscreen {
+  height: 100dvh;
+  width: 100vw;
+}
+.ir-stage {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  overflow: hidden;
+  background: #151e17;
+}
+.ir-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 35%;
+  opacity: 1;
+  animation: ir-dissolve 1s ease-out both;
+}
+.has-motion img.ir-backdrop:not(.ir-old) {
+  animation:
+    ir-dissolve 1s ease-out both,
+    ir-pan 28s ease-out both;
+}
+.ir-old {
+  z-index: -1;
+  animation: none !important;
+  opacity: 0.65;
+}
+.ir-no-art {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: #a6b58b44;
+  background:
+    radial-gradient(ellipse at 80% 30%, #74815e55, transparent 60%),
+    linear-gradient(135deg, #263d33, #101d16);
+  font-size: clamp(36px, 8vw, 110px);
+  font-weight: 600;
+}
+.ir-no-art svg {
+  opacity: 0.3;
+}
+.ir-vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      180deg,
+      #09100be0 0%,
+      #09100b25 25%,
+      #09100b10 38%,
+      #09100be8 92%,
+      #09100bfa
+    ),
+    linear-gradient(90deg, #0a130c78, transparent 48%, #0a130c4a);
+  pointer-events: none;
+}
+.ir-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.12;
+  background: radial-gradient(#ffffff20 0.6px, transparent 0.6px);
+  background-size: 4px 4px;
+  pointer-events: none;
+}
+.ir-header {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  padding: 26px 4vw;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  z-index: 5;
+  transition:
+    opacity 0.5s,
+    transform 0.5s;
+}
+.ir-back {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: #d6decb;
+  min-height: 40px;
+}
+.ir-book-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.ir-book-title span {
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  color: #bfcdb0;
+}
+.ir-book-title strong {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 55ch;
+}
+.ir-mode-switch {
+  display: flex;
+  padding: 4px;
+  border: 1px solid var(--ir-line);
+  border-radius: 30px;
+  background: #ffffff08;
+  backdrop-filter: blur(16px);
+  flex-shrink: 0;
+}
+.ir-mode-switch button {
+  border-radius: 30px;
+  padding: 8px 15px;
+  font-size: 11px;
+  color: #ccd6c1;
+  min-height: 34px;
+}
+.ir-mode-switch button[aria-pressed="true"] {
+  background: #ffffff19;
+  color: #fff;
+}
+.ir-scene-heading {
+  position: absolute;
+  top: clamp(105px, 15vh, 170px);
+  left: 7vw;
+  right: 7vw;
+  pointer-events: none;
+  animation: ir-enter 0.8s ease-out both;
+  text-shadow: 0 2px 15px #0006;
+}
+.ir-scene-heading > p {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: #c1cdae;
+  margin-bottom: 9px;
+}
+.ir-scene-heading h1 {
+  font-size: clamp(22px, 2.3vw, 38px);
+  font-weight: 500;
+  line-height: 1.5 !important;
+  max-width: 34ch;
+}
+.ir-scene-heading > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #c3d0b5;
+  font-size: 11px;
+  margin-top: 12px;
+}
+.ir-story-stage {
+  position: absolute;
+  inset: 34vh 0 128px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 10px 7vw 12px;
+  min-height: 0;
+}
+.ir-scene-progress {
+  position: absolute;
+  right: 4vw;
+  top: 0;
+  display: flex;
+  gap: 7px;
+  font-size: 11px;
+  color: #ffffff65;
+  letter-spacing: 0.09em;
+}
+.ir-scene-progress > span:first-child {
+  color: #fff;
+}
+.ir-beats {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #ffffff30 transparent;
+  padding: 28px 5px 10px;
+}
+.ir-beat {
+  position: relative;
+  max-width: 56ch;
+  flex-shrink: 0;
+  overflow-wrap: anywhere;
+}
+.ir-beat p {
+  font-size: var(--ir-font-size);
+  line-height: 1.95;
+  font-weight: 400;
+  text-wrap: pretty;
+  margin: 0;
+  color: #faf9f3 !important;
+}
+.ir-dialogue {
+  width: min(56%, 640px);
+  padding: 20px 25px;
+  border: 1px solid #ffffff24;
+  border-radius: 22px;
+  background: linear-gradient(130deg, #ffffff15, #ffffff07);
+  backdrop-filter: blur(22px);
+  box-shadow: 0 15px 50px #00000012;
+}
+.ir-left {
+  align-self: flex-start;
+  border-bottom-left-radius: 6px;
+}
+.ir-right {
+  align-self: flex-end;
+  border-bottom-right-radius: 6px;
+  background: linear-gradient(130deg, #8eaa6f24, #ffffff0b);
+}
+.ir-speaker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #cbd8ba;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  margin-bottom: 12px;
+}
+.ir-speaker > img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #ffffff40;
+}
+.ir-initial {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #ffffff14;
+  color: #dfe9d3;
+  font-size: 12px;
+}
+.ir-right .ir-speaker {
+  flex-direction: row-reverse;
+}
+.ir-right p {
+  text-align: left;
+}
+.ir-narration {
+  align-self: center;
+  max-width: 70ch;
+  width: min(85%, 900px);
+  text-align: center;
+  padding: 28px 34px 32px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #111d1470 20%,
+    #111d1499 70%,
+    transparent
+  );
+  text-shadow: 0 2px 20px #0005;
+  border-block: 1px solid #ffffff06;
+}
+.ir-narration .ir-speaker {
+  justify-content: center;
+  letter-spacing: 0.16em;
+  font-size: 10px;
+  opacity: 0.65;
+  margin-bottom: 15px;
+}
+.ir-narration p {
+  line-height: 2.1;
+  font-weight: 300;
+}
+.ir-sound {
+  align-self: center;
+  text-align: center;
+  padding: 16px 26px;
+  border-radius: 30px;
+  background: #111c1240;
+  backdrop-filter: blur(15px);
+}
+.ir-sound .ir-speaker {
+  justify-content: center;
+}
+.ir-sound p {
+  font-size: calc(var(--ir-font-size) - 3px) !important;
+  font-style: italic;
+  color: #c3d2b2 !important;
+}
+.ir-beat.is-history:not(.ir-continuous) {
+  opacity: 0.38;
+  transform: scale(0.975);
+  transform-origin: bottom;
+  max-height: 145px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ir-beat.is-current {
+  animation: ir-enter 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.ir-scene-end {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: #b0be9d;
+  padding: 18px 0 0;
+}
+.ir-scene-end button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 8px 16px;
+  background: #ffffff13;
+  border: 1px solid #ffffff28;
+  border-radius: 30px;
+  color: #eef4e6;
+  font-size: 12px;
+}
+.ir-empty {
+  align-self: center;
+  text-align: center;
+  padding: 40px;
+  color: #dce5cf;
+}
+.ir-empty > svg {
+  margin: auto auto 14px;
+  opacity: 0.4;
+}
+.ir-empty h2 {
+  font-size: 20px;
+}
+.ir-empty a {
+  display: block;
+  color: #b8c9a3;
+  margin-top: 14px;
+  font-size: 13px;
+  text-decoration: underline;
+}
+.ir-dock {
+  position: absolute;
+  left: 50%;
+  bottom: 42px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  width: min(850px, 92vw);
+  padding: 12px 18px;
+  border: 1px solid #ffffff20;
+  border-radius: 22px;
+  background: linear-gradient(110deg, #52604938, #273322a8);
+  backdrop-filter: blur(28px);
+  box-shadow: 0 15px 60px #0003;
+  z-index: 6;
+  transition:
+    opacity 0.5s,
+    transform 0.5s;
+}
+.ir-dock button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 38px;
+  min-height: 38px;
+  border-radius: 50%;
+  color: #d9e4cc;
+}
+.ir-dock button:hover {
+  background: #ffffff0e;
+  color: #fff;
+}
+.ir-dock button:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+.ir-transport {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.ir-dock .ir-auto {
+  background: #e5ecdc;
+  color: #1d2c19;
+  min-width: 40px;
+  height: 40px;
+}
+.ir-dock .ir-auto:hover {
+  background: #fff;
+  color: #182615;
+}
+.ir-dock-count {
+  font-size: 10px;
+  color: #c8d6b8;
+  margin-left: 8px;
+  min-width: 38px;
+  font-variant-numeric: tabular-nums;
+}
+.ir-reading-progress {
+  height: 2px;
+  background: #ffffff18;
+  flex: 1;
+  min-width: 20px;
+  overflow: hidden;
+  border-radius: 3px;
+}
+.ir-reading-progress i {
+  display: block;
+  height: 100%;
+  background: #c4d6a8;
+  transition: width 0.6s ease;
+}
+.ir-tools {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.ir-tools button {
+  border-radius: 10px;
+  min-width: 36px;
+  padding-inline: 5px;
+}
+.ir-tools button span {
+  font-size: 10px;
+}
+.ir-keyboard-hint {
+  position: absolute;
+  bottom: 16px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #b8c9a266;
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  pointer-events: none;
+  transition: opacity 0.5s;
+}
+.ir-keyboard-hint span {
+  margin: 0 8px;
+}
+.is-idle .ir-header,
+.is-idle .ir-keyboard-hint {
+  opacity: 0.15;
+}
+.is-idle .ir-dock {
+  opacity: 0.2;
+  transform: translateX(-50%) translateY(9px);
+}
+.ir-header:focus-within,
+.ir-dock:focus-within,
+.ir-header:hover,
+.ir-dock:hover {
+  opacity: 1 !important;
+  transform: translateX(0);
+}
+.ir-dock:hover,
+.ir-dock:focus-within {
+  transform: translateX(-50%) !important;
+}
+.ir-scroll .ir-stage {
+  position: absolute;
+  filter: blur(4px);
+  opacity: 0.4;
+}
+.ir-scroll .ir-vignette {
+  background: #0b170edb;
+}
+.ir-scroll .ir-scene-heading {
+  top: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  right: auto;
+  width: min(820px, 88vw);
+  position: absolute;
+  animation: none;
+}
+.ir-scroll-story {
+  position: absolute;
+  top: 255px;
+  bottom: 145px;
+  left: 0;
+  right: 0;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  padding: 15px max(7vw, calc((100% - 850px) / 2)) 70px;
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+  scrollbar-width: thin;
+  scrollbar-color: #ffffff25 transparent;
+}
+.ir-scroll .ir-beat {
+  width: min(88%, 700px);
+  flex-shrink: 0;
+}
+.ir-scroll .ir-narration {
+  width: 100%;
+  padding: 20px 0;
+  text-align: left;
+  background: none;
+  box-shadow: none;
+  border: 0;
+}
+.ir-scroll .ir-narration .ir-speaker {
+  justify-content: flex-start;
+}
+.ir-select-beat {
+  font-size: 10px;
+  color: #9fae8f;
+  opacity: 0;
+  transition: opacity 0.2s;
+  margin-top: 10px;
+}
+.ir-continuous:hover .ir-select-beat,
+.ir-continuous:focus-within .ir-select-beat {
+  opacity: 1;
+}
+.ir-scroll .ir-beat:not(.is-current) {
+  opacity: 0.8;
+}
+.ir-scroll .ir-beat.is-current {
+  animation: none;
+}
+.ir-scroll .ir-dialogue.is-current {
+  border-color: #b6c89866;
+}
+.ir-panel-scrim {
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  background: transparent;
+  z-index: 100;
+  color: #edf4e5;
+}
+.ir-panel-scrim::backdrop {
+  background: #07100a90;
+  backdrop-filter: blur(12px);
+}
+.ir-panel {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  bottom: 20px;
+  width: min(450px, calc(100vw - 40px));
+  background: linear-gradient(140deg, #374334f5, #263323fc);
+  border: 1px solid #ffffff20;
+  border-radius: 24px;
+  box-shadow: 0 30px 100px #0005;
+  overflow-y: auto;
+  padding: 26px;
+  animation: ir-panel-in 0.35s ease-out both;
+}
+.ir-panel > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  padding-bottom: 24px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid #ffffff16;
+}
+.ir-panel h2 {
+  font-size: 20px;
+  font-weight: 500;
+}
+.ir-panel header button {
+  padding: 8px;
+  border-radius: 50%;
+  color: #d9e3ce;
+}
+.ir-panel nav {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ir-panel nav > button {
+  text-align: left;
+  padding: 14px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+}
+.ir-panel nav > button:hover {
+  background: #ffffff08;
+}
+.ir-panel nav > button[aria-current="page"] {
+  background: #a9c78513;
+  border-color: #ffffff20;
+}
+.ir-panel nav small {
+  display: block;
+  font-size: 10px;
+  color: #b0c19a;
+  margin: 0 0 7px 28px;
+}
+.ir-panel nav > button > span {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  color: #e4edd9;
+  line-height: 1.7;
+}
+.ir-panel nav b {
+  font-size: 11px;
+  font-weight: 400;
+  color: #839575;
+}
+.ir-settings > label {
+  display: block;
+  font-size: 14px;
+  color: #d6e2c9;
+  padding: 20px 0;
+}
+.ir-settings output {
+  float: right;
+  color: #b4c49e;
+}
+.ir-settings input[type="range"] {
+  display: block;
+  width: 100%;
+  margin-top: 18px;
+  accent-color: #cadbb4;
+}
+.ir-switch {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid #ffffff15;
+  padding: 18px 0;
+  font-size: 14px;
+}
+.ir-switch small {
+  display: block;
+  color: #a1b18e;
+  font-size: 11px;
+  line-height: 1.8;
+  margin-top: 6px;
+}
+.ir-switch input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #d3e2bf;
+}
+.ir-settings > p {
+  font-size: 11px;
+  color: #9faf8e;
+  line-height: 1.9;
+  margin-top: 22px;
+}
+.ir-audio .read-aloud-controls {
+  margin: 20px 0 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+.ir-audio .scene-voice-panel {
+  max-height: none !important;
+}
+.ir-audio .scene-voice-heading {
+  margin-top: 10px;
+}
+.ir-audio .scene-voice-default {
+  background: transparent;
+}
+.ir-audio .ir-switch button {
+  padding: 10px;
+  background: #ffffff0c;
+  border: 1px solid #ffffff20;
+  border-radius: 10px;
+  color: #d4e1c5;
+}
+.immersive-reader :focus-visible {
+  outline: 2px solid #d2dfbc !important;
+  outline-offset: 4px;
+}
+.immersive-reader button:disabled {
+  cursor: not-allowed;
+}
+.no-motion * {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+@keyframes ir-pan {
+  from {
+    transform: scale(1.015) translateX(-0.2%);
+  }
+  to {
+    transform: scale(1.07) translateX(0.4%);
+  }
+}
+@keyframes ir-dissolve {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ir-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes ir-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@media (max-width: 760px) {
+  .ir-header {
+    padding: 16px 5vw;
+    gap: 14px;
+  }
+  .ir-back span {
+    display: none;
+  }
+  .ir-book-title strong {
+    font-size: 10px;
+    max-width: 25ch;
+  }
+  .ir-book-title span {
+    font-size: 9px;
+  }
+  .ir-mode-switch button {
+    font-size: 10px;
+    padding: 6px 10px;
+  }
+  .ir-scene-heading {
+    top: 110px;
+    left: 6vw;
+    right: 6vw;
+  }
+  .ir-scene-heading h1 {
+    font-size: 23px;
+    max-width: 28ch;
+  }
+  .ir-scene-heading > p {
+    font-size: 9px;
+  }
+  .ir-scene-heading > span {
+    font-size: 10px;
+  }
+  .ir-story-stage {
+    inset: 34vh 0 124px;
+    padding-inline: 5vw;
+  }
+  .ir-dialogue {
+    width: 85%;
+    padding: 16px 18px;
+    border-radius: 18px;
+  }
+  .ir-beat p {
+    font-size: calc(var(--ir-font-size) - 2px);
+    line-height: 1.85;
+  }
+  .ir-narration {
+    width: 100%;
+    padding: 22px 12px;
+  }
+  .ir-narration p {
+    line-height: 2;
+  }
+  .ir-beats {
+    gap: 12px;
+    padding-top: 10px;
+  }
+  .ir-beat.is-history:not(.ir-continuous) {
+    max-height: 92px;
+    opacity: 0.25;
+  }
+  .ir-dock {
+    bottom: max(22px, env(safe-area-inset-bottom));
+    width: 94vw;
+    padding: 10px;
+    gap: 10px;
+    border-radius: 20px;
+  }
+  .ir-dock-count {
+    display: none;
+  }
+  .ir-tools {
+    gap: 0;
+  }
+  .ir-tools button {
+    min-width: 35px;
+  }
+  .ir-tools button > span {
+    display: none;
+  }
+  .ir-transport {
+    gap: 1px;
+  }
+  .ir-reading-progress {
+    min-width: 12px;
+  }
+  .ir-keyboard-hint {
+    display: none;
+  }
+  .ir-scene-progress {
+    right: 6vw;
+    top: -15px;
+  }
+  .ir-scroll-story {
+    top: 250px;
+    bottom: 110px;
+    padding-inline: 6vw;
+    gap: 26px;
+  }
+  .ir-scroll .ir-scene-heading {
+    top: 105px;
+  }
+  .ir-scroll .ir-beat {
+    width: 92%;
+  }
+  .ir-scroll .ir-narration {
+    width: 100%;
+  }
+  .ir-select-beat {
+    opacity: 1;
+  }
+  .ir-panel {
+    top: 10px;
+    bottom: 10px;
+    right: 10px;
+    width: calc(100vw - 20px);
+    padding: 20px;
+    border-radius: 20px;
+  }
+}
+@media (max-height: 650px) and (min-width: 761px) {
+  .ir-scene-heading {
+    top: 90px;
+  }
+  .ir-scene-heading h1 {
+    font-size: 25px;
+  }
+  .ir-story-stage {
+    inset: 220px 0 110px;
+  }
+  .ir-dock {
+    bottom: 30px;
+  }
+  .ir-narration {
+    padding-block: 12px;
+  }
+  .ir-beat p {
+    font-size: 20px;
+  }
+  .ir-scroll-story {
+    top: 220px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .immersive-reader * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+.ir-youtube-player {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  left: 0;
+  bottom: 0;
+  opacity: 0;
+  pointer-events: none;
+  border: 0;
+}
+.ir-backdrop{z-index:0}.ir-old{z-index:0}.ir-backdrop:not(.ir-old){z-index:1}.ir-vignette,.ir-grain{z-index:2}

@@ -1,3 +1,4 @@
+import { deleteStoryScene, StoryDeletionError } from "@/lib/story/deleteStoryContent";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { scenes, sceneVersions, images } from "@/lib/db/schema";
@@ -138,49 +139,7 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string; sceneId: string }> }
-) {
-  try {
-    const { sceneId } = await params;
-
-    // 1. Get scene info to know partId & episodeId before deletion
-    const targetScene = db.select().from(scenes).where(eq(scenes.id, sceneId)).get();
-
-    // 2. Delete the scene
-    db.delete(scenes).where(eq(scenes.id, sceneId)).run();
-
-    // 3. Re-sequence remaining scenes in the episode or part
-    if (targetScene) {
-      const remainingScenes = targetScene.episodeId
-        ? db
-            .select()
-            .from(scenes)
-            .where(eq(scenes.episodeId, targetScene.episodeId))
-            .orderBy(asc(scenes.order))
-            .all()
-        : db
-            .select()
-            .from(scenes)
-            .where(eq(scenes.partId, targetScene.partId))
-            .orderBy(asc(scenes.order))
-            .all();
-
-      remainingScenes.forEach((sc, idx) => {
-        if (sc.order !== idx + 1) {
-          db.update(scenes).set({ order: idx + 1 }).where(eq(scenes.id, sc.id)).run();
-        }
-      });
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: "ลบฉากเรียบร้อยแล้ว",
-    });
-  } catch (error: unknown) {
-    console.error("Failed to delete scene:", error);
-    const msg = error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการลบฉาก";
-    return NextResponse.json({ error: msg }, { status: 500 });
-  }
+export async function DELETE(_req:NextRequest,{params}:{params:Promise<{id:string;sceneId:string}>}) {
+ try {const {id,sceneId}=await params;return NextResponse.json(deleteStoryScene(id,sceneId));}
+ catch(e){return NextResponse.json({error:e instanceof StoryDeletionError?e.message:"ลบไม่สำเร็จ กรุณาลองใหม่"},{status:e instanceof StoryDeletionError?e.status:500});}
 }

@@ -345,6 +345,9 @@ export function initDatabase() {
     for (const p of existingParts) {
       let ep = sqlite.prepare("SELECT id FROM episodes WHERE part_id = ? ORDER BY number ASC LIMIT 1").get(p.id) as { id: string } | undefined;
       if (!ep) {
+        // An intentionally emptied part must stay empty after restart.
+        const sceneCount = sqlite.prepare("SELECT count(*) AS cnt FROM scenes WHERE part_id = ?").get(p.id) as {cnt:number};
+        if (!sceneCount.cnt) continue;
         const epId = crypto.randomUUID();
         const now = new Date().toISOString();
         sqlite.prepare("INSERT INTO episodes (id, project_id, part_id, number, title, summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(

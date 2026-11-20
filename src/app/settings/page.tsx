@@ -16,6 +16,7 @@ import {
   Camera,
 } from "lucide-react";
 import { toast } from "sonner";
+import { FreeReaderAISettings } from "@/components/reader/FreeReaderAISettings";
 import { OpenAIStorySettings } from "@/components/projects/OpenAIStorySettings";
 import { ElevenLabsSettings } from "@/components/audio/ElevenLabsSettings";
 
@@ -153,6 +154,7 @@ export default function SettingsPage() {
         <div className="h-96 rounded-xl bg-slate-900/60 animate-pulse border border-slate-800" />
       ) : (
         <form onSubmit={handleSave} className="space-y-6">
+          <FreeReaderAISettings />
           <OpenAIStorySettings />
           <ElevenLabsSettings />
           {/* Section: Text AI Provider Selection */}

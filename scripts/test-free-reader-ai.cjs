@@ -1,0 +1,16 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),Module=require('node:module'),ts=require('typescript');
+const root=path.resolve(__dirname,'..'),resolve=Module._resolveFilename;
+Module._resolveFilename=function(request,...args){return resolve.call(this,request.startsWith('@/')?path.join(root,'src',request.slice(2)):request,...args);};
+Module._extensions['.ts']=(mod,file)=>mod._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,file);
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'saga-free-ai-')),cwd=process.cwd(),originalFetch=global.fetch;delete process.env.OPENROUTER_API_KEY;
+(async()=>{try{process.chdir(temp);
+const ai=require('../src/lib/ai/freeReaderAI.ts'),settings=require('../src/app/api/reader-ai/settings/route.ts'),{NextRequest}=require('next/server');
+let calls=0,body;
+global.fetch=async(url,options)=>{calls++;assert.equal(url,'https://openrouter.ai/api/v1/chat/completions');body=JSON.parse(options.body);assert.deepEqual(body.models,ai.FREE_READER_MODELS);assert(body.models.length>1&&body.models.every(m=>m.endsWith(':free')));assert.equal(body.reasoning.effort,'low');assert.notEqual(body.reasoning.enabled,false);assert.equal(body.response_format.type,'json_schema');assert.equal(body.response_format.json_schema.strict,true);assert(body.max_tokens>6500);assert.equal(body.provider.require_parameters,true);assert(!body.model&&!body.plugins&&!body.tools);return Response.json({model:'provider/free-test',choices:[{finish_reason:'stop',message:{content:'{}'}}]});};
+await assert.rejects(()=>ai.runFreeReaderAI('instruction','text'),/OpenRouter/);assert.equal(calls,0);
+const fake='test-only-not-real-key';await ai.saveReaderAIKey(fake);assert.equal((fs.statSync(path.join(temp,'data/audio/.private/reader-ai.json')).mode&0o777),0o600);const safe=await(await settings.GET()).json();assert.equal(safe.configured,true);assert(!JSON.stringify(safe).includes(fake));
+assert.equal((await ai.runFreeReaderAI('instruction','text')).text,'{}');assert.equal(calls,1);
+for(const finish_reason of ['length','content_filter','error',null]){global.fetch=async()=>Response.json({choices:[{finish_reason,message:{content:'{}'}}]});await assert.rejects(()=>ai.runFreeReaderAI('i','t'), e=>e instanceof ai.FreeReaderAIError && (finish_reason==='length' ? e.message.includes('ถูกตัด') : finish_reason==='content_filter' ? e.message.includes('ปฏิเสธ') : true));}
+for(const code of [401,402,429,503]){let attempts=0;global.fetch=async()=>{attempts++;return Response.json({error:{message:'must not echo raw secret'}},{status:code});};await assert.rejects(()=>ai.runFreeReaderAI('i','t'),e=>!e.message.includes('raw secret'));assert.equal(attempts,1);}
+console.log('PASS: server-owned free-only fallback allowlist, no paid models/tools/client overrides, secret-free settings responses, 0600 private key storage, missing-key handling, truncation/moderation/rate-limit/provider failures. Mock network only.');
+}finally{global.fetch=originalFetch;process.chdir(cwd);fs.rmSync(temp,{recursive:true,force:true});}})().catch(e=>{console.error(e);process.exitCode=1;});

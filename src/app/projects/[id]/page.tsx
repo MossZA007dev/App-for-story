@@ -1,4 +1,5 @@
 "use client";
+import { parseStoryStructure } from "@/lib/story/structuredImport";
 
 import { useEffect, useState, useRef, use, useMemo } from "react";
 import Link from "next/link";
@@ -825,9 +826,7 @@ export default function StoryWorkspacePage({
     currentPartEpisodes[0] ||
     null;
   const currentEpisodeScenes =
-    currentEpisode?.scenes && currentEpisode.scenes.length > 0
-      ? currentEpisode.scenes
-      : currentPart?.scenes || [];
+    currentEpisode ? currentEpisode.scenes || [] : (currentPart?.scenes || []).filter(s => !s.episodeId);
 
   // Switch Active Part
   const handleSelectPart = (partId: string) => {
@@ -841,8 +840,7 @@ export default function StoryWorkspacePage({
       setActiveEpisodeId(firstEp.id);
       if (firstEp.scenes && firstEp.scenes.length > 0) {
         setActiveSceneId(firstEp.scenes[0].id);
-      } else if (p && p.scenes && p.scenes.length > 0) {
-        setActiveSceneId(p.scenes[0].id);
+
       } else {
         setActiveSceneId("");
         setActiveScene(null);
@@ -850,8 +848,10 @@ export default function StoryWorkspacePage({
         setDialogueBlocks([]);
       }
     } else if (p && p.scenes && p.scenes.length > 0) {
+      setActiveEpisodeId("");
       setActiveSceneId(p.scenes[0].id);
     } else {
+      setActiveEpisodeId("");
       setActiveSceneId("");
       setActiveScene(null);
       setSceneImages([]);
@@ -963,10 +963,6 @@ export default function StoryWorkspacePage({
   const handleDeleteEpisode = async () => {
     const targetEp = currentEpisode;
     if (!targetEp || !currentPart) return;
-    if ((currentPart.episodes?.length || 0) <= 1) {
-      toast.error("ไม่สามารถลบตอนเดียวที่เหลืออยู่ในภาคนี้ได้");
-      return;
-    }
     if (!confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบ "${targetEp.title}" และฉากย่อยทั้งหมดในตอนนี้?`)) {
       return;
     }
@@ -974,23 +970,16 @@ export default function StoryWorkspacePage({
       const res = await fetch(`/api/projects/${projectId}/episodes/${targetEp.id}`, {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error("ลบตอนไม่สำเร็จ");
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "ลบตอนไม่สำเร็จ");
       toast.success("ลบตอนเรียบร้อยแล้ว");
       setShowEditEpisodeModal(false);
 
-      const projRes = await fetch(`/api/projects/${projectId}`);
-      if (projRes.ok) {
-        const projData = await projRes.json();
-        setParts(projData.parts || []);
-        const updatedPart = projData.parts?.find((p: any) => p.id === activePartId);
-        if (updatedPart && updatedPart.episodes?.length > 0) {
-          const nextEp = updatedPart.episodes[0];
-          setActiveEpisodeId(nextEp.id);
-          if (nextEp.scenes?.length > 0) {
-            setActiveSceneId(nextEp.scenes[0].id);
-          }
-        }
-      }
+      setHasUnsavedChanges(false);
+      setActiveEpisodeId(result.nextEpisodeId || "");
+      setActiveSceneId(result.nextSceneId || "");
+      setActiveScene(null); setSceneImages([]); setDialogueBlocks([]);
+      await loadProjectData(result.nextSceneId || "");
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "เกิดข้อผิดพลาดในการลบตอน");
@@ -2693,6 +2682,12 @@ export default function StoryWorkspacePage({
       return;
     }
 
+    const structure = parseStoryStructure(scriptText);
+    if (structure.parts.length > 1 || structure.parts.some(part => part.episodes.length > 1 || part.episodes.some(ep => ep.scenes.length > 1))) {
+      const message = "ข้อความนี้มีหลายฉากหรือหลาย EP กรุณาใช้ ‘นำเข้าทั้งภาค (Master)’ เพื่อแยกโครงสร้าง ไม่รวมทุกอย่างไว้ฉากเดียว";
+      toast.error(message);
+      throw new Error(message);
+    }
     // 1. Initial parse
     const initialParsed = parseClaudeScript(scriptText, characters);
 
@@ -3163,7 +3158,7 @@ export default function StoryWorkspacePage({
   };
 
   const handleDeleteScene = async (targetSceneId: string, sceneTitle: string) => {
-    if (!confirm(`คุณต้องการลบ "${sceneTitle}" ใช่หรือไม่?\n(บทสนทนาและรูปภาพที่ผูกไว้ในฉากนี้จะถูกลบถาวร)`)) {
+    if (!confirm(`คุณต้องการลบ "${sceneTitle}" ใช่หรือไม่?\n(เนื้อหาฉากจะถูกลบ รูปภาพยังเก็บไว้ในคลังภาพ)`)) {
       return;
     }
 
@@ -3183,6 +3178,7 @@ export default function StoryWorkspacePage({
 
       toast.success(`ลบฉาก "${sceneTitle}" เรียบร้อยแล้ว`);
       setShowEditSceneModal(false);
+      setHasUnsavedChanges(false);
 
       if (isDeletingActive) {
         if (nextActiveId) {
@@ -3539,7 +3535,7 @@ export default function StoryWorkspacePage({
               </button>
 
               {/* Quick Delete active scene button (if more than 1 scene) */}
-              {activeScene && currentEpisodeScenes.length > 1 && (
+              {activeScene && (
                 <button
                   type="button"
                   onClick={() => handleDeleteScene(activeScene.id, activeScene.title)}
@@ -5825,7 +5821,7 @@ export default function StoryWorkspacePage({
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-800">
-              {currentPartEpisodes.length > 1 ? (
+              {currentEpisode ? (
                 <button
                   type="button"
                   onClick={handleDeleteEpisode}
@@ -6325,7 +6321,7 @@ export default function StoryWorkspacePage({
 
               {/* Actions */}
               <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-                {currentEpisodeScenes.length > 1 || (currentPart && currentPart.scenes.length > 1) ? (
+                {editSceneModalId ? (
                   <button
                     type="button"
                     onClick={() => {

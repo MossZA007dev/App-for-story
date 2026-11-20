@@ -19,9 +19,14 @@ import {
   X,
   MapPin,
   Sparkles,
+  Activity,
 } from "lucide-react";
 import type { DialogueBlock } from "@/lib/story/dialogueParser";
+import { readingEmphasis, readingDelivery } from "@/lib/story/readingEmphasis";
 import { extractYouTubeVideoId } from "@/lib/audio/audioHelpers";
+import { useReaderAtmosphere } from "./useReaderAtmosphere";
+import { ATMOSPHERES } from "@/lib/story/readerAtmosphere";
+import { ReaderCharacterStatus } from "./ReaderCharacterStatus";
 import { NarrationPlayer } from "@/components/audio/NarrationPlayer";
 import "./immersive-reader.css";
 type Media = {
@@ -60,11 +65,14 @@ const isVideo = (m: Media) =>
 const keyFor = (id: string) => `saga-immersive:${id}`;
 export function ImmersiveReader(p: Props) {
   const [mode, setMode] = useState<"cinema" | "scroll">("cinema"),
-    [panel, setPanel] = useState<"contents" | "settings" | "audio" | null>(
-      null,
-    ),
+    [panel, setPanel] = useState<
+      "contents" | "settings" | "audio" | "status" | null
+    >(null),
     [auto, setAuto] = useState(false),
     [motion, setMotion] = useState(true),
+    [textEffects, setTextEffects] = useState(true),
+    [camera, setCamera] = useState(true),
+    [narrating, setNarrating] = useState(false),
     [size, setSize] = useState(22),
     [idle, setIdle] = useState(false),
     [muted, setMuted] = useState(true),
@@ -86,6 +94,8 @@ export function ImmersiveReader(p: Props) {
     entry = p.entries[sceneIndex],
     atEnd = p.index >= p.blocks.length - 1;
   const title = p.scene?.title || "ยังไม่มีฉาก";
+  const atmosphere = useReaderAtmosphere(p.scene?.location || "", title, narrating);
+  const ambientName = ATMOSPHERES.find(a => a.value === atmosphere.kind)?.label || "";
   const youtubeId = extractYouTubeVideoId(p.scene?.bgmUrl || "");
   const directBgm =
     p.scene?.bgmUrl && !/youtu(?:\.be|be\.com)/i.test(p.scene.bgmUrl)
@@ -101,6 +111,8 @@ export function ImmersiveReader(p: Props) {
       setMode(saved.mode === "scroll" ? "scroll" : "cinema");
       setSize(Math.min(30, Math.max(18, Number(saved.size) || 22)));
       setMotion(!reduced.matches && saved.motion !== false);
+      setTextEffects(saved.textEffects !== false);
+      setCamera(saved.camera !== false);
     } catch {
       setMotion(!reduced.matches);
     }
@@ -115,15 +127,16 @@ export function ImmersiveReader(p: Props) {
     try {
       localStorage.setItem(
         "saga-reader-preferences",
-        JSON.stringify({ mode, size, motion }),
+        JSON.stringify({ mode, size, motion, textEffects, camera }),
       );
     } catch {}
-  }, [mode, size, motion, ready]);
+  }, [mode, size, motion, textEffects, camera, ready]);
   useEffect(() => {
     if (!p.scene?.id || !p.blocks.length) return;
     setAuto(false);
     setIdle(false);
     progressScene.current = p.scene.id;
+    setNarrating(false);
     if (!restored.current) {
       restored.current = true;
       try {
@@ -167,11 +180,11 @@ export function ImmersiveReader(p: Props) {
     }
     const delay = Math.min(
       18000,
-      Math.max(3500, Array.from(active.text).length * 85 + 1200),
+      Math.max(3500, Array.from(active.text).length * 85 + 1200 + (textEffects && readingDelivery(active) !== "plain" ? 700 : 0)),
     );
     const t = setTimeout(() => p.onIndex(p.index + 1), delay);
     return () => clearTimeout(t);
-  }, [auto, mode, panel, p.index, active?.text, atEnd]);
+  }, [auto, mode, panel, p.index, active?.text, atEnd, textEffects]);
   useEffect(() => {
     const hide = () => {
       if (document.hidden) setAuto(false);
@@ -236,6 +249,7 @@ export function ImmersiveReader(p: Props) {
   }, [muted, directBgm]);
   useEffect(() => {
     if (panel) panelDialog.current?.showModal();
+    if (panel !== "audio") setNarrating(false);
   }, [panel]);
   useEffect(() => {
     root.current?.querySelectorAll("video").forEach((video) => {
@@ -320,6 +334,9 @@ export function ImmersiveReader(p: Props) {
   const blockView = (b: DialogueBlock, i: number, continuous = false) => {
     const narrator = b.type === "narration" || b.isNarrator,
       sound = b.type === "sound";
+    const emphasis = ready && motion && textEffects && i === p.index ? readingEmphasis(b) : "none";
+    const delivery = ready && motion && textEffects && i === p.index ? readingDelivery(b) : "plain";
+    const textClass = emphasis !== "none" ? `ir-text-emphasis ir-text-${emphasis}` : delivery !== "plain" ? `ir-text-emphasis ir-text-${delivery}` : undefined;
     return (
       <article
         key={`${p.scene?.id}-${i}`}
@@ -334,12 +351,12 @@ export function ImmersiveReader(p: Props) {
               <Sparkles size={14} />
               บรรยากาศ
             </span>
-            <p>{b.text}</p>
+            <p className={textClass} data-emphasis={emphasis}>{b.text}</p>
           </>
         ) : narrator ? (
           <>
             <span className="ir-speaker">บทบรรยาย</span>
-            <p>{b.text}</p>
+            <p className={textClass} data-emphasis={emphasis}>{b.text}</p>
           </>
         ) : (
           <>
@@ -353,7 +370,7 @@ export function ImmersiveReader(p: Props) {
               )}
               <span>{b.speakerName || b.speaker?.name || "ตัวละคร"}</span>
             </div>
-            <p>{b.text}</p>
+            <p className={textClass} data-emphasis={emphasis}>{b.text}</p>
           </>
         )}
         {continuous && (
@@ -375,8 +392,8 @@ export function ImmersiveReader(p: Props) {
   return (
     <div
       ref={root}
-      className={`immersive-reader ir-${mode} ${motion ? "has-motion" : "no-motion"} ${idle && !panel ? "is-idle" : ""}`}
-      style={{ "--ir-font-size": `${size}px` } as React.CSSProperties}
+      className={`immersive-reader ir-${mode} ${motion ? "has-motion" : "no-motion"} ${camera ? "has-camera" : "no-camera"} ${idle && !panel ? "is-idle" : ""}`}
+      style={{ "--ir-font-size": `${size}px`, "--ir-shot-scale": active?.type === "dialogue" ? "1.02" : "1" } as React.CSSProperties}
       onPointerMove={wake}
       onPointerDown={wake}
       onKeyDown={wake}
@@ -384,7 +401,7 @@ export function ImmersiveReader(p: Props) {
       <div className="ir-stage" aria-hidden={mode === "scroll"}>
         {previous && renderMedia(previous, true)}
         {p.media ? (
-          renderMedia(p.media)
+          <div className="ir-camera-frame">{renderMedia(p.media)}</div>
         ) : (
           <div className="ir-no-art">
             <BookOpen size={60} />
@@ -541,6 +558,17 @@ export function ImmersiveReader(p: Props) {
         </div>
         <div className="ir-tools">
           <button
+            aria-label="สถานะตัวละคร"
+            title="สรุปพลัง ทักษะ และความสัมพันธ์ถึงบทที่อ่าน"
+            aria-expanded={panel === "status"}
+            onClick={() => {
+              setPanel(panel === "status" ? null : "status");
+              setAuto(false);
+            }}
+          >
+            <Activity size={18} />
+          </button>
+          <button
             aria-label="สารบัญ"
             aria-expanded={panel === "contents"}
             onClick={() => setPanel(panel === "contents" ? null : "contents")}
@@ -590,21 +618,25 @@ export function ImmersiveReader(p: Props) {
           <aside
             className="ir-panel"
             aria-label={
-              panel === "contents"
-                ? "สารบัญ"
-                : panel === "settings"
-                  ? "ตั้งค่าการอ่าน"
-                  : "เสียงอ่านและเพลง"
+              panel === "status"
+                ? "สถานะตัวละคร"
+                : panel === "contents"
+                  ? "สารบัญ"
+                  : panel === "settings"
+                    ? "ตั้งค่าการอ่าน"
+                    : "เสียงอ่านและเพลง"
             }
             onClick={(e) => e.stopPropagation()}
           >
             <header>
               <h2>
-                {panel === "contents"
-                  ? "เรื่องราวทุกฉาก"
-                  : panel === "settings"
-                    ? "อ่านในแบบของคุณ"
-                    : "เสียงและบรรยากาศ"}
+                {panel === "status"
+                  ? "ตัวละคร ณ ตอนนี้"
+                  : panel === "contents"
+                    ? "เรื่องราวทุกฉาก"
+                    : panel === "settings"
+                      ? "อ่านในแบบของคุณ"
+                      : "เสียงและบรรยากาศ"}
               </h2>
               <button
                 autoFocus
@@ -614,7 +646,17 @@ export function ImmersiveReader(p: Props) {
                 <X size={20} />
               </button>
             </header>
-            {panel === "contents" ? (
+            {panel === "status" ? (
+              <ReaderCharacterStatus
+                key={`${p.scene?.id}-${p.index}`}
+                projectId={p.projectId}
+                sceneId={p.scene?.id || ""}
+                index={p.index}
+                sceneTitles={Object.fromEntries(
+                  p.entries.map((e) => [e.scene.id, e.scene.title]),
+                )}
+              />
+            ) : panel === "contents" ? (
               <nav>
                 {p.entries.map((e, i) => (
                   <button
@@ -659,10 +701,34 @@ export function ImmersiveReader(p: Props) {
                     onChange={(e) => setMotion(e.target.checked)}
                   />
                 </label>
+                <label className="ir-switch">
+                  <span>
+                    เอฟเฟกต์ข้อความตามอารมณ์
+                    <small>ตะโกนสั่นสั้น ๆ · กระซิบค่อย ๆ เฟด · บทลังเลเว้นจังหวะในโหมดอัตโนมัติ</small>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={textEffects}
+                    disabled={!motion}
+                    onChange={(e) => setTextEffects(e.target.checked)}
+                  />
+                </label>
+                <label className="ir-switch">
+                  <span>การเคลื่อนกล้องช้า ๆ<small>ภาพค่อย ๆ ซูมและเปลี่ยนระยะเบา ๆ ตามจังหวะบท</small></span>
+                  <input type="checkbox" checked={camera} disabled={!motion} onChange={e => setCamera(e.target.checked)} />
+                </label>
                 <p>บันทึกรูปแบบและตำแหน่งอ่านไว้บนอุปกรณ์นี้อัตโนมัติ</p>
               </div>
             ) : (
               <div className="ir-audio">
+                <section className="ir-atmosphere" aria-label="เสียงบรรยากาศ">
+                  <div className="ir-atmosphere-heading"><span><strong>บรรยากาศรอบตัวคุณ</strong><small>เสียงสังเคราะห์ในเครื่อง · ไม่ใช้เครดิต</small></span><button type="button" aria-label={atmosphere.enabled ? "ปิดเสียงบรรยากาศ" : "เปิดเสียงบรรยากาศ"} aria-pressed={atmosphere.enabled} disabled={atmosphere.busy || (!atmosphere.enabled && atmosphere.kind === "none")} onClick={atmosphere.toggle}>{atmosphere.enabled ? <Volume2 size={18}/> : <VolumeX size={18}/>}</button></div>
+                  <label>เลือกบรรยากาศ<select aria-label="เลือกเสียงบรรยากาศ" value={atmosphere.choice} onChange={e => atmosphere.setChoice(e.target.value as typeof atmosphere.choice)}><option value="auto">อัตโนมัติจากสถานที่ · {ambientName}</option>{ATMOSPHERES.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}</select></label>
+                  <label>ระดับเสียง <output>{atmosphere.volume}%</output><input aria-label="ระดับเสียงบรรยากาศ" type="range" min={0} max={100} value={atmosphere.volume} onChange={e => atmosphere.setVolume(Number(e.target.value))}/></label>
+                  <p role="status">{atmosphere.enabled && atmosphere.kind !== "none" ? `กำลังเล่น · ${ambientName}${narrating ? " · ลดเสียงระหว่างพากย์" : ""}` : atmosphere.kind === "none" ? "ยังไม่มีเสียงที่ตรงกับสถานที่ เลือกบรรยากาศเองด้านบนได้" : "กดไอคอนลำโพงเพื่อเปิดเสียง ไม่มีการเปิดเสียงอัตโนมัติ"}</p>
+                  {atmosphere.error && <p role="alert">{atmosphere.error}</p>}
+                </section>
+
                 <label className="ir-switch">
                   <span>
                     เพลงประจำฉาก
@@ -689,6 +755,7 @@ export function ImmersiveReader(p: Props) {
                   onIndex={p.onIndex}
                   onDucking={(v) => {
                     p.onDucking(v);
+                    setNarrating(v);
                     if (v) setAuto(false);
                     if (bgm.current) bgm.current.volume = v ? 0.06 : 0.25;
                   }}

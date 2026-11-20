@@ -1,0 +1,4 @@
+INSERT INTO storage.buckets(id,name,public,file_size_limit) VALUES('story-media','story-media',false,52428800) ON CONFLICT(id) DO UPDATE SET public=false;
+CREATE POLICY story_upload ON storage.objects FOR INSERT TO authenticated WITH CHECK(bucket_id='story-media' AND (storage.foldername(name))[1]=auth.uid()::text);
+CREATE POLICY story_download ON storage.objects FOR SELECT TO authenticated USING(bucket_id='story-media' AND EXISTS(SELECT 1 FROM public.media_assets a WHERE a.storage_path=name AND (a.owner_id=auth.uid() OR public.can_read_project(a.project_id))));
+CREATE POLICY story_remove ON storage.objects FOR DELETE TO authenticated USING(bucket_id='story-media' AND EXISTS(SELECT 1 FROM public.media_assets a WHERE a.storage_path=name AND (a.owner_id=auth.uid() OR public.can_write_project(a.project_id))));

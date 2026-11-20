@@ -5,18 +5,10 @@ import { READER_STATUS_JSON_SCHEMA } from '@/lib/story/readerStatus';
 import { audioDir } from '@/lib/audio/elevenlabs';
 export const FREE_READER_MODEL = 'baidu/ernie-5.5-flash-preview:free';
 export const FREE_READER_MODELS = [FREE_READER_MODEL, 'particle-ai/particle-1:free', 'inclusionai/ling-3.2-flash:free'];
-const file=()=>path.join(audioDir(),'.private','reader-ai.json');
+import {readPrivateDocument,writePrivateDocument} from '@/lib/cloud/privateDocuments';
 export class FreeReaderAIError extends Error {}
-export async function readerAISettings() {
-  const saved=await fs.readFile(file(),'utf8').then(JSON.parse).catch(()=>({}));
-  return {apiKey:String(saved.apiKey||process.env.OPENROUTER_API_KEY||'')};
-}
-export async function saveReaderAIKey(apiKey:string) {
-  await fs.mkdir(path.dirname(file()),{recursive:true,mode:0o700});
-  const temp=file()+'.'+crypto.randomUUID();
-  await fs.writeFile(temp,JSON.stringify({apiKey}),{mode:0o600});
-  await fs.rename(temp,file());
-}
+export async function readerAISettings(){const saved=await readPrivateDocument<{apiKey?:string}>('reader-ai');return {apiKey:saved?.apiKey||''};}
+export async function saveReaderAIKey(apiKey:string){await writePrivateDocument('reader-ai',{apiKey});}
 export async function runFreeReaderAI(instructions:string,input:string,signal?:AbortSignal) {
   const {apiKey}=await readerAISettings();
   if(!apiKey)throw new FreeReaderAIError('เพิ่ม OpenRouter API Key ใน ตั้งค่า → AI ฟรีสำหรับผู้อ่าน ก่อนใช้งาน');

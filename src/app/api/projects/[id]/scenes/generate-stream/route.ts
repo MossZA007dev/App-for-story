@@ -1,3 +1,4 @@
+import {withAccount} from "@/lib/auth/account";
 import { NextRequest } from "next/server";
 import { assembleStoryPrompt } from "@/lib/ai/storyPipeline";
 import { getAnthropicClient } from "@/lib/ai/anthropic";
@@ -21,6 +22,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+return withAccount(req, async () => {
   try {
     const { id: projectId } = await params;
     const body = await req.json();
@@ -117,4 +119,6 @@ export async function POST(
       headers: { "Content-Type": "application/json" },
     });
   }
+
+});
 }

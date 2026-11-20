@@ -1,7 +1,8 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
-import { relations } from "drizzle-orm";
+import { pgTable, text, integer, real, uuid, primaryKey, boolean, timestamp } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
 
-export const projects = sqliteTable("projects", {
+export const projects = pgTable("projects", {
+  ownerId: uuid("owner_id").notNull().default(sql`auth.uid()`),
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   universe: text("universe").notNull(), // e.g. Game of Thrones, Cyberpunk AU
@@ -18,7 +19,7 @@ export const projects = sqliteTable("projects", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const characters = sqliteTable("characters", {
+export const characters = pgTable("characters", {
   id: text("id").primaryKey(),
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
@@ -41,7 +42,7 @@ export const characters = sqliteTable("characters", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const abilities = sqliteTable("abilities", {
+export const abilities = pgTable("abilities", {
   id: text("id").primaryKey(),
   characterId: text("character_id").notNull().references(() => characters.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
@@ -52,7 +53,7 @@ export const abilities = sqliteTable("abilities", {
   lostAtPart: integer("lost_at_part"),
 });
 
-export const relationships = sqliteTable("relationships", {
+export const relationships = pgTable("relationships", {
   id: text("id").primaryKey(),
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   charA: text("char_a").notNull().references(() => characters.id, { onDelete: "cascade" }),
@@ -64,7 +65,7 @@ export const relationships = sqliteTable("relationships", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const parts = sqliteTable("parts", {
+export const parts = pgTable("parts", {
   id: text("id").primaryKey(),
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   number: integer("number").notNull(), // 0 to 9
@@ -78,7 +79,7 @@ export const parts = sqliteTable("parts", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const episodes = sqliteTable("episodes", {
+export const episodes = pgTable("episodes", {
   id: text("id").primaryKey(),
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   partId: text("part_id").notNull().references(() => parts.id, { onDelete: "cascade" }),
@@ -89,7 +90,7 @@ export const episodes = sqliteTable("episodes", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const scenes = sqliteTable("scenes", {
+export const scenes = pgTable("scenes", {
   id: text("id").primaryKey(),
   partId: text("part_id").notNull().references(() => parts.id, { onDelete: "cascade" }),
   episodeId: text("episode_id"),
@@ -110,7 +111,7 @@ export const scenes = sqliteTable("scenes", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const sceneVersions = sqliteTable("scene_versions", {
+export const sceneVersions = pgTable("scene_versions", {
   id: text("id").primaryKey(),
   sceneId: text("scene_id").notNull().references(() => scenes.id, { onDelete: "cascade" }),
   versionNumber: integer("version_number").notNull(),
@@ -121,7 +122,7 @@ export const sceneVersions = sqliteTable("scene_versions", {
   createdAt: text("created_at").notNull(),
 });
 
-export const changeLogs = sqliteTable("change_logs", {
+export const changeLogs = pgTable("change_logs", {
   id: text("id").primaryKey(),
   partId: text("part_id").notNull().references(() => parts.id, { onDelete: "cascade" }),
   characterId: text("character_id").notNull().references(() => characters.id, { onDelete: "cascade" }),
@@ -133,7 +134,7 @@ export const changeLogs = sqliteTable("change_logs", {
   createdAt: text("created_at").notNull(),
 });
 
-export const continuityLedgers = sqliteTable("continuity_ledgers", {
+export const continuityLedgers = pgTable("continuity_ledgers", {
   id: text("id").primaryKey(),
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   sceneId: text("scene_id"),
@@ -145,7 +146,7 @@ export const continuityLedgers = sqliteTable("continuity_ledgers", {
   createdAt: text("created_at").notNull(),
 });
 
-export const images = sqliteTable("images", {
+export const images = pgTable("images", {
   id: text("id").primaryKey(),
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   sceneId: text("scene_id"),
@@ -162,7 +163,7 @@ export const images = sqliteTable("images", {
   createdAt: text("created_at").notNull(),
 });
 
-export const collaborators = sqliteTable("collaborators", {
+export const collaborators = pgTable("collaborators", {
   id: text("id").primaryKey(),
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
@@ -177,8 +178,9 @@ export const collaborators = sqliteTable("collaborators", {
   createdAt: text("created_at").notNull(),
 });
 
-export const appSettings = sqliteTable("app_settings", {
-  id: text("id").primaryKey(), // "global"
+export const appSettings = pgTable("app_settings", {
+  ownerId: uuid("owner_id").notNull().default(sql`auth.uid()`),
+  id: text("id").notNull(), // "global"
   anthropicApiKey: text("anthropic_api_key").default(""),
   anthropicModel: text("anthropic_model").default("claude-3-5-sonnet-20241022"),
   geminiApiKey: text("gemini_api_key").default(""),
@@ -190,9 +192,9 @@ export const appSettings = sqliteTable("app_settings", {
   temperature: real("temperature").default(0.7),
   globalVisualStyle: text("global_visual_style").default("dark fantasy cinematic painting, muted palette, dramatic lighting, film still, highly detailed"),
   updatedAt: text("updated_at").notNull(),
-});
+}, (t) => [primaryKey({columns:[t.id,t.ownerId]})]);
 
-export const soundEffects = sqliteTable("sound_effects", {
+export const soundEffects = pgTable("sound_effects", {
   id: text("id").primaryKey(),
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
@@ -258,3 +260,24 @@ export const scenesRelations = relations(scenes, ({ one, many }) => ({
   versions: many(sceneVersions),
   images: many(images),
 }));
+
+export const projectMembers = pgTable('project_members',{id:text('id').primaryKey(),projectId:text('project_id').notNull().references(()=>projects.id,{onDelete:'cascade'}),userId:uuid('user_id').notNull(),role:text('role',{enum:['editor','reader']}).notNull(),createdAt:text('created_at').notNull()});
+export const mediaAssets=pgTable('media_assets',{id:text('id').primaryKey(),ownerId:uuid('owner_id').notNull().default(sql`auth.uid()`),projectId:text('project_id').references(()=>projects.id,{onDelete:'set null'}),kind:text('kind',{enum:['images','audio']}).notNull(),storagePath:text('storage_path').notNull(),contentType:text('content_type').notNull(),createdAt:text('created_at').notNull()});
+export const privateDocuments=pgTable('private_documents',{id:text('id').notNull(),ownerId:uuid('owner_id').notNull().default(sql`auth.uid()`),ciphertext:text('ciphertext').notNull(),updatedAt:text('updated_at').notNull()},t=>[primaryKey({columns:[t.id,t.ownerId]})]);
+export const sceneNarrations=pgTable('scene_narrations',{sceneId:text('scene_id').primaryKey().references(()=>scenes.id,{onDelete:'cascade'}),projectId:text('project_id').notNull().references(()=>projects.id,{onDelete:'cascade'}),manifest:text('manifest').notNull(),updatedAt:text('updated_at').notNull()});
+export const readingProgress=pgTable('reading_progress',{projectId:text('project_id').notNull().references(()=>projects.id,{onDelete:'cascade'}),userId:uuid('user_id').notNull().default(sql`auth.uid()`),sceneId:text('scene_id').notNull().references(()=>scenes.id,{onDelete:'cascade'}),blockIndex:integer('block_index').notNull(),updatedAt:text('updated_at').notNull()},t=>[primaryKey({columns:[t.projectId,t.userId]})]);
+
+export const accountProfiles=pgTable('account_profiles',{
+ userId:uuid('user_id').primaryKey().default(sql`auth.uid()`),
+ displayName:text('display_name').notNull().default(''),
+ bio:text('bio').notNull().default(''),
+ avatarPath:text('avatar_path').notNull().default(''),
+ updatedAt:text('updated_at').notNull(),
+});
+export const bookmarks=pgTable('bookmarks',{
+ id:text('id').primaryKey(),userId:uuid('user_id').notNull().default(sql`auth.uid()`),
+ projectId:text('project_id').notNull().references(()=>projects.id,{onDelete:'cascade'}),
+ sceneId:text('scene_id').references(()=>scenes.id,{onDelete:'cascade'}),
+ blockIndex:integer('block_index').notNull().default(0),note:text('note').notNull().default(''),createdAt:text('created_at').notNull(),
+});
+export const projectInvitations=pgTable('project_invitations',{id:text('id').primaryKey(),projectId:text('project_id').notNull().references(()=>projects.id,{onDelete:'cascade'}),tokenHash:text('token_hash').notNull(),role:text('role').notNull(),createdBy:uuid('created_by').notNull().default(sql`auth.uid()`),expiresAt:timestamp('expires_at',{withTimezone:true,mode:'string'}).notNull(),revoked:boolean('revoked').notNull().default(false),acceptedBy:uuid('accepted_by'),createdAt:timestamp('created_at',{withTimezone:true,mode:'string'}).notNull().defaultNow()});

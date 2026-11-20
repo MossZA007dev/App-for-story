@@ -1,8 +1,10 @@
+import {withAccount} from "@/lib/auth/account";
 import { NextRequest, NextResponse } from "next/server";
 import { storage } from "@/lib/storage";
 import crypto from "crypto";
 
 export async function POST(req: NextRequest) {
+return withAccount(req, async () => {
   try {
     const contentType = req.headers.get("content-type") || "";
 
@@ -57,4 +59,6 @@ export async function POST(req: NextRequest) {
     const msg = error instanceof Error ? error.message : "อัปโหลดรูปโปรไฟล์ล้มเหลว";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
+
+});
 }

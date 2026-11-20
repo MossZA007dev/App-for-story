@@ -1,6 +1,6 @@
 import type { ReaderStatus } from './readerStatus';
 import type { readerStatusContext } from './readerStatusContext';
-type Context = ReturnType<typeof readerStatusContext>;
+type Context = Awaited<ReturnType<typeof readerStatusContext>>;
 // Extract quotations only. No model, external request, profile or future-state inference.
 export function localReaderStatus(source: Context): ReaderStatus {
   const passages = source.context.passages;

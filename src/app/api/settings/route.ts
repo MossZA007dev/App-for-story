@@ -1,3 +1,4 @@
+import {withAccount} from "@/lib/auth/account";
 import { NextRequest, NextResponse } from "next/server";
 import { getAppSettings, updateAppSettings } from "@/lib/settings";
 import { z } from "zod";
@@ -15,7 +16,8 @@ const SettingsUpdateSchema = z.object({
   globalVisualStyle: z.string().optional(),
 });
 
-export async function GET() {
+export async function GET(accountRequest: Request) {
+return withAccount(accountRequest, async () => {
   try {
     const settings = await getAppSettings();
 
@@ -46,9 +48,12 @@ export async function GET() {
       { status: 500 }
     );
   }
+
+});
 }
 
 export async function POST(req: NextRequest) {
+return withAccount(req, async () => {
   try {
     const body = await req.json();
     const validated = SettingsUpdateSchema.parse(body);
@@ -84,4 +89,6 @@ export async function POST(req: NextRequest) {
     const msg = error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการบันทึกการตั้งค่า";
     return NextResponse.json({ error: msg }, { status: 400 });
   }
+
+});
 }

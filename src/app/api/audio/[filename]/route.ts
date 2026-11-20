@@ -1,39 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
-import { audioStorage } from "@/lib/storage";
-import path from "path";
-
-export async function GET(
-  _request: NextRequest,
-  { params }: { params: Promise<{ filename: string }> }
-) {
-  try {
-    const { filename } = await params;
-    const decodedFilename = decodeURIComponent(filename);
-    const extension = path.extname(decodedFilename).toLowerCase();
-    if (decodedFilename !== path.basename(decodedFilename) || ![".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".webm"].includes(extension)) return new NextResponse("Audio not found", { status: 404 });
-    const buffer = await audioStorage.getAudio(decodedFilename);
-
-    if (!buffer) {
-      return new NextResponse("Audio not found", { status: 404 });
-    }
-
-    const ext = path.extname(decodedFilename).toLowerCase();
-    let contentType = "audio/mpeg";
-    if (ext === ".wav") contentType = "audio/wav";
-    else if (ext === ".ogg") contentType = "audio/ogg";
-    else if (ext === ".m4a") contentType = "audio/mp4";
-    else if (ext === ".aac") contentType = "audio/aac";
-
-    return new NextResponse(new Uint8Array(buffer), {
-      status: 200,
-      headers: {
-        "Content-Type": contentType,
-        "Accept-Ranges": "bytes",
-        "Cache-Control": "public, max-age=31536000, immutable",
-      },
-    });
-  } catch (error) {
-    console.error("Error serving audio:", error);
-    return new NextResponse("Internal Server Error", { status: 500 });
-  }
-}
+import {withAccount} from '@/lib/auth/account';
+import {mediaDownloadUrl} from '@/lib/storage';
+export async function GET(request:Request,{params}:{params:Promise<{filename:string}>}){return withAccount(request,async()=>{
+ const {filename}=await params;
+ try{const url=await mediaDownloadUrl(filename,'audio');return url?new Response(null,{status:307,headers:{Location:url}}):new Response(null,{status:404});}catch{return new Response(null,{status:404});}
+});}

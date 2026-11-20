@@ -1,4 +1,5 @@
 "use client";
+import {ProjectAccess} from "@/components/collaboration/ProjectAccess";
 import { parseStoryStructure } from "@/lib/story/structuredImport";
 
 import { useEffect, useState, useRef, use, useMemo } from "react";
@@ -61,7 +62,6 @@ import { SceneAudioModal } from "@/components/audio/SceneAudioModal";
 import { OpenAISceneImageDialog } from "@/components/images/OpenAISceneImageDialog";
 import { ImageCropModal, AspectRatioType } from "@/components/images/ImageCropModal";
 import { VideoTrimModal } from "@/components/media/VideoTrimModal";
-import { CollaboratorModal } from "@/components/collaboration/CollaboratorModal";
 import { UndoTimeline } from "@/lib/story/undoTimeline";
 import { readStoryStream } from "@/lib/story/storyStream";
 import { SceneVersionHistory } from "@/components/story/SceneVersionHistory";
@@ -165,6 +165,7 @@ export default function StoryWorkspacePage({
   const resolvedParams = use(params);
   const projectId = resolvedParams.id;
 
+  const [sceneConflict,setSceneConflict]=useState(false);
   // Project & Parts State
   const [project, setProject] = useState<any>(null);
   const [parts, setParts] = useState<PartItem[]>([]);
@@ -382,8 +383,6 @@ export default function StoryWorkspacePage({
   const [isSavingSceneTitle, setIsSavingSceneTitle] = useState(false);
 
   // Collaborators & Author Persona State
-  const [collaborators, setCollaborators] = useState<any[]>([]);
-  const [showCollabModal, setShowCollabModal] = useState(false);
   const [showClaudeImportModal, setShowClaudeImportModal] = useState(false);
   const [showMasterImportModal, setShowMasterImportModal] = useState(false);
   const [showLineTools, setShowLineTools] = useState(false);
@@ -558,19 +557,7 @@ export default function StoryWorkspacePage({
       setHasUnsavedChanges(true);
     }
 
-    // 4. Update collaborators state
-    setCollaborators((prev) =>
-      prev.map((collab) =>
-        collab.characterId === charId
-          ? {
-              ...collab,
-              avatarUrl: newAvatarUrl,
-              ...(newName ? { name: newName } : {}),
-              ...(newNickname !== undefined ? { nickname: newNickname } : {}),
-            }
-          : collab
-      )
-    );
+
   };
 
   // File Inputs & Drag-Drop States
@@ -588,9 +575,9 @@ export default function StoryWorkspacePage({
   const loadProjectData = async (overrideSceneId?: string) => {
     try {
       setLoading(true);
-      const [projRes, collabRes] = await Promise.all([
+      const [projRes, accountRes] = await Promise.all([
         fetch(`/api/projects/${projectId}`),
-        fetch(`/api/projects/${projectId}/collaborators`),
+        fetch("/api/account"),
       ]);
 
       if (!projRes.ok) throw new Error("โหลดข้อมูลโปรเจกต์ไม่สำเร็จ");
@@ -600,10 +587,8 @@ export default function StoryWorkspacePage({
       setParts(data.parts || []);
       setCharacters(data.characters || []);
 
-      if (collabRes.ok) {
-        const cData = await collabRes.json();
-        setCollaborators(cData.collaborators || []);
-      }
+      if(accountRes.ok){const account=await accountRes.json();setCurrentAuthorName(account.profile?.displayName||account.email?.split('@')[0]||'ผู้ร่วมเขียน');}
+
 
       // Fetch SFX list
       fetch(`/api/projects/${projectId}/sfx`)
@@ -612,17 +597,6 @@ export default function StoryWorkspacePage({
           if (d.soundEffects) setProjectSfxList(d.soundEffects);
         })
         .catch(() => {});
-
-      // Initialize author persona
-      const savedAuthor = typeof window !== "undefined" ? localStorage.getItem(`author_persona_${projectId}`) : null;
-      const selfChar = (data.characters || []).find((c: any) => c.characterType === "self");
-      if (savedAuthor) {
-        setCurrentAuthorName(savedAuthor);
-      } else if (selfChar) {
-        setCurrentAuthorName(selfChar.realNickname || selfChar.name);
-      } else {
-        setCurrentAuthorName("ฉัน (ผู้แต่ง)");
-      }
 
       if (data.parts && data.parts.length > 0) {
         const matchedPart = (overrideSceneId ? data.parts.find((p: any) => p.scenes?.some((scene: any) => scene.id === overrideSceneId)) : null) || data.parts.find((p: any) => p.id === activePartId) || data.parts[0];
@@ -2783,7 +2757,7 @@ export default function StoryWorkspacePage({
 
   // 6. Save Scene (Saves Dialogue Markdown, Bindings, Title, Location)
   const handleSaveAll = async (silent: boolean = false) => {
-    if (!activeSceneId) return;
+    if (!activeSceneId || (silent && sceneConflict)) return;
 
     try {
       setIsSavingScene(true);
@@ -2795,6 +2769,7 @@ export default function StoryWorkspacePage({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          expectedVersion: activeScene?.version,
           title: sceneTitleInput.trim() || activeScene?.title,
           location: sceneLocationInput.trim() || activeScene?.location,
           contentMarkdown: markdownToSave,
@@ -2807,7 +2782,9 @@ export default function StoryWorkspacePage({
       });
 
       const data = await res.json();
+      if(res.status===409)setSceneConflict(true);
       if (!res.ok) throw new Error(data.error || "บันทึกไม่สำเร็จ");
+      setSceneConflict(false);
 
       const sceneWithBgm = {
         ...data.scene,
@@ -3121,7 +3098,7 @@ export default function StoryWorkspacePage({
       setShowEditSceneModal(false);
 
       // 2. Persist to API
-      const payload: { title: string; location?: string } = { title: trimmedTitle };
+      const payload: { title: string; location?: string;expectedVersion?:number } = { title: trimmedTitle,expectedVersion:activeScene?.id===sceneId?activeScene.version:undefined };
       if (newLocation !== undefined) payload.location = newLocation.trim();
 
       const res = await fetch(`/api/projects/${projectId}/scenes/${sceneId}`, {
@@ -3290,6 +3267,7 @@ export default function StoryWorkspacePage({
 
   return (
     <div data-line-tools={showLineTools} className="simple-editor max-w-[1720px] mx-auto w-full px-4 sm:px-8 py-6 space-y-6 pb-24">
+      {sceneConflict&&<div role="alert" className="rounded-xl border border-amber-300/30 bg-amber-950/40 p-5 space-y-3"><p>มีผู้ร่วมเขียนบันทึกฉากนี้ก่อนคุณ ระบบยังไม่เขียนทับ ข้อความที่คุณแก้ยังอยู่ในหน้านี้</p><div className="flex gap-3 flex-wrap"><button className="ma-outline" onClick={async()=>{await navigator.clipboard.writeText(isRawMarkdownMode?editableMarkdown:blocksToMarkdown(dialogueBlocks));toast.success('คัดลอกฉบับของคุณแล้ว');}}>คัดลอกฉบับของฉัน</button><button className="ma-outline" onClick={async()=>{if(confirm('โหลดฉบับล่าสุดแทนข้อความในหน้านี้? ควรคัดลอกฉบับของคุณก่อน')){await loadProjectData(activeSceneId);setSceneConflict(false);}}}>โหลดฉบับล่าสุด</button></div></div>}
       {/* Project Header */}
       {project && (
         <ProjectHeader
@@ -3333,7 +3311,7 @@ export default function StoryWorkspacePage({
         </div>
       </section>
       <details className="editor-disclosure editor-management"><summary><SlidersHorizontal size={16} /> จัดการภาค ตอน และเพลง <span>เพิ่มตอน · เรียงฉาก · ตั้งค่าเสียง</span></summary>
-      <details className="editor-disclosure editor-collaboration"><summary><Users size={16} /> ผู้ร่วมเขียน <span>{currentAuthorName || "เลือกชื่อผู้แต่ง"}</span></summary>
+      <details className="editor-disclosure editor-collaboration"><summary><Users size={16} /> ผู้ร่วมเขียน <span>{currentAuthorName || "บัญชีที่เข้าสู่ระบบ"}</span></summary>
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 shadow-md">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
@@ -3342,41 +3320,7 @@ export default function StoryWorkspacePage({
               <span>✍️ คุณกำลังแต่งในนาม:</span>
             </span>
 
-            <select
-              value={currentAuthorName}
-              onChange={(e) => {
-                const val = e.target.value;
-                setCurrentAuthorName(val);
-                if (typeof window !== "undefined") {
-                  localStorage.setItem(`author_persona_${projectId}`, val);
-                }
-                toast.info(`สลับชื่อผู้แต่งเป็น: "${val}"`);
-              }}
-              className="bg-slate-950 border border-slate-700 hover:border-amber-400 rounded-lg px-3 py-1 text-xs text-amber-300 font-bold focus:outline-none focus:border-amber-400 cursor-pointer font-thai"
-            >
-              {characters
-                .filter((c) => c.characterType === "self")
-                .map((c) => (
-                  <option key={c.id} value={c.realNickname || c.name}>
-                    👑 {c.realNickname || c.name} (เจ้าของเรื่อง)
-                  </option>
-                ))}
-              {collaborators.map((collab) => (
-                <option key={collab.id} value={collab.nickname || collab.name}>
-                  🧑‍🤝‍🧑 {collab.name} {collab.nickname ? `(${collab.nickname})` : ""}
-                </option>
-              ))}
-              {characters
-                .filter((c) => c.characterType === "friend")
-                .map((c) => (
-                  <option key={c.id} value={c.realNickname || c.name}>
-                    🧑‍🤝‍🧑 {c.realNickname || c.name} (เพื่อนในแก๊ง)
-                  </option>
-                ))}
-              <option value="ผู้แต่งร่วม (Guest Author)">
-                ✏️ ผู้แต่งร่วม (Guest Author)
-              </option>
-            </select>
+            <span className="text-sm font-semibold text-emerald-200">{currentAuthorName||'กำลังโหลดบัญชี…'}</span><Link href="/account" className="text-xs text-slate-400 hover:text-white underline underline-offset-4">แก้ไขโปรไฟล์</Link>
           </div>
 
           {activeScene?.lastEditedBy && (
@@ -3387,18 +3331,7 @@ export default function StoryWorkspacePage({
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowCollabModal(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500/20 to-sky-500/20 hover:from-amber-500/30 hover:to-sky-500/30 text-amber-300 hover:text-white border border-amber-500/30 text-xs font-bold font-thai transition-all shadow-sm active:scale-95"
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>👥 เชิญเพื่อนมาร่วมแต่ง / แชร์ลิงก์</span>
-            {collaborators.length > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500 text-slate-950 font-bold font-mono">
-                {collaborators.length}
-              </span>
-            )}
-          </button>
+          <ProjectAccess projectId={projectId} projectTitle={project?.title} universe={project?.universe}/>
         </div>
       </div>
 
@@ -6162,23 +6095,6 @@ export default function StoryWorkspacePage({
         />
       )}
 
-      {/* Collaborator & Squad Co-Authors Modal */}
-      <CollaboratorModal
-        isOpen={showCollabModal}
-        onClose={() => setShowCollabModal(false)}
-        projectId={projectId}
-        projectTitle={project?.title || "Story Studio"}
-        universe={project?.universe || ""}
-        onCollaboratorChange={() => {
-          fetch(`/api/projects/${projectId}/collaborators`)
-            .then((res) => res.json())
-            .then((data) => {
-              if (data.collaborators) setCollaborators(data.collaborators);
-            })
-            .catch(() => {});
-        }}
-      />
-
       {/* Character Profile Picture / Avatar Modal */}
       <CharacterAvatarModal
         isOpen={avatarModalOpen}
@@ -6210,7 +6126,7 @@ export default function StoryWorkspacePage({
         projectId={projectId}
         onBeforeImport={async () => {
           if (!hasUnsavedChanges || !activeSceneId) return;
-          const res = await fetch(`/api/projects/${projectId}/scenes/${activeSceneId}`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:sceneTitleInput,location:sceneLocationInput,contentMarkdown:isRawMarkdownMode?editableMarkdown:blocksToMarkdown(dialogueBlocks),dialogueBindings:JSON.stringify(localDialogueBindings),directorNote:directorsNote})});
+          const res = await fetch(`/api/projects/${projectId}/scenes/${activeSceneId}`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({expectedVersion:activeScene?.version,title:sceneTitleInput,location:sceneLocationInput,contentMarkdown:isRawMarkdownMode?editableMarkdown:blocksToMarkdown(dialogueBlocks),dialogueBindings:JSON.stringify(localDialogueBindings),directorNote:directorsNote})});
           if(!res.ok)throw new Error('บันทึกฉากปัจจุบันไม่สำเร็จ จึงยังไม่นำเข้า กรุณาลองบันทึกอีกครั้ง');
           setHasUnsavedChanges(false);
         }}
@@ -6226,6 +6142,11 @@ export default function StoryWorkspacePage({
         initialData={partModalMode === "edit" ? currentPart : null}
         nextPartNumber={parts.reduce((max, p) => Math.max(max, p.number || 0), 0) + 1}
         onSuccess={handlePartModalSuccess}
+        onDeleted={async result => {
+          setHasUnsavedChanges(false); setActivePartId(result.nextPartId || ""); setActiveEpisodeId("");
+          setActiveSceneId(result.nextSceneId || ""); setActiveScene(null); setSceneImages([]); setDialogueBlocks([]);
+          await loadProjectData(result.nextSceneId || "");
+        }}
       />
 
       {/* Edit Scene Title & Details Modal */}

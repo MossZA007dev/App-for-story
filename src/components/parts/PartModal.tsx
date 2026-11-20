@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Layers, Sparkles, X, Loader2, BookOpen, Clock, Tag } from "lucide-react";
+import { Layers, Sparkles, X, Loader2, BookOpen, Clock, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export interface PartModalData {
@@ -13,6 +13,8 @@ export interface PartModalData {
   peakSummary?: string;
   characterChangeSummary?: string;
   status?: "planned" | "drafting" | "done";
+  episodes?: unknown[];
+  scenes?: unknown[];
 }
 
 interface PartModalProps {
@@ -23,6 +25,7 @@ interface PartModalProps {
   initialData?: PartModalData | null;
   nextPartNumber?: number;
   onSuccess: (part: any, scene?: any) => void;
+  onDeleted?: (result:{nextPartId:string;nextSceneId:string}) => void | Promise<void>;
 }
 
 export function PartModal({
@@ -33,6 +36,7 @@ export function PartModal({
   initialData,
   nextPartNumber = 2,
   onSuccess,
+  onDeleted,
 }: PartModalProps) {
   const [title, setTitle] = useState("");
   const [scope, setScope] = useState("");
@@ -130,6 +134,18 @@ export function PartModal({
     }
   };
 
+  const handleDelete = async () => {
+    if (!initialData?.id || isSubmitting) return;
+    if (!window.confirm(`ลบภาค “${initialData.title}” ใช่ไหม?\n${initialData.episodes?.length || 0} EP · ${initialData.scenes?.length || 0} ฉาก จะถูกลบพร้อมเนื้อหา\nรูปภาพยังเก็บไว้ในคลังภาพ ภาคอื่นไม่ถูกลบ`)) return;
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/parts/${initialData.id}`, {method:"DELETE"});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "ลบภาคไม่สำเร็จ");
+      await onDeleted?.(result); toast.success("ลบภาคและฉากภายในแล้ว"); onClose();
+    } catch(e) {toast.error(e instanceof Error ? e.message : "ลบภาคไม่สำเร็จ");}
+    finally {setIsSubmitting(false);}
+  };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
       <div className="cinematic-card w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-2xl p-6 border-slate-700 bg-slate-950 space-y-5 shadow-2xl">
@@ -263,6 +279,11 @@ export function PartModal({
             </div>
           )}
 
+          {mode === "edit" && onDeleted && <section className="rounded-xl border border-red-400/25 bg-red-950/20 p-4 space-y-2">
+            <p className="text-sm font-semibold">ลบภาค / SS นี้</p>
+            <p className="text-xs text-slate-400">{initialData?.episodes?.length || 0} EP · {initialData?.scenes?.length || 0} ฉาก · รูปภาพยังเก็บไว้ในคลัง</p>
+            <button type="button" disabled={isSubmitting} onClick={handleDelete} className="inline-flex items-center gap-2 rounded-lg border border-red-400/30 px-3 py-2 text-red-300 hover:bg-red-950/40 disabled:opacity-50"><Trash2 size={15}/><span>ลบภาคนี้</span></button>
+          </section>}
           {/* Actions */}
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
             <button

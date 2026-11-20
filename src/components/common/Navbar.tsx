@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import {BrandLogo} from "./BrandLogo";
 import { usePathname } from "next/navigation";
 import { BookOpen, PenTool, Users, Settings, Plus } from "lucide-react";
 
@@ -19,8 +20,7 @@ export function Navbar() {
       <a className="skip-link" href="#main-content">ข้ามไปเนื้อหา</a>
       <div className="app-header-inner">
         <Link href="/sagas" className="brand-link" aria-label="Saga Forge ชั้นหนังสือ">
-          <BookOpen size={24} className="text-amber-300" />
-          <span className="font-heading text-lg tracking-wide">Saga Forge<span className="brand-dot">.</span></span>
+          <BrandLogo priority/>
         </Link>
         <nav aria-label="เมนูหลัก" className="app-nav">
           {links.map(({href, label, icon: Icon, active}) => (
@@ -30,6 +30,7 @@ export function Navbar() {
           ))}
         </nav>
         <Link href="/projects/new" className="new-story-link"><Plus size={17} /><span>สร้างเรื่องใหม่</span></Link>
+        <Link href="/account" className="app-nav-link"><Users size={17}/><span>บัญชีของฉัน</span></Link>
         <div className="sidebar-note"><span>พื้นที่ของเรื่องราว</span><p>อ่านให้เพลิน<br />เขียนในแบบของคุณ</p></div>
       </div>
     </header>

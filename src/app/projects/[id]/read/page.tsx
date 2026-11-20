@@ -1,4 +1,6 @@
 "use client";
+import {BookmarkButton} from "@/components/account/BookmarkButton";
+import {useReadingProgress} from "@/components/account/useReadingProgress";
 
 import { useEffect, useState, useRef, use } from "react";
 import Link from "next/link";
@@ -477,7 +479,7 @@ export default function NovelReaderPage({
       setAllScenesList(flatList);
 
       let savedSceneId='';
-      try {savedSceneId=JSON.parse(localStorage.getItem(`saga-immersive:${projectId}`)||'null')?.sceneId||'';}catch{}
+      try {const progressResponse=await fetch(`/api/projects/${projectId}/reading-progress`);if(progressResponse.ok)savedSceneId=(await progressResponse.json())?.sceneId||'';}catch{}
       const toSelectId = targetSceneId || initialSceneId || savedSceneId;
       if (flatList.length > 0) {
         if (toSelectId) {
@@ -1554,6 +1556,8 @@ export default function NovelReaderPage({
     ? rawTitle
     : `ฉากที่ ${activeScene?.order || 1}: ${rawTitle}`;
 
+  useReadingProgress(projectId,activeScene?.id,activeDialogueIndex,parsedBlocks.length,setActiveDialogueIndex);
+
   if (loading) {
     return (
       <div className="w-full mx-auto space-y-6 py-8 px-4 sm:px-8">
@@ -1577,7 +1581,7 @@ export default function NovelReaderPage({
       }`}
     >
       <div className="reading-preferences" role="group" aria-label="ปรับการอ่าน">
-        <span className="text-sm text-slate-400">การอ่าน</span>
+        <span className="text-sm text-slate-400">การอ่าน</span><BookmarkButton projectId={projectId} sceneId={activeScene?.id} index={activeDialogueIndex}/>
         <button onClick={() => changeReadingSize(Math.max(16, readingSize - 1))} disabled={readingSize <= 16} aria-label="ลดขนาดตัวอักษร">ก−</button>
         <output aria-live="polite">{readingSize}</output>
         <button onClick={() => changeReadingSize(Math.min(26, readingSize + 1))} disabled={readingSize >= 26} aria-label="เพิ่มขนาดตัวอักษร">ก+</button>

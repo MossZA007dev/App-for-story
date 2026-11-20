@@ -1,10 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["better-sqlite3"],
-  outputFileTracingIncludes: {
-    "/**": ["./data/**/*"],
-  },
+  serverExternalPackages: ["pg", "better-sqlite3"],
+  async rewrites(){return {fallback:[{source:"/images/:filename",destination:"/api/images/:filename"}]};},
   images: {
     remotePatterns: [
       {

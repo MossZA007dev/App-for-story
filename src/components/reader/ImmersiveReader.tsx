@@ -1,4 +1,5 @@
 "use client";
+import {BookmarkButton} from "@/components/account/BookmarkButton";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
@@ -62,7 +63,6 @@ type Props = {
 };
 const isVideo = (m: Media) =>
   m.provider === "video" || /\.(mp4|webm|mov)(?:\?|$)/i.test(m.filePath);
-const keyFor = (id: string) => `saga-immersive:${id}`;
 export function ImmersiveReader(p: Props) {
   const [mode, setMode] = useState<"cinema" | "scroll">("cinema"),
     [panel, setPanel] = useState<
@@ -86,7 +86,6 @@ export function ImmersiveReader(p: Props) {
     timer = useRef<ReturnType<typeof setTimeout> | null>(null),
     rows = useRef<(HTMLElement | null)[]>([]),
     progressScene = useRef(""),
-    restored = useRef(false),
     current = useRef(p);
   current.current = p;
   const active = p.blocks[p.index],
@@ -137,33 +136,7 @@ export function ImmersiveReader(p: Props) {
     setIdle(false);
     progressScene.current = p.scene.id;
     setNarrating(false);
-    if (!restored.current) {
-      restored.current = true;
-      try {
-        const saved = JSON.parse(
-          localStorage.getItem(keyFor(p.projectId)) || "null",
-        );
-        if (saved?.sceneId === p.scene.id && Number.isInteger(saved.index)) {
-          p.onIndex(Math.min(p.blocks.length - 1, Math.max(0, saved.index)));
-        }
-      } catch {}
-    }
   }, [p.scene?.id, p.blocks.length]);
-  useEffect(() => {
-    if (
-      !ready ||
-      !p.scene ||
-      !p.blocks.length ||
-      progressScene.current !== p.scene.id
-    )
-      return;
-    try {
-      localStorage.setItem(
-        keyFor(p.projectId),
-        JSON.stringify({ sceneId: p.scene.id, index: p.index }),
-      );
-    } catch {}
-  }, [p.index, p.scene?.id, ready, p.blocks.length]);
   useEffect(() => {
     if (lastMedia.current?.filePath !== p.media?.filePath) {
       setPrevious(lastMedia.current);
@@ -420,7 +393,7 @@ export function ImmersiveReader(p: Props) {
           <span>{p.universe}</span>
           <strong>{p.title}</strong>
         </div>
-        <div className="ir-mode-switch" role="group" aria-label="รูปแบบการอ่าน">
+        <BookmarkButton projectId={p.projectId} sceneId={p.scene?.id} index={p.index}/><div className="ir-mode-switch" role="group" aria-label="รูปแบบการอ่าน">
           <button
             aria-pressed={mode === "cinema"}
             onClick={() => {

@@ -1,3 +1,8 @@
+import {readPrivateDocument,writePrivateDocument} from '@/lib/cloud/privateDocuments';
+import {db} from '@/lib/db';
+import {sql} from 'drizzle-orm';
+import {cloudScope} from '@/lib/cloud/context';
+import {withAccount} from "@/lib/auth/account";
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import fs from 'node:fs/promises';
@@ -16,29 +21,32 @@ async function run(req:NextRequest,id:string,post=false) {
   const headers={'Cache-Control':'no-store'};
   try {
     const args=input.parse(post ? await req.json() : Object.fromEntries(req.nextUrl.searchParams));
-    const source=readerStatusContext(id,args.sceneId,args.index);
+    const source = await readerStatusContext(id,args.sceneId,args.index);
     const configured=!!(await readerAISettings()).apiKey;
     const envelope={checkpoint:source.checkpoint,coverage:source.coverage,roster:source.roster,configured};
-    const file=path.join(audioDir(),'.private','reader-status','free-v5-'+source.hash+'.json');
-    const cached=await fs.readFile(file,'utf8').then(JSON.parse).catch(()=>null);
+    const file='reader-status:free-v5:'+source.hash;
+    const cached=await readPrivateDocument<{summary:unknown;model:string;createdAt:string}>(file);
     if(cached)try{
       const summary=validateReaderStatus(cached.summary,source);
       return NextResponse.json({...envelope,summary,mode:'ai',cached:true,model:cached.model,createdAt:cached.createdAt},{headers});
     }catch{/* Never expose malformed or stale evidence. */}
     if(!post)return NextResponse.json({...envelope,summary:validateReaderStatus(localReaderStatus(source),source),mode:'local',cached:false},{headers});
     if(!configured)throw new ReaderStatusError('เชื่อม OpenRouter ใน ตั้งค่า → AI ฟรีสำหรับผู้อ่าน ก่อนวิเคราะห์');
-    await fs.mkdir(path.dirname(file),{recursive:true,mode:0o700});
-    const lockFile=file+'.lock';
-    try{const stat=await fs.stat(lockFile);if(Date.now()-stat.mtimeMs>300000)await fs.unlink(lockFile);}catch{}
-    try{const handle=await fs.open(lockFile,'wx',0o600);await handle.close();lock=lockFile;}catch{throw new ReaderStatusError('กำลังวิเคราะห์จุดนี้อยู่ รอสักครู่แล้วเปิดแผงใหม่',409);}
+    const locked=await db.execute(sql`select pg_try_advisory_xact_lock(hashtext(${cloudScope().user.id+':'+file})) as locked`);if(!locked.rows[0]?.locked)throw new ReaderStatusError('กำลังวิเคราะห์จุดนี้อยู่ กรุณาลองใหม่ภายหลัง',409);
     const result=await runFreeReaderAI(instructions,JSON.stringify(readerStatusInput(source)),req.signal);
     let raw;try{raw=JSON.parse(result.text.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));}catch{throw new ReaderStatusError('AI ส่งรูปแบบสรุปไม่ครบ จึงยังไม่แสดงผล ลองใหม่ภายหลังได้');}
-    const summary=validateReaderStatus(expandReaderStatusReferences(raw,source),source),createdAt=new Date().toISOString(),temp=file+'.'+crypto.randomUUID();
-    await fs.writeFile(temp,JSON.stringify({summary,model:result.model,createdAt}),{mode:0o600});await fs.rename(temp,file);
+    const summary=validateReaderStatus(expandReaderStatusReferences(raw,source),source),createdAt=new Date().toISOString(),temp=file;
+    await writePrivateDocument(file,{summary,model:result.model,createdAt});
     return NextResponse.json({...envelope,summary,mode:'ai',cached:false,model:result.model,createdAt},{headers});
   } catch(e) {
     return NextResponse.json({error:e instanceof ReaderStatusError||e instanceof FreeReaderAIError ? e.message : e instanceof z.ZodError ? 'ผลสรุปหรือข้อมูลไม่ตรงรูปแบบ จึงยังไม่นำมาใช้' : 'อ่านสถานะตัวละครไม่สำเร็จ กรุณาลองใหม่'},{status:e instanceof ReaderStatusError ? e.status : 400,headers});
-  } finally{if(lock)await fs.unlink(lock).catch(()=>{});}
+  }
 }
-export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}) {return run(req,(await params).id);}
-export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>}) {return run(req,(await params).id,true);}
+export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}) {
+return withAccount(req, async () => {return run(req,(await params).id);
+});
+}
+export async function POST(req:NextRequest,{params}:{params:Promise<{id:string}>}) {
+return withAccount(req, async () => {return run(req,(await params).id,true);
+});
+}

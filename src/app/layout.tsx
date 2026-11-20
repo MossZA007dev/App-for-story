@@ -20,6 +20,7 @@ const cinzel = Cinzel({
 });
 
 export const metadata: Metadata = {
+  icons: {icon: [{url:"/brand/saga-forge-icon.png",type:"image/png"}],apple:"/brand/saga-forge-logo.png"},
   title: "Saga Forge | โปรแกรมเขียนนิยาย AU Dark Drama หลายภาค & ภาพประกอบ AI",
   description: "เว็บแอปสำหรับเขียนนิยาย AU/Fan Fiction แบบหลายภาค บันทึก Continuity แม่นยำ และสร้างภาพประกอบต่อฉาก",
 };

@@ -1,0 +1,15 @@
+.git
+.next
+node_modules
+data
+.local-tts
+exports
+.env*
+.supabase-ca.crt
+scripts
+supabase
+public/images/*
+!public/images/story-placeholder.svg
+*.db
+*.db-wal
+*.db-shm

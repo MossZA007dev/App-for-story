@@ -1,108 +1,25 @@
-import fs from "fs";
-import path from "path";
-
-export interface StorageAdapter {
-  saveImage(buffer: Buffer, filename: string, mimeType?: string): Promise<{ filePath: string; url: string }>;
-  getImage(filename: string): Promise<Buffer | null>;
-  deleteImage(filename: string): Promise<boolean>;
-  getImageUrl(filename: string): string;
+import {and,eq} from 'drizzle-orm';
+import {db} from '@/lib/db';
+import {mediaAssets} from '@/lib/db/schema';
+import {cloudScope} from '@/lib/cloud/context';
+export interface StorageAdapter{saveImage(buffer:Buffer,filename:string,mimeType?:string):Promise<{filePath:string;url:string}>;getImage(filename:string):Promise<Buffer|null>;deleteImage(filename:string):Promise<boolean>;getImageUrl(filename:string):string;}
+const valid=(name:string)=>{if(!name||name!==name.split(/[\\/]/).pop()||name.includes('..')||name.length>240)throw new Error('Invalid media filename');return name;};
+function mime(name:string){const ext=name.split('.').pop()?.toLowerCase();return ({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif',mp4:'video/mp4',webm:'video/webm',mp3:'audio/mpeg',wav:'audio/wav',m4a:'audio/mp4',ogg:'audio/ogg'} as Record<string,string>)[ext||'']||'application/octet-stream';}
+async function find(kind:'images'|'audio',filename:string){return (await db.select().from(mediaAssets).where(and(eq(mediaAssets.id,valid(filename)),eq(mediaAssets.kind,kind))))[0];}
+async function save(kind:'images'|'audio',buffer:Buffer,filename:string,contentType=mime(filename)){
+ valid(filename);if(!buffer.length||buffer.length>52428800)throw new Error('ไฟล์ต้องมีขนาดไม่เกิน 50 MB');const {user,supabase,projectId}=cloudScope();const storagePath=`${user.id}/${kind}/${filename}`;
+ const existing=await find(kind,filename);if(existing){if(existing.ownerId!==user.id)throw new Error('Media filename is in use');return {filePath:`/api/${kind}/${encodeURIComponent(filename)}`,url:`/api/${kind}/${encodeURIComponent(filename)}`};}
+ const {error}=await supabase.storage.from('story-media').upload(storagePath,buffer,{contentType,upsert:false});if(error)throw new Error('อัปโหลดสื่อไม่สำเร็จ');
+ try{await db.insert(mediaAssets).values({id:filename,ownerId:user.id,projectId:projectId||null,kind,storagePath,contentType,createdAt:new Date().toISOString()});}catch(error){await supabase.storage.from('story-media').remove([storagePath]);throw error;}
+ const url=`/api/${kind}/${encodeURIComponent(filename)}`;return {filePath:url,url};
 }
-
-export class LocalStorageAdapter implements StorageAdapter {
-  private baseDir: string;
-
-  constructor(customDir?: string) {
-    const isVercel = Boolean(process.env.VERCEL);
-    const defaultDir = isVercel
-      ? path.join("/tmp", "saga_data", "images")
-      : path.join(process.cwd(), "data", "images");
-    this.baseDir = customDir || defaultDir;
-    try {
-      if (!fs.existsSync(this.baseDir)) {
-        fs.mkdirSync(this.baseDir, { recursive: true });
-      }
-    } catch (e) {
-      console.warn("Could not create images storage dir:", e);
-    }
-  }
-
-  async saveImage(buffer: Buffer, filename: string): Promise<{ filePath: string; url: string }> {
-    const fullPath = path.join(this.baseDir, filename);
-    await fs.promises.writeFile(fullPath, buffer);
-    const url = `/api/images/${encodeURIComponent(filename)}`;
-    return {
-      filePath: fullPath,
-      url,
-    };
-  }
-
-  async getImage(filename: string): Promise<Buffer | null> {
-    const safeFilename = path.basename(filename);
-    const fullPath = path.join(this.baseDir, safeFilename);
-    if (!fs.existsSync(fullPath)) return null;
-    return await fs.promises.readFile(fullPath);
-  }
-
-  async deleteImage(filename: string): Promise<boolean> {
-    const safeFilename = path.basename(filename);
-    const fullPath = path.join(this.baseDir, safeFilename);
-    if (fs.existsSync(fullPath)) {
-      await fs.promises.unlink(fullPath);
-      return true;
-    }
-    return false;
-  }
-
-  getImageUrl(filename: string): string {
-    const safeFilename = path.basename(filename);
-    return `/api/images/${encodeURIComponent(safeFilename)}`;
-  }
+async function read(kind:'images'|'audio',filename:string){const asset=await find(kind,filename);if(!asset)return null;const {data,error}=await cloudScope().supabase.storage.from('story-media').download(asset.storagePath);if(error||!data)return null;return Buffer.from(await data.arrayBuffer());}
+async function remove(kind:'images'|'audio',filename:string){const asset=await find(kind,filename);if(!asset)return false;const {error}=await cloudScope().supabase.storage.from('story-media').remove([asset.storagePath]);if(error)return false;await db.delete(mediaAssets).where(eq(mediaAssets.id,asset.id));return true;}
+export const storage:StorageAdapter={saveImage:(b,n,t)=>save('images',b,n,t),getImage:n=>read('images',n),deleteImage:n=>remove('images',n),getImageUrl:n=>`/api/images/${encodeURIComponent(valid(n))}`};
+export const audioStorage={saveAudio:(b:Buffer,n:string)=>save('audio',b,n),getAudio:(n:string)=>read('audio',n),deleteAudio:(n:string)=>remove('audio',n)};
+export async function mediaExists(filename:string,kind:'audio'|'images'='audio'){return !!await find(kind,filename);}
+export async function mediaDownloadUrl(filename:string,kind:'images'|'audio'){
+ const asset=await find(kind,filename);if(!asset)return null;
+ const {data,error}=await cloudScope().supabase.storage.from('story-media').createSignedUrl(asset.storagePath,60);
+ if(error||!data)return null;return data.signedUrl;
 }
-
-// Default storage adapter instance (can be swapped with S3 / Cloud Storage in the future)
-export const storage: StorageAdapter = new LocalStorageAdapter();
-
-export class LocalAudioStorage {
-  private baseDir: string;
-
-  constructor(customDir?: string) {
-    const isVercel = Boolean(process.env.VERCEL);
-    const defaultDir = isVercel
-      ? path.join("/tmp", "saga_data", "audio")
-      : path.join(process.cwd(), "data", "audio");
-    this.baseDir = customDir || defaultDir;
-    try {
-      if (!fs.existsSync(this.baseDir)) {
-        fs.mkdirSync(this.baseDir, { recursive: true });
-      }
-    } catch (e) {
-      console.warn("Could not create audio storage dir:", e);
-    }
-  }
-
-  async saveAudio(buffer: Buffer, filename: string): Promise<{ filePath: string; url: string }> {
-    const fullPath = path.join(this.baseDir, filename);
-    await fs.promises.writeFile(fullPath, buffer);
-    const url = `/api/audio/${encodeURIComponent(filename)}`;
-    return { filePath: fullPath, url };
-  }
-
-  async getAudio(filename: string): Promise<Buffer | null> {
-    const safeFilename = path.basename(filename);
-    const fullPath = path.join(this.baseDir, safeFilename);
-    if (!fs.existsSync(fullPath)) return null;
-    return await fs.promises.readFile(fullPath);
-  }
-
-  async deleteAudio(filename: string): Promise<boolean> {
-    const safeFilename = path.basename(filename);
-    const fullPath = path.join(this.baseDir, safeFilename);
-    if (fs.existsSync(fullPath)) {
-      await fs.promises.unlink(fullPath);
-      return true;
-    }
-    return false;
-  }
-}
-
-export const audioStorage = new LocalAudioStorage();

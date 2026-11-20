@@ -36,10 +36,10 @@ export function ProjectHeader({
 
   useEffect(() => {
     // Quick fetch collaborator count
-    fetch(`/api/projects/${projectId}/collaborators`)
+    fetch(`/api/projects/${projectId}/access`)
       .then((res) => res.json())
       .then((data) => {
-        if (data.collaborators) setCollabCount(data.collaborators.length);
+        setCollabCount(data.owner?(data.members?.length||0):0);
       })
       .catch(() => {});
   }, [projectId]);
@@ -85,7 +85,7 @@ export function ProjectHeader({
             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-sky-500/15 hover:from-amber-500/25 hover:to-sky-500/25 text-amber-300 hover:text-white border border-amber-500/30 text-xs font-bold font-thai shadow-sm transition-all group"
           >
             <Users className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-            <span>เชิญเพื่อนร่วมแต่ง</span>
+            <span>ผู้ร่วมแต่งและคำเชิญ</span>
             {collabCount > 0 && (
               <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500 text-slate-950 font-bold font-mono">
                 {collabCount}
@@ -127,10 +127,10 @@ export function ProjectHeader({
         projectTitle={title}
         universe={universe}
         onCollaboratorChange={() => {
-          fetch(`/api/projects/${projectId}/collaborators`)
+          fetch(`/api/projects/${projectId}/access`)
             .then((res) => res.json())
             .then((data) => {
-              if (data.collaborators) setCollabCount(data.collaborators.length);
+              setCollabCount(data.owner?(data.members?.length||0):0);
             })
             .catch(() => {});
         }}

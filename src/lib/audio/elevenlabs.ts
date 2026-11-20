@@ -6,17 +6,13 @@ import type { DialogueBlock } from "@/lib/story/dialogueParser";
 
 export const MODEL="eleven_v3";
 export const audioDir=()=>process.env.VERCEL ? "/tmp/saga_data/audio":path.join(process.cwd(),"data/audio");
-const configPath=()=>path.join(audioDir(),".private","elevenlabs.json");
-export async function getElevenKey() {
-  const saved=await fs.readFile(configPath(),"utf8").then(text=>JSON.parse(text).apiKey as string).catch(()=>"");
-  return saved || process.env.ELEVENLABS_API_KEY || "";
-}
-export async function saveElevenKey(apiKey:string) {
-  await fs.mkdir(path.dirname(configPath()),{recursive:true,mode:0o700});
-  const temporary=configPath()+"."+crypto.randomUUID();
-  await fs.writeFile(temporary,JSON.stringify({apiKey}),{mode:0o600});
-  await fs.rename(temporary,configPath());
-}
+import {readPrivateDocument,writePrivateDocument} from '@/lib/cloud/privateDocuments';
+import {audioStorage,mediaExists} from '@/lib/storage';
+import {db} from '@/lib/db';
+import {sql} from 'drizzle-orm';
+import {cloudScope} from '@/lib/cloud/context';
+export async function getElevenKey(){return (await readPrivateDocument<{apiKey:string}>('elevenlabs'))?.apiKey||'';}
+export async function saveElevenKey(apiKey:string){await writePrivateDocument('elevenlabs',{apiKey});}
 export class NarrationError extends Error {}
 export async function elevenRequest(key:string,endpoint:string,init:RequestInit={}) {
   let response:Response;
@@ -58,21 +54,18 @@ export async function buildSegments(blocks:DialogueBlock[],voiceId:string,previe
     for(const text of pieces) {
       const id=crypto.createHash("sha256").update(JSON.stringify({model:MODEL,voiceId:item.voiceId,text})).digest("hex");
       const filename=`narration-${id}.mp3`;
-      const cached=await fs.stat(path.join(audioDir(),filename)).then(stat=>stat.size>0).catch(()=>false);
+      const cached=await mediaExists(filename);
       segments.push({blockIndex:item.blockIndex,voiceId:item.voiceId,speakerKey:item.speakerKey,speakerName:item.speakerName,text,id,url:`/api/audio/${filename}`,cached});
     }
   }
   return segments;
 }
 export async function generateSegment(key:string,voiceId:string,segment:Segment,dependencies={subscription,stockVoices,modelRate,elevenRequest}) {
-  await fs.mkdir(audioDir(),{recursive:true});
-  const file=path.join(audioDir(),`narration-${segment.id}.mp3`);
-  if(await fs.stat(file).then(s=>s.size>0).catch(()=>false)) return {...segment,cached:true};
-  // Cross-request lock prevents two friends spending credits on the same cache miss.
-  const lock=await fs.open(path.join(audioDir(),".elevenlabs-generation.lock"),"wx").catch(()=>null);
-  if(!lock) throw new NarrationError("มีการสร้างเสียงอยู่ กรุณารอให้เสร็จแล้วลองใหม่");
-  try {
-    if(await fs.stat(file).then(s=>s.size>0).catch(()=>false)) return {...segment,cached:true};
+  const filename=`narration-${segment.id}.mp3`;
+  if(await mediaExists(filename))return {...segment,cached:true};
+  const result=await db.execute(sql`select pg_try_advisory_xact_lock(hashtext(${cloudScope().user.id+':elevenlabs'})) as locked`);
+  if(!result.rows[0]?.locked)throw new NarrationError('มีการสร้างเสียงอยู่ กรุณาลองใหม่ภายหลัง');
+  {
     const quota=await dependencies.subscription(key);
     if(!["free","starter"].includes(quota.tier)) throw new NarrationError("โหมดนี้รองรับบัญชี Free และ Starter เท่านั้น ยังฟังไฟล์ที่มีแล้วได้");
     const voices=await dependencies.stockVoices(key);
@@ -82,8 +75,7 @@ export async function generateSegment(key:string,voiceId:string,segment:Segment,
     const response=await dependencies.elevenRequest(key,`/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`,{method:"POST",body:JSON.stringify({text:segment.text,model_id:MODEL,language_code:"th",voice_settings:{stability:0.5,similarity_boost:0.75}})});
     const buffer=Buffer.from(await response.arrayBuffer());
     if(!buffer.length || !response.headers.get("content-type")?.startsWith("audio/")) throw new NarrationError("ไม่ได้รับไฟล์เสียงที่สมบูรณ์ กรุณาตรวจประวัติ ElevenLabs ก่อนลองใหม่");
-    const temporary=file+".tmp";
-    await fs.writeFile(temporary,buffer);await fs.rename(temporary,file);
+    await audioStorage.saveAudio(buffer,filename);
     return {...segment,cached:true};
-  } finally {await lock.close();await fs.unlink(path.join(audioDir(),".elevenlabs-generation.lock")).catch(()=>{});}
+  }
 }

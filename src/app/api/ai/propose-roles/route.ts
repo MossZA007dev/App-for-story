@@ -1,3 +1,4 @@
+import {withAccount} from "@/lib/auth/account";
 import { NextRequest, NextResponse } from "next/server";
 import { proposeCharacterRoles } from "@/lib/ai/anthropic";
 import { z } from "zod";
@@ -20,6 +21,7 @@ const RequestSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+return withAccount(req, async () => {
   try {
     const body = await req.json();
     const validated = RequestSchema.parse(body);
@@ -35,4 +37,6 @@ export async function POST(req: NextRequest) {
     const msg = error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการประมวลผลของ AI";
     return NextResponse.json({ error: msg }, { status: 400 });
   }
+
+});
 }

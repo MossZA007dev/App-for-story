@@ -1,3 +1,4 @@
+import {withAccount} from "@/lib/auth/account";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { collaborators, projects, characters } from "@/lib/db/schema";
@@ -27,6 +28,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+return withAccount(request, async () => {
   try {
     const resolvedParams = await params;
     const projectId = resolvedParams.id;
@@ -78,6 +80,8 @@ export async function GET(
       { status: 500 }
     );
   }
+
+});
 }
 
 // POST /api/projects/[id]/collaborators
@@ -85,6 +89,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+return withAccount(request, async () => {
   try {
     const resolvedParams = await params;
     const projectId = resolvedParams.id;
@@ -139,4 +144,6 @@ export async function POST(
       { status: 500 }
     );
   }
+
+});
 }

@@ -3,17 +3,10 @@ import path from "node:path";
 import crypto from "node:crypto";
 import OpenAI from "openai";
 import {audioDir} from "@/lib/audio/elevenlabs";
-const settingsFile=()=>path.join(audioDir(),".private","openai-story.json");
+import {readPrivateDocument,writePrivateDocument} from '@/lib/cloud/privateDocuments';
 export const DEFAULT_STORY_MODEL="gpt-5.4-mini";
-export async function openAIStorySettings() {
-  const saved=await fs.readFile(settingsFile(),"utf8").then(JSON.parse).catch(()=>({}));
-  return {apiKey:String(saved.apiKey || process.env.OPENAI_API_KEY || ""),model:String(saved.model || process.env.OPENAI_STORY_MODEL || DEFAULT_STORY_MODEL)};
-}
-export async function saveOpenAIStorySettings(data:{apiKey?:string;model:string}) {
-  const previous=await openAIStorySettings();
-  const file=settingsFile();await fs.mkdir(path.dirname(file),{recursive:true,mode:0o700});const temp=file+"."+crypto.randomUUID();
-  await fs.writeFile(temp,JSON.stringify({apiKey:data.apiKey || previous.apiKey,model:data.model}),{mode:0o600});await fs.rename(temp,file);
-}
+export async function openAIStorySettings(){const saved=await readPrivateDocument<{apiKey?:string;model?:string}>('openai-story');return {apiKey:saved?.apiKey||'',model:saved?.model||DEFAULT_STORY_MODEL};}
+export async function saveOpenAIStorySettings(data:{apiKey?:string;model:string}){const previous=await openAIStorySettings();await writePrivateDocument('openai-story',{apiKey:data.apiKey??previous.apiKey,model:data.model});}
 export class StoryAssistantError extends Error {}
 export function openAIErrorMessage(error:unknown):string {
   const detail=error as {status?:number;code?:string;type?:string;name?:string};

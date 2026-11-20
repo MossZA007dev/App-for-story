@@ -16,7 +16,7 @@ export const SceneAnalysisResponseSchema = z.object({
     newInjuries: z.array(z.string()),
     whoKnowsWhom: z.array(z.string()),
     newSecretsOrPossessions: z.array(z.string()),
-    locationUpdates: z.record(z.string()),
+    locationUpdates: z.record(z.string(), z.string()),
     newCanonDeviations: z.array(z.string()),
     newOpenThreads: z.array(z.string()),
   }),

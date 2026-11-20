@@ -1,3 +1,4 @@
+import {withAccount} from "@/lib/auth/account";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getAppSettings } from "@/lib/settings";
@@ -8,6 +9,7 @@ import { MAX_IMPORT_TEXT, parseStoryImport, mergeStoryImportMetadata } from "@/l
 export const maxDuration=60;
 const schema=z.object({text:z.string().trim().min(1).max(MAX_IMPORT_TEXT),useAI:z.boolean().default(false)});
 export async function POST(request:NextRequest) {
+return withAccount(request, async () => {
   const parsed=schema.safeParse(await request.json().catch(()=>null));
   if (!parsed.success) return NextResponse.json({error:"วางข้อความไม่เกิน 80,000 ตัวอักษร"},{status:400});
   try {
@@ -31,4 +33,6 @@ export async function POST(request:NextRequest) {
   } catch {
     return NextResponse.json({error:"แยกข้อมูลไม่สำเร็จ หากใช้ AI กรุณาตรวจผู้ให้บริการและ API Key ในการตั้งค่า หรือลองแยกจากตารางโดยไม่ใช้ AI"},{status:400});
   }
+
+});
 }

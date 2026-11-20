@@ -25,6 +25,7 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+.supabase-ca.crt
 
 # typescript
 *.tsbuildinfo
@@ -37,3 +38,8 @@ next-env.d.ts
 
 # local binaries
 /bin
+.env*.local.tmp
+.vercel
+.env*
+
+__pycache__/

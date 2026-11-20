@@ -16,7 +16,7 @@ export interface CharacterAvatarReference {
 
 export async function getGeminiClient(customApiKey?: string): Promise<{ ai: GoogleGenAI; apiKey: string; model: string }> {
   const settings = await getAppSettings();
-  const apiKey = customApiKey || settings.geminiApiKey || process.env.GEMINI_API_KEY || "";
+  const apiKey = customApiKey || settings.geminiApiKey || "";
 
   if (!apiKey) {
     throw new Error("ยังไม่ได้ตั้งค่า Google Gemini API Key กรุณาระบุในหน้า Settings (/settings)");

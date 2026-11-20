@@ -1,5 +1,5 @@
 import {ReaderStatusError,type readerStatusContext} from './readerStatusContext';
-type Context=ReturnType<typeof readerStatusContext>;
+type Context=Awaited<ReturnType<typeof readerStatusContext>>;
 export function readerStatusInput(source:Context){
  return {universe:source.context.universe,characters:source.context.characters,partial:source.coverage.partial,passages:source.context.passages.map((p,i)=>({id:`p${i+1}`,speaker:p.speaker,text:p.text}))};
 }

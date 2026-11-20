@@ -1,3 +1,4 @@
+import {withAccount} from "@/lib/auth/account";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { collaborators } from "@/lib/db/schema";
@@ -8,6 +9,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; collabId: string }> }
 ) {
+return withAccount(request, async () => {
   try {
     const resolvedParams = await params;
     const { id: projectId, collabId } = resolvedParams;
@@ -69,6 +71,8 @@ export async function PUT(
       { status: 500 }
     );
   }
+
+});
 }
 
 // DELETE /api/projects/[id]/collaborators/[collabId]
@@ -76,6 +80,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; collabId: string }> }
 ) {
+return withAccount(request, async () => {
   try {
     const resolvedParams = await params;
     const { id: projectId, collabId } = resolvedParams;
@@ -99,4 +104,6 @@ export async function DELETE(
       { status: 500 }
     );
   }
+
+});
 }

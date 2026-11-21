@@ -1,4 +1,5 @@
 "use client";
+import {PartManagerModal} from "@/components/parts/PartManagerModal";
 import {ProjectAccess} from "@/components/collaboration/ProjectAccess";
 import { parseStoryStructure } from "@/lib/story/structuredImport";
 
@@ -165,6 +166,7 @@ export default function StoryWorkspacePage({
   const resolvedParams = use(params);
   const projectId = resolvedParams.id;
 
+  const [partManagerOpen,setPartManagerOpen]=useState(false);
   const [sceneConflict,setSceneConflict]=useState(false);
   // Project & Parts State
   const [project, setProject] = useState<any>(null);
@@ -3366,6 +3368,8 @@ export default function StoryWorkspacePage({
             </button>
           </div>
 
+          <button type="button" className="ma-outline" onClick={async()=>{if(hasUnsavedChanges){toast.error('บันทึกฉากที่กำลังแก้ก่อนจัดการภาค');return;}setPartManagerOpen(true);}} title="ลากเรียงลำดับหรือลบทั้งภาค"><SlidersHorizontal size={15}/>จัดการภาค / ลากเรียง</button>
+
           {/* New Part / Season (SS) Button */}
           <button
             type="button"
@@ -6134,6 +6138,7 @@ export default function StoryWorkspacePage({
       />
 
       {/* Part / Season (SS) Modal */}
+      <PartManagerModal isOpen={partManagerOpen} onClose={()=>setPartManagerOpen(false)} projectId={projectId} activePartId={activePartId} onChanged={async deleted=>{if(deleted?.deletedPartId===activePartId){setActivePartId('');setActiveEpisodeId('');setActiveSceneId('');setActiveScene(null);setHasUnsavedChanges(false);await loadProjectData(deleted.nextSceneId||'');}else await loadProjectData(activeSceneId||undefined);}}/>
       <PartModal
         isOpen={partModalOpen}
         onClose={() => setPartModalOpen(false)}

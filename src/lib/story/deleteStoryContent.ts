@@ -1,6 +1,7 @@
+import {partStructureSnapshot} from './partStructureSnapshot';
 import { db } from '@/lib/db';
 import { parts, episodes, scenes, sceneVersions, images, continuityLedgers, relationships, projects } from '@/lib/db/schema';
-import { and, eq, inArray, asc } from 'drizzle-orm';
+import { and, eq, inArray, asc, sql } from 'drizzle-orm';
 export class StoryDeletionError extends Error {
     constructor(message: string, public status = 404) { super(message); }
 }
@@ -53,12 +54,15 @@ export function deleteStoryEpisode(projectId: string, episodeId: string) {
         return { success: true, deletedScenes: children.length, nextEpisodeId: next?.id || '', nextSceneId: nextScene?.id || '' };
     });
 }
-export function deleteStoryPart(projectId: string, partId: string) {
+export function deleteStoryPart(projectId: string, partId: string, expectedSnapshot?:string) {
     return db.transaction(async (tx) => {
-        const part = (await tx.select().from(parts).where(and(eq(parts.id, partId), eq(parts.projectId, projectId))).limit(1))[0];
+        await tx.execute(sql`select id from public.projects where id=${projectId} for update`);
+        const part = (await tx.select().from(parts).where(and(eq(parts.id, partId), eq(parts.projectId, projectId))).for('update').limit(1))[0];
         if (!part)
             throw new StoryDeletionError('ไม่พบภาคในเรื่องนี้');
-        const children = await tx.select().from(scenes).where(eq(scenes.partId, partId));
+        const children = await tx.select().from(scenes).where(eq(scenes.partId, partId)).for('update');
+        const childEpisodes=await tx.select().from(episodes).where(eq(episodes.partId,partId)).for('update');
+        if(expectedSnapshot&&expectedSnapshot!==partStructureSnapshot({id:part.id,title:part.title,number:part.number,updatedAt:part.updatedAt},childEpisodes.map(({id,updatedAt})=>({id,updatedAt})),children.map(({id,version,updatedAt})=>({id,version,updatedAt}))))throw new StoryDeletionError('ภาคนี้มีการเปลี่ยนแปลงหลังจากเปิดรายการ กรุณาโหลดใหม่และตรวจเนื้อหาก่อนลบ',409);
         await removeScenes(tx, children.map(s => s.id));
         await tx.delete(episodes).where(eq(episodes.partId, partId));
         await tx.delete(continuityLedgers).where(eq(continuityLedgers.partId, partId));

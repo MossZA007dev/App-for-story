@@ -136,10 +136,14 @@ export function PartModal({
 
   const handleDelete = async () => {
     if (!initialData?.id || isSubmitting) return;
-    if (!window.confirm(`ลบภาค “${initialData.title}” ใช่ไหม?\n${initialData.episodes?.length || 0} EP · ${initialData.scenes?.length || 0} ฉาก จะถูกลบพร้อมเนื้อหา\nรูปภาพยังเก็บไว้ในคลังภาพ ภาคอื่นไม่ถูกลบ`)) return;
     setIsSubmitting(true);
     try {
-      const response = await fetch(`/api/projects/${projectId}/parts/${initialData.id}`, {method:"DELETE"});
+      const freshResponse=await fetch(`/api/projects/${projectId}/parts/reorder`,{cache:'no-store'});
+      if(!freshResponse.ok)throw new Error('โหลดข้อมูลภาคล่าสุดก่อนลบไม่สำเร็จ');
+      const fresh=(await freshResponse.json()).parts?.find((p:{id:string})=>p.id===initialData.id);
+      if(!fresh)throw new Error('ภาคนี้อาจถูกลบไปแล้ว กรุณาโหลดรายการใหม่');
+      if(!window.confirm(`ลบภาค “${fresh.title}” ใช่ไหม?\n${fresh.episodeCount} EP · ${fresh.sceneCount} ฉาก จะถูกลบพร้อมประวัติฉาก\nรูปและเสียงยังเก็บไว้ในคลัง ภาคอื่นไม่ถูกลบ`))return;
+      const response = await fetch(`/api/projects/${projectId}/parts/${initialData.id}?expectedSnapshot=${encodeURIComponent(fresh.snapshot)}`, {method:"DELETE"});
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "ลบภาคไม่สำเร็จ");
       await onDeleted?.(result); toast.success("ลบภาคและฉากภายในแล้ว"); onClose();

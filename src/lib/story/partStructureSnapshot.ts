@@ -1,0 +1,2 @@
+import {createHash} from 'node:crypto';
+export function partStructureSnapshot(part:{id:string;number:number;title:string;updatedAt:string},episodes:{id:string;updatedAt:string}[],scenes:{id:string;updatedAt:string;version:number|null}[]){const byId=<T extends {id:string}>(items:T[])=>[...items].sort((a,b)=>a.id.localeCompare(b.id));return createHash('sha256').update(JSON.stringify({part,episodes:byId(episodes),scenes:byId(scenes)})).digest('hex');}

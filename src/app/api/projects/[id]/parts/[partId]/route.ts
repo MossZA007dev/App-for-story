@@ -80,7 +80,7 @@ export async function DELETE(_req: NextRequest, { params }: {
 return withAccount(_req, async () => {
     try {
         const { id, partId } = await params;
-        return NextResponse.json(await deleteStoryPart(id, partId));
+        return NextResponse.json(await deleteStoryPart(id, partId, new URL(_req.url).searchParams.get("expectedSnapshot")||undefined));
     }
     catch (e) {
         return NextResponse.json({ error: e instanceof StoryDeletionError ? e.message : "ลบภาคไม่สำเร็จ กรุณาลองใหม่" }, { status: e instanceof StoryDeletionError ? e.status : 500 });

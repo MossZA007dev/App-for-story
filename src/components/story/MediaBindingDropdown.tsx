@@ -1,15 +1,9 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import {
-  Image as ImageIcon,
-  Film,
-  Upload,
-  Link2,
-  X,
-  Check,
-  ChevronDown,
-} from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Image as ImageIcon, Film, Upload, Link2, X, Check, ChevronDown, Layers } from "lucide-react";
+import "./media-binding-dropdown.css";
 
 export function isVideoMedia(
   img?: { filePath?: string; metadata?: string | null; provider?: string } | null
@@ -56,268 +50,117 @@ interface MediaBindingDropdownProps {
   compact?: boolean;
 }
 
+function readableLabel(value?: string) {
+  const label = value?.trim() || "";
+  return /^[a-f0-9]{8}-[a-f0-9-]{27,}(?:\.[a-z0-9]+)?$/i.test(label) ? "" : label;
+}
+
 export function MediaBindingDropdown({
-  assignedImageId,
-  assignedImage,
-  sceneImages,
-  onSelectImage,
-  onUploadNew,
-  onCustomUrl,
-  isOpen,
-  onToggle,
-  onClose,
-  compact = false,
+  assignedImageId, assignedImage, sceneImages, onSelectImage, onUploadNew,
+  onCustomUrl, isOpen, onToggle, onClose, compact = false,
 }: MediaBindingDropdownProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const anchor = useRef<HTMLDivElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
+  const [position, setPosition] = useState<{top:number;left:number;width:number;maxHeight:number} | null>(null);
+  const isBound = Boolean(assignedImageId || assignedImage);
+  const target = assignedImage || sceneImages.find(image => image.id === assignedImageId);
+  const video = isVideoMedia(target || {filePath: assignedImageId?.replace(/^url:/, "")});
+  const caption = readableLabel(target?.caption) || (assignedImageId?.startsWith("url:") ? "สื่อจากลิงก์" : video ? "วิดีโอในฉาก" : "ภาพในฉาก");
 
-  // Close on outside click or Escape
   useEffect(() => {
-    if (!isOpen) return;
-
-    const handlePointerDown = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        onClose();
-      }
+    if (!isOpen) { setPosition(null); return; }
+    const place = () => {
+      const rect = anchor.current?.getBoundingClientRect();
+      if (!rect) return;
+      const viewport = window.visualViewport;
+      const width = viewport?.width || window.innerWidth;
+      const height = viewport?.height || window.innerHeight;
+      const offsetLeft = viewport?.offsetLeft || 0;
+      const offsetTop = viewport?.offsetTop || 0;
+      const panelWidth = Math.min(360, width - 24);
+      const below = offsetTop + height - rect.bottom - 12;
+      const above = rect.top - offsetTop - 12;
+      const opensAbove = below < 300 && above > below;
+      const available = Math.max(0, opensAbove ? above : below);
+      const maxHeight = Math.min(480, available);
+      const measuredHeight = Math.min(popup.current?.scrollHeight || 480, maxHeight);
+      setPosition({
+        left: Math.max(offsetLeft + 12, Math.min(rect.left, offsetLeft + width - panelWidth - 12)),
+        top: opensAbove ? Math.max(offsetTop + 12, rect.top - measuredHeight - 8) : rect.bottom + 8,
+        width: panelWidth, maxHeight,
+      });
     };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
+    const outside = (event: PointerEvent) => {
+      if (!anchor.current?.contains(event.target as Node) && !popup.current?.contains(event.target as Node)) onClose();
     };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
+    const keyboard = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); trigger.current?.focus(); }
+    };
+    place();
+    const frame = requestAnimationFrame(() => { place();  });
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    window.visualViewport?.addEventListener("resize", place);
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", keyboard, true);
     return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+      window.visualViewport?.removeEventListener("resize", place);
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", keyboard, true);
     };
   }, [isOpen, onClose]);
 
-  const isBound = Boolean(assignedImageId || assignedImage);
-  const targetImage = assignedImage || sceneImages.find((img) => img.id === assignedImageId);
-  const isVideo = isVideoMedia(targetImage || { filePath: assignedImageId });
+  const positioned = Boolean(position);
+  useEffect(() => {
+    if (isOpen && positioned) {
+      (popup.current?.querySelector<HTMLButtonElement>("button[data-selected=true]") || popup.current?.querySelector<HTMLButtonElement>("button"))?.focus({preventScroll:true});
+    }
+  }, [isOpen, positioned]);
 
-  const displayCaption = targetImage?.caption ||
-    (assignedImageId?.startsWith("url:") ? "สื่อจากลิงก์" : targetImage ? `ภาพในฉาก` : "ภาพที่ผูกไว้");
-
-  return (
-    <div ref={containerRef} className="relative inline-flex items-center">
-      {/* TRIGGER BUTTON / PILL */}
-      {isBound ? (
-        <div className="inline-flex items-center gap-1 animate-fadeIn">
-          <button
-            type="button"
-            onClick={onToggle}
-            className={`inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[10px] text-amber-300 font-thai font-semibold shadow-sm cursor-pointer transition-all active:scale-95 group/pill ${
-              compact ? "px-1.5 py-0.5" : "px-2 py-0.5"
-            }`}
-            title="คลิกเพื่อเปลี่ยนภาพหรือวิดีโอที่ผูกกับบทนี้"
-          >
-            {isVideo ? (
-              <Film className="w-3 h-3 text-purple-400 flex-shrink-0" />
-            ) : targetImage?.filePath ? (
-              <img
-                src={targetImage.filePath}
-                alt=""
-                className="w-3.5 h-3.5 rounded object-cover flex-shrink-0 border border-amber-500/50"
-              />
-            ) : (
-              <ImageIcon className="w-3 h-3 text-amber-400 flex-shrink-0" />
-            )}
-            <span className="truncate max-w-[110px] sm:max-w-[150px]">
-              {displayCaption}
-            </span>
-            <ChevronDown className={`w-2.5 h-2.5 text-amber-400/70 transition-transform ${isOpen ? "rotate-180" : ""}`} />
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectImage("");
-            }}
-            className="p-0.5 hover:text-red-400 text-slate-400 rounded transition-colors"
-            title="ยกเลิกการผูกภาพนี้ (คงภาพเดิม)"
-          >
-            <X className="w-3 h-3" />
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={onToggle}
-          className={`inline-flex items-center gap-1 rounded-lg text-[10px] font-thai border transition-all active:scale-95 group ${
-            compact ? "px-1.5 py-0.5" : "px-2 py-0.5"
-          } ${
-            isOpen
-              ? "bg-amber-500/20 text-amber-300 border-amber-500/60 shadow-sm"
-              : "text-slate-400 hover:text-amber-300 hover:bg-slate-800/80 border-slate-700/60"
-          }`}
-          title="ผูกรูปภาพหรือวิดีโอเข้ากับบทพูดนี้"
-        >
-          <ImageIcon className="w-3 h-3 text-slate-400 group-hover:text-amber-400" />
-          <span>+ ภาพ</span>
-          <ChevronDown className={`w-2.5 h-2.5 opacity-60 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+  const select = (id: string) => { onSelectImage(id); onClose(); trigger.current?.focus(); };
+  return <div ref={anchor} className={`mbd-anchor ${compact ? "mbd-compact" : ""}`}>
+    <button ref={trigger} type="button" className={`mbd-trigger ${isBound ? "is-bound" : ""}`}
+      aria-expanded={isOpen} aria-controls={isOpen ? panelId : undefined} onClick={onToggle}
+      title="เลือกภาพหรือวิดีโอสำหรับบทนี้">
+      {video ? <Film size={14}/> : <ImageIcon size={14}/>}
+      <span>{isBound ? caption : "เพิ่มภาพ / คลิป"}</span><ChevronDown size={12}/>
+    </button>
+    {isBound && <button type="button" className="mbd-unbind" aria-label="ยกเลิกการผูกภาพ คงภาพก่อนหน้า" onClick={() => select("")}><X size={13}/></button>}
+    {isOpen && position && createPortal(<div ref={popup} id={panelId} role="region" aria-label="เลือกภาพหรือวิดีโอสำหรับบทนี้"
+      className="mbd-panel" style={position} onClick={event => event.stopPropagation()}
+      onBlur={event => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node) && !anchor.current?.contains(event.relatedTarget as Node)) onClose(); }}>
+      <header className="mbd-header"><div><strong>ภาพประกอบบทนี้</strong><span>เลือกสื่อที่จะแสดงเมื่ออ่านถึงบทนี้</span></div>
+        <button type="button" aria-label="ปิดเมนูเลือกภาพ" onClick={() => {onClose();trigger.current?.focus();}}><X size={18}/></button></header>
+      <div className="mbd-body">
+        <button type="button" className="mbd-option mbd-keep" data-selected={!isBound} aria-pressed={!isBound} onClick={() => select("")}>
+          <span className="mbd-keep-icon"><Layers size={19}/></span>
+          <span className="mbd-copy"><strong>ใช้ภาพก่อนหน้า</strong><small>แสดงภาพต่อเนื่อง โดยไม่ผูกภาพใหม่</small></span>
+          {!isBound && <Check className="mbd-check" size={17}/>}
         </button>
-      )}
-
-      {/* FLOATING POPOVER CARD */}
-      {isOpen && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="absolute left-0 top-full mt-1.5 w-[310px] sm:w-[350px] bg-[#0c101b]/98 backdrop-blur-2xl border border-amber-500/40 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.85)] z-50 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-slate-200 font-thai p-2.5 space-y-2"
-          style={{ maxHeight: "420px" }}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
-            <div className="flex items-center gap-1.5">
-              <div className="w-5 h-5 rounded-md bg-amber-500/20 flex items-center justify-center text-amber-400">
-                <ImageIcon className="w-3 h-3" />
-              </div>
-              <span className="font-bold text-xs text-slate-200">
-                เลือกภาพ / วิดีโอในบทพูด
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* Option: Keep previous image (No direct binding) */}
-          <button
-            type="button"
-            onClick={() => {
-              onSelectImage("");
-              onClose();
-            }}
-            className={`w-full flex items-center justify-between p-2 rounded-xl text-left transition-all ${
-              !assignedImageId
-                ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold"
-                : "hover:bg-slate-800/80 text-slate-300 border border-transparent"
-            }`}
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center text-xs flex-shrink-0">
-                ⚪
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs truncate">ไม่ผูกภาพ (คงภาพเดิม)</div>
-                <div className="text-[10px] text-slate-400 font-normal truncate">
-                  แสดงภาพต่อเนื่องจากประโยคก่อนหน้า
-                </div>
-              </div>
-            </div>
-            {!assignedImageId && (
-              <Check className="w-4 h-4 text-amber-400 flex-shrink-0 ml-1.5" />
-            )}
-          </button>
-
-          {/* Section: Scene Images */}
-          <div className="space-y-1 min-h-0 flex-1 flex flex-col">
-            <div className="text-[11px] font-bold text-slate-400 px-1 pt-0.5 flex items-center justify-between">
-              <span>ภาพและคลิปในฉากนี้ ({sceneImages.length})</span>
-            </div>
-
-            {sceneImages.length === 0 ? (
-              <div className="p-4 text-center text-slate-500 space-y-1 bg-slate-950/60 rounded-xl border border-slate-800/60 my-1">
-                <p className="text-xs font-semibold text-slate-400">ยังไม่มีรูปภาพในฉากนี้</p>
-                <p className="text-[10px] text-slate-500">
-                  อัปโหลดรูปภาพใหม่ หรือใช้ AI สร้างรูปภาพประกอบฉากได้ทันที
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-y-auto space-y-1.5 max-h-48 pr-1 dialogue-scroll">
-                {sceneImages.map((img, i) => {
-                  const isSelected = assignedImageId === img.id;
-                  const isVid = isVideoMedia(img);
-                  return (
-                    <button
-                      key={img.id}
-                      type="button"
-                      onClick={() => {
-                        onSelectImage(img.id);
-                        onClose();
-                      }}
-                      className={`w-full flex items-center justify-between p-1.5 rounded-xl text-left transition-all group ${
-                        isSelected
-                          ? "bg-amber-500/20 text-amber-200 border border-amber-500/50 shadow-sm"
-                          : "hover:bg-slate-800/80 text-slate-300 border border-slate-800/60"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-black border border-slate-700/80 flex-shrink-0">
-                          {isVid ? (
-                            <div className="w-full h-full flex items-center justify-center bg-purple-950/40 text-purple-300">
-                              <Film className="w-4 h-4" />
-                            </div>
-                          ) : (
-                            <img
-                              src={img.filePath}
-                              alt=""
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                            />
-                          )}
-                          <span className="absolute bottom-0.5 right-0.5 px-1 rounded bg-black/80 text-[8px] font-mono text-amber-300">
-                            #{i + 1}
-                          </span>
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-slate-800 text-amber-300 flex-shrink-0">
-                              {isVid ? "🎬 วิดีโอ" : "🖼️ ภาพ"}
-                            </span>
-                            <span className="text-xs font-semibold truncate text-slate-200">
-                              {img.caption || `ภาพที่ #${i + 1}`}
-                            </span>
-                          </div>
-                          {img.prompt && (
-                            <p className="text-[10px] text-slate-400 truncate mt-0.5 font-normal">
-                              {img.prompt}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      {isSelected && (
-                        <Check className="w-4 h-4 text-amber-400 flex-shrink-0 ml-1.5" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Quick Upload / URL Actions */}
-          <div className="pt-2 border-t border-slate-800 space-y-1">
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onUploadNew();
-              }}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-amber-300 hover:bg-slate-800/80 transition-colors text-xs font-medium"
-            >
-              <Upload className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-              <span>📁 อัปโหลดภาพหรือคลิปใหม่สำหรับบทนี้...</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onCustomUrl();
-              }}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-sky-300 hover:bg-slate-800/80 transition-colors text-xs font-medium"
-            >
-              <Link2 className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />
-              <span>🔗 ระบุลิงก์ภายนอก (URL / GIF / วิดีโอ)...</span>
-            </button>
-          </div>
+        <p className="mbd-section-title">สื่อในฉาก <span>{sceneImages.length} รายการ</span></p>
+        <div className="mbd-list">
+          {sceneImages.length === 0 ? <div className="mbd-empty"><ImageIcon size={26}/><strong>ยังไม่มีภาพหรือคลิปในฉาก</strong><p>อัปโหลดสื่อ หรือเพิ่มจากลิงก์ด้านล่าง</p></div> : sceneImages.map((image, index) => {
+            const selected = assignedImageId === image.id;
+            const isVideo = isVideoMedia(image);
+            const title = readableLabel(image.caption) || `${isVideo ? "วิดีโอ" : "ภาพ"}ที่ ${index + 1}`;
+            const description = readableLabel(image.prompt);
+            return <button key={image.id} type="button" className="mbd-option" data-selected={selected} aria-pressed={selected} aria-label={`${title}, ${isVideo ? "วิดีโอ" : "รูปภาพ"}`} onClick={() => select(image.id)} title={description ? `${title} — ${description}` : title}>
+              <span className="mbd-thumbnail">{isVideo ? <Film size={23}/> : <img src={image.filePath} alt="" loading="lazy"/>}<span>{index + 1}</span></span>
+              <span className="mbd-copy"><strong>{title}</strong><small>{isVideo ? "วิดีโอ" : "รูปภาพ"}{description && ` · ${description}`}</small></span>
+              {selected && <Check className="mbd-check" size={17}/>}
+            </button>;
+          })}
         </div>
-      )}
-    </div>
-  );
+      </div>
+      <footer className="mbd-actions">
+        <button type="button" onClick={() => {onClose();onUploadNew();}}><Upload size={17}/><span>อัปโหลดภาพหรือคลิป</span></button>
+        <button type="button" onClick={() => {onClose();onCustomUrl();}}><Link2 size={17}/><span>เพิ่มจากลิงก์ <small>URL / GIF / วิดีโอ</small></span></button>
+      </footer>
+    </div>, document.body)}
+  </div>;
 }

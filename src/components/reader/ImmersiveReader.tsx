@@ -201,7 +201,6 @@ export function ImmersiveReader(p: Props) {
         : ["ArrowLeft", "ArrowUp", "PageUp"].includes(e.key) ? -1 : 0;
       if (!direction) return;
       e.preventDefault();
-      if (uiHidden) return;
       setAuto(false);
       if (e.shiftKey && ["ArrowLeft", "ArrowRight"].includes(e.key)) {
         const adjacent = adjacentEpisode(props.entries, props.scene?.id);
@@ -391,7 +390,7 @@ export function ImmersiveReader(p: Props) {
   return (
     <div
       ref={root}
-      className={`immersive-reader ir-${mode} ${motion ? "has-motion" : "no-motion"} ${camera ? "has-camera" : "no-camera"} ${idle && !panel ? "is-idle" : ""} ${uiHidden ? "is-artwork-only" : ""}`}
+      className={`immersive-reader ir-${mode} ${motion ? "has-motion" : "no-motion"} ${camera ? "has-camera" : "no-camera"} ${idle && !panel ? "is-idle" : ""} ${uiHidden ? "is-focus-reading" : ""}`}
       style={{ "--ir-font-size": `${size}px`, "--ir-shot-scale": active?.type === "dialogue" ? "1.02" : "1" } as React.CSSProperties}
       onPointerMove={wake}
       onPointerDown={wake}
@@ -455,7 +454,7 @@ export function ImmersiveReader(p: Props) {
         )}
       </section>
       {mode === "cinema" ? (
-        <main hidden={uiHidden} className="ir-story-stage" aria-label="บทที่กำลังอ่าน">
+        <main className="ir-story-stage" aria-label="บทที่กำลังอ่าน">
           <div className="ir-scene-progress">
             <span>{String(p.index + 1).padStart(2, "0")}</span>
             <span>/ {p.blocks.length}</span>
@@ -496,7 +495,7 @@ export function ImmersiveReader(p: Props) {
           )}
         </main>
       ) : (
-        <main hidden={uiHidden} className="ir-scroll-story" aria-label="เนื้อหาทั้งฉาก">
+        <main className="ir-scroll-story" aria-label="เนื้อหาทั้งฉาก">
           {p.blocks.map((b, i) => blockView(b, i, true))}
           <div className="ir-scene-end">
             {p.entries[sceneIndex + 1] ? (
@@ -562,7 +561,7 @@ export function ImmersiveReader(p: Props) {
             onClick={() => episodes.next && changeScene(episodes.next.scene.id)}><SkipForward size={18}/><span>ข้าม EP</span></button>
         </div>
         <div className="ir-tools">
-          <button ref={hideButton} aria-label="ซ่อน UI เพื่อดูภาพ" title="ซ่อน UI เพื่อดูภาพ (H)" onClick={hideInterface}>
+          <button ref={hideButton} aria-label="อ่านบนภาพเต็ม ซ่อนแถบควบคุม" title="อ่านบนภาพเต็ม ซ่อนแถบควบคุม (H)" onClick={hideInterface}>
             <EyeOff size={18}/>
           </button>
           <button
@@ -614,10 +613,14 @@ export function ImmersiveReader(p: Props) {
         ← → เปลี่ยนบท <span>·</span> Space อ่านต่อ <span>·</span>{" "}
         Shift + ← → ข้าม EP <span>·</span> H ซ่อน UI
       </p>
-      <button ref={restoreButton} hidden={!uiHidden} className="ir-restore-ui"
-        aria-label="แสดง UI กลับมา" title="แสดง UI กลับมา (H หรือ Esc)" onClick={() => setUiHidden(false)}>
-        <Eye size={18}/><span>แสดง UI</span>
-      </button>
+      <div hidden={!uiHidden} className="ir-focus-controls" role="group" aria-label="อ่านบนภาพเต็ม">
+        <button aria-label="บทก่อนหน้า" disabled={p.index <= 0 || !p.blocks.length} onClick={() => step(-1)}><ChevronLeft size={18}/></button>
+        <button ref={restoreButton} className="ir-restore-ui"
+          aria-label="แสดงแถบควบคุม" title="แสดงแถบควบคุม (H หรือ Esc)" onClick={() => setUiHidden(false)}>
+          <Eye size={18}/><span>แสดง UI</span>
+        </button>
+        <button aria-label="บทถัดไป" disabled={atEnd || !p.blocks.length} onClick={() => step(1)}><ChevronRight size={18}/></button>
+      </div>
       {panel && (
         <dialog
           ref={panelDialog}

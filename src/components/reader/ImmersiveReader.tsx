@@ -21,7 +21,12 @@ import {
   MapPin,
   Sparkles,
   Activity,
+  Eye,
+  EyeOff,
+  SkipBack,
+  SkipForward,
 } from "lucide-react";
+import { adjacentEpisode } from "@/lib/story/readerNavigation";
 import type { DialogueBlock } from "@/lib/story/dialogueParser";
 import { readingEmphasis, readingDelivery } from "@/lib/story/readingEmphasis";
 import { extractYouTubeVideoId } from "@/lib/audio/audioHelpers";
@@ -68,6 +73,7 @@ export function ImmersiveReader(p: Props) {
     [panel, setPanel] = useState<
       "contents" | "settings" | "audio" | "status" | null
     >(null),
+    [uiHidden, setUiHidden] = useState(false),
     [auto, setAuto] = useState(false),
     [motion, setMotion] = useState(true),
     [textEffects, setTextEffects] = useState(true),
@@ -79,6 +85,8 @@ export function ImmersiveReader(p: Props) {
     [full, setFull] = useState(false),
     [previous, setPrevious] = useState<Media | null>(null),
     [ready, setReady] = useState(false);
+  const restoreButton = useRef<HTMLButtonElement>(null);
+  const hideButton = useRef<HTMLButtonElement>(null);
   const panelDialog = useRef<HTMLDialogElement>(null);
   const root = useRef<HTMLDivElement>(null),
     bgm = useRef<HTMLAudioElement>(null),
@@ -92,6 +100,7 @@ export function ImmersiveReader(p: Props) {
     sceneIndex = p.entries.findIndex((e) => e.scene.id === p.scene?.id),
     entry = p.entries[sceneIndex],
     atEnd = p.index >= p.blocks.length - 1;
+  const episodes = adjacentEpisode(p.entries, p.scene?.id);
   const title = p.scene?.title || "ยังไม่มีฉาก";
   const atmosphere = useReaderAtmosphere(p.scene?.location || "", title, narrating);
   const ambientName = ATMOSPHERES.find(a => a.value === atmosphere.kind)?.label || "";
@@ -167,40 +176,52 @@ export function ImmersiveReader(p: Props) {
   }, []);
   useEffect(() => {
     const keyboard = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (
-        target.closest(
-          "button,a,input,textarea,select,summary,[contenteditable=true]",
-        ) ||
-        e.ctrlKey ||
-        e.metaKey ||
-        e.altKey
-      )
-        return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      if (target?.closest("input,textarea,select,[contenteditable]:not([contenteditable=false]),[role=textbox],[role=slider]") || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
       if (e.key === "Escape") {
+        if (uiHidden) {
+          e.preventDefault();
+          setUiHidden(false);
+        }
         setPanel(null);
         setAuto(false);
         return;
       }
       if (panel) return;
-      if (["ArrowRight", "ArrowDown", " ", "PageDown"].includes(e.key)) {
+      if (e.key.toLowerCase() === "h" && !e.repeat) {
         e.preventDefault();
+        setUiHidden(value => !value);
         setAuto(false);
-        current.current.onIndex(
-          Math.min(
-            current.current.index + 1,
-            current.current.blocks.length - 1,
-          ),
-        );
-      } else if (["ArrowLeft", "ArrowUp", "PageUp"].includes(e.key)) {
-        e.preventDefault();
-        setAuto(false);
-        current.current.onIndex(Math.max(0, current.current.index - 1));
+        return;
       }
+      // Arrows work after clicking controls too; Space/Enter retain native button behavior.
+      if (e.key === " " && target?.closest("button,a,summary,[role=button]")) return;
+      const props = current.current;
+      const direction = ["ArrowRight", "ArrowDown", " ", "PageDown"].includes(e.key) ? 1
+        : ["ArrowLeft", "ArrowUp", "PageUp"].includes(e.key) ? -1 : 0;
+      if (!direction) return;
+      e.preventDefault();
+      if (uiHidden) return;
+      setAuto(false);
+      if (e.shiftKey && ["ArrowLeft", "ArrowRight"].includes(e.key)) {
+        const adjacent = adjacentEpisode(props.entries, props.scene?.id);
+        const destination = direction > 0 ? adjacent.next : adjacent.previous;
+        if (destination) {
+          setMuted(true);
+          props.onScene(destination.scene.id);
+        }
+        return;
+      }
+      if (!props.blocks.length) return;
+      props.onIndex(Math.max(0, Math.min(props.index + direction, props.blocks.length - 1)));
     };
     window.addEventListener("keydown", keyboard);
     return () => window.removeEventListener("keydown", keyboard);
-  }, [panel]);
+  }, [panel, uiHidden]);
+  useEffect(() => {
+    if (uiHidden) restoreButton.current?.focus({ preventScroll: true });
+    else if (document.activeElement === restoreButton.current) hideButton.current?.focus({ preventScroll: true });
+  }, [uiHidden]);
   useEffect(() => {
     if (mode === "scroll")
       rows.current[p.index]?.scrollIntoView({
@@ -247,6 +268,11 @@ export function ImmersiveReader(p: Props) {
     setPanel(null);
     setMuted(true);
     p.onScene(id);
+  };
+  const hideInterface = () => {
+    setAuto(false);
+    setPanel(null);
+    setUiHidden(true);
   };
   const toggleFull = async () => {
     try {
@@ -365,13 +391,13 @@ export function ImmersiveReader(p: Props) {
   return (
     <div
       ref={root}
-      className={`immersive-reader ir-${mode} ${motion ? "has-motion" : "no-motion"} ${camera ? "has-camera" : "no-camera"} ${idle && !panel ? "is-idle" : ""}`}
+      className={`immersive-reader ir-${mode} ${motion ? "has-motion" : "no-motion"} ${camera ? "has-camera" : "no-camera"} ${idle && !panel ? "is-idle" : ""} ${uiHidden ? "is-artwork-only" : ""}`}
       style={{ "--ir-font-size": `${size}px`, "--ir-shot-scale": active?.type === "dialogue" ? "1.02" : "1" } as React.CSSProperties}
       onPointerMove={wake}
       onPointerDown={wake}
       onKeyDown={wake}
     >
-      <div className="ir-stage" aria-hidden={mode === "scroll"}>
+      <div className="ir-stage" aria-hidden={mode === "scroll" && !uiHidden}>
         {previous && renderMedia(previous, true)}
         {p.media ? (
           <div className="ir-camera-frame">{renderMedia(p.media)}</div>
@@ -384,7 +410,7 @@ export function ImmersiveReader(p: Props) {
         <div className="ir-vignette" />
         <div className="ir-grain" />
       </div>
-      <header className="ir-header">
+      <header className="ir-header" hidden={uiHidden}>
         <Link href="/sagas" className="ir-back" aria-label="กลับชั้นหนังสือ">
           <ArrowLeft size={19} />
           <span>ชั้นหนังสือ</span>
@@ -414,7 +440,7 @@ export function ImmersiveReader(p: Props) {
           </button>
         </div>
       </header>
-      <section className="ir-scene-heading" key={p.scene?.id}>
+      <section hidden={uiHidden} className="ir-scene-heading" key={p.scene?.id}>
         <p>
           {entry
             ? `ภาค ${entry.part.number} · ${entry.episode ? `EP ${entry.episode.number}` : entry.part.title}`
@@ -429,7 +455,7 @@ export function ImmersiveReader(p: Props) {
         )}
       </section>
       {mode === "cinema" ? (
-        <main className="ir-story-stage" aria-label="บทที่กำลังอ่าน">
+        <main hidden={uiHidden} className="ir-story-stage" aria-label="บทที่กำลังอ่าน">
           <div className="ir-scene-progress">
             <span>{String(p.index + 1).padStart(2, "0")}</span>
             <span>/ {p.blocks.length}</span>
@@ -470,7 +496,7 @@ export function ImmersiveReader(p: Props) {
           )}
         </main>
       ) : (
-        <main className="ir-scroll-story" aria-label="เนื้อหาทั้งฉาก">
+        <main hidden={uiHidden} className="ir-scroll-story" aria-label="เนื้อหาทั้งฉาก">
           {p.blocks.map((b, i) => blockView(b, i, true))}
           <div className="ir-scene-end">
             {p.entries[sceneIndex + 1] ? (
@@ -486,7 +512,7 @@ export function ImmersiveReader(p: Props) {
           </div>
         </main>
       )}
-      <footer className="ir-dock">
+      <footer hidden={uiHidden} className="ir-dock">
         <div className="ir-transport">
           <button
             aria-label="บทก่อนหน้า"
@@ -529,7 +555,16 @@ export function ImmersiveReader(p: Props) {
             }}
           />
         </div>
+        <div className="ir-episode-navigation" role="group" aria-label="ข้ามตอน">
+          <button aria-label="EP ก่อนหน้า" title="EP ก่อนหน้า (Shift + ←)" disabled={!episodes.previous}
+            onClick={() => episodes.previous && changeScene(episodes.previous.scene.id)}><SkipBack size={18}/></button>
+          <button aria-label="ข้ามไป EP ถัดไป" title="ข้ามไป EP ถัดไป (Shift + →)" disabled={!episodes.next}
+            onClick={() => episodes.next && changeScene(episodes.next.scene.id)}><SkipForward size={18}/><span>ข้าม EP</span></button>
+        </div>
         <div className="ir-tools">
+          <button ref={hideButton} aria-label="ซ่อน UI เพื่อดูภาพ" title="ซ่อน UI เพื่อดูภาพ (H)" onClick={hideInterface}>
+            <EyeOff size={18}/>
+          </button>
           <button
             aria-label="สถานะตัวละคร"
             title="สรุปพลัง ทักษะ และความสัมพันธ์ถึงบทที่อ่าน"
@@ -575,10 +610,14 @@ export function ImmersiveReader(p: Props) {
           </button>
         </div>
       </footer>
-      <p className="ir-keyboard-hint">
+      <p hidden={uiHidden} className="ir-keyboard-hint">
         ← → เปลี่ยนบท <span>·</span> Space อ่านต่อ <span>·</span>{" "}
-        เล่นอัตโนมัติไม่รวมเสียงพากย์
+        Shift + ← → ข้าม EP <span>·</span> H ซ่อน UI
       </p>
+      <button ref={restoreButton} hidden={!uiHidden} className="ir-restore-ui"
+        aria-label="แสดง UI กลับมา" title="แสดง UI กลับมา (H หรือ Esc)" onClick={() => setUiHidden(false)}>
+        <Eye size={18}/><span>แสดง UI</span>
+      </button>
       {panel && (
         <dialog
           ref={panelDialog}

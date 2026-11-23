@@ -1,5 +1,6 @@
 "use client";
-import {SfxPlaybackControls} from "@/components/sfx/SfxPlaybackControls";
+import {VolumeControl} from "@/components/audio/VolumeControl";
+import {useSfxPlaybackController,SfxPlaybackPanel} from "@/components/sfx/SfxPlaybackControls";
 import type {SfxTrack} from "@/lib/audio/sfxCues";
 import {YouTubeBgmPlayer} from "./YouTubeBgmPlayer";
 import {musicPlaybackLevel,isReaderVideo,readerVideoRange} from "@/lib/audio/readerPlayback";
@@ -122,6 +123,7 @@ export function ImmersiveReader(p: Props) {
     atEnd = p.index >= p.blocks.length - 1;
   let sfxBindings:Record<string,string>={};
   try{const parsed=JSON.parse(p.scene?.dialogueBindings||'{}');if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))sfxBindings=parsed;}catch{}
+  const sfxPlayback=useSfxPlaybackController({sceneId:p.scene?.id||"",index:p.index,bindings:sfxBindings,tracks:p.tracks||[]});
   const episodes = adjacentEpisode(p.entries, p.scene?.id);
   const title = p.scene?.title || "ยังไม่มีฉาก";
   const atmosphere = useReaderAtmosphere(p.scene?.location || "", title, narrating);
@@ -592,7 +594,6 @@ export function ImmersiveReader(p: Props) {
           <button aria-label="ข้ามไป EP ถัดไป" title="ข้ามไป EP ถัดไป (Shift + →)" disabled={!episodes.next}
             onClick={() => episodes.next && changeScene(episodes.next.scene.id)}><SkipForward size={18}/><span>ข้าม EP</span></button>
         </div>
-        <SfxPlaybackControls sceneId={p.scene?.id||""} index={p.index} bindings={sfxBindings} tracks={p.tracks||[]}/>
         <div className="ir-tools">
           <button ref={hideButton} aria-label="อ่านบนภาพเต็ม ซ่อนแถบควบคุม" title="อ่านบนภาพเต็ม ซ่อนแถบควบคุม (H)" onClick={hideInterface}>
             <EyeOff size={18}/>
@@ -771,14 +772,9 @@ export function ImmersiveReader(p: Props) {
               </div>
             ) : (
               <div className="ir-audio">
-                <section className="ir-atmosphere" aria-label="เสียงบรรยากาศ">
-                  <div className="ir-atmosphere-heading"><span><strong>บรรยากาศรอบตัวคุณ</strong><small>เสียงสังเคราะห์ในเครื่อง · ไม่ใช้เครดิต</small></span><button type="button" aria-label={atmosphere.enabled ? "ปิดเสียงบรรยากาศ" : "เปิดเสียงบรรยากาศ"} aria-pressed={atmosphere.enabled} disabled={atmosphere.busy || (!atmosphere.enabled && atmosphere.kind === "none")} onClick={atmosphere.toggle}>{atmosphere.enabled ? <Volume2 size={18}/> : <VolumeX size={18}/>}</button></div>
-                  <label>เลือกบรรยากาศ<select aria-label="เลือกเสียงบรรยากาศ" value={atmosphere.choice} onChange={e => atmosphere.setChoice(e.target.value as typeof atmosphere.choice)}><option value="auto">อัตโนมัติจากสถานที่ · {ambientName}</option>{ATMOSPHERES.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}</select></label>
-                  <label>ระดับเสียง <output>{atmosphere.volume}%</output><input aria-label="ระดับเสียงบรรยากาศ" type="range" min={0} max={100} value={atmosphere.volume} onChange={e => atmosphere.setVolume(Number(e.target.value))}/></label>
-                  <p role="status">{atmosphere.enabled && atmosphere.kind !== "none" ? `กำลังเล่น · ${ambientName}${narrating ? " · ลดเสียงระหว่างพากย์" : ""}` : atmosphere.kind === "none" ? "ยังไม่มีเสียงที่ตรงกับสถานที่ เลือกบรรยากาศเองด้านบนได้" : "กดไอคอนลำโพงเพื่อเปิดเสียง ไม่มีการเปิดเสียงอัตโนมัติ"}</p>
-                  {atmosphere.error && <p role="alert">{atmosphere.error}</p>}
-                </section>
 
+
+                <section className="ir-music-card" aria-label="เพลงประกอบ">
                 <label className="ir-switch">
                   <span>
                     เพลงประกอบ · {musicSourceLabel(p.scene?.bgmSource)}
@@ -796,11 +792,18 @@ export function ImmersiveReader(p: Props) {
                     {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
                   </button>
                 </label>
-                <label className="ir-music-volume">ความดังเพลงประกอบ <output>{Math.round(musicVolume*100)}%{muted?' · ปิดเสียง':''}</output>
-                  <input aria-label="ความดังเพลงประกอบ" type="range" min="0" max="100" value={Math.round(musicVolume*100)} disabled={!directBgm&&!youtubeId} onChange={event=>{const value=Number(event.target.value)/100;setMusicError('');setMusicVolume(value);if(value>0)setMuted(false);else setMuted(true);}}/>
-                  <small>แยกจากเสียงบรรยากาศและ SFX · ลดเพลงให้อัตโนมัติระหว่างพากย์</small>
-                </label>
+                <VolumeControl label="ความดังเพลงประกอบ" value={musicVolume*100} disabled={!directBgm&&!youtubeId} status={muted?'ปิดเสียง':'เปิดอยู่'} onChange={value=>{setMusicError('');setMusicVolume(value/100);setMuted(value===0);}}/>
+                <p className="ir-mixer-note">ลดเพลงให้อัตโนมัติระหว่างพากย์ โดยคงระดับที่คุณเลือกไว้</p>
                 {musicError&&<p className="ir-music-error" role="alert">{musicError}</p>}
+                </section>
+                <SfxPlaybackPanel controller={sfxPlayback}/>
+                <section className="ir-atmosphere" aria-label="เสียงบรรยากาศ">
+                  <div className="ir-atmosphere-heading"><span><strong>บรรยากาศรอบตัวคุณ</strong><small>เสียงสังเคราะห์ในเครื่อง · ไม่ใช้เครดิต</small></span><button type="button" aria-label={atmosphere.enabled ? "ปิดเสียงบรรยากาศ" : "เปิดเสียงบรรยากาศ"} aria-pressed={atmosphere.enabled} disabled={atmosphere.busy || (!atmosphere.enabled && atmosphere.kind === "none")} onClick={atmosphere.toggle}>{atmosphere.enabled ? <Volume2 size={18}/> : <VolumeX size={18}/>}</button></div>
+                  <label>เลือกบรรยากาศ<select aria-label="เลือกเสียงบรรยากาศ" value={atmosphere.choice} onChange={e => atmosphere.setChoice(e.target.value as typeof atmosphere.choice)}><option value="auto">อัตโนมัติจากสถานที่ · {ambientName}</option>{ATMOSPHERES.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}</select></label>
+                  <VolumeControl label="ระดับเสียงบรรยากาศ" value={atmosphere.volume} onChange={atmosphere.setVolume} status={atmosphere.enabled?'เปิดอยู่':'ปิดเสียง'}/>
+                  <p role="status">{atmosphere.enabled && atmosphere.kind !== "none" ? `กำลังเล่น · ${ambientName}${narrating ? " · ลดเสียงระหว่างพากย์" : ""}` : atmosphere.kind === "none" ? "ยังไม่มีเสียงที่ตรงกับสถานที่ เลือกบรรยากาศเองด้านบนได้" : "กดไอคอนลำโพงเพื่อเปิดเสียง ไม่มีการเปิดเสียงอัตโนมัติ"}</p>
+                  {atmosphere.error && <p role="alert">{atmosphere.error}</p>}
+                </section>
                 <NarrationPlayer
                   key={p.scene?.id}
                   projectId={p.projectId}

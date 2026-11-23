@@ -28,6 +28,7 @@ import {
   SkipBack,
   SkipForward,
 } from "lucide-react";
+import {readerMotionPreference,readerMotionEnabled,type ReaderMotionPreference} from "@/lib/story/readerMotion";
 import { musicSourceLabel } from "@/lib/audio/sceneMusic";
 import { adjacentEpisode } from "@/lib/story/readerNavigation";
 import type { DialogueBlock } from "@/lib/story/dialogueParser";
@@ -81,7 +82,9 @@ export function ImmersiveReader(p: Props) {
     >(null),
     [uiHidden, setUiHidden] = useState(false),
     [auto, setAuto] = useState(false),
-    [motion, setMotion] = useState(true),
+    [motionMode, setMotionMode] = useState<ReaderMotionPreference>("system"),
+    [systemReducedMotion, setSystemReducedMotion] = useState(false),
+    [motionTest, setMotionTest] = useState(0),
     [textEffects, setTextEffects] = useState(true),
     [camera, setCamera] = useState(true),
     [narrating, setNarrating] = useState(false),
@@ -93,6 +96,7 @@ export function ImmersiveReader(p: Props) {
     [ready, setReady] = useState(false);
   const restoreButton = useRef<HTMLButtonElement>(null);
   const hideButton = useRef<HTMLButtonElement>(null);
+  const motion=ready && readerMotionEnabled(motionMode,systemReducedMotion);
   const panelDialog = useRef<HTMLDialogElement>(null);
   const root = useRef<HTMLDivElement>(null),
     bgm = useRef<HTMLAudioElement>(null),
@@ -120,20 +124,24 @@ export function ImmersiveReader(p: Props) {
   useEffect(() => {
     document.body.classList.add("immersive-reading");
     const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+    const updateReduced=()=>setSystemReducedMotion(reduced.matches);
+    updateReduced();
+    reduced.addEventListener("change",updateReduced);
     try {
       const saved = JSON.parse(
         localStorage.getItem("saga-reader-preferences") || "{}",
       );
       setMode(saved.mode === "scroll" ? "scroll" : "cinema");
       setSize(Math.min(30, Math.max(18, Number(saved.size) || 22)));
-      setMotion(!reduced.matches && saved.motion !== false);
+      setMotionMode(readerMotionPreference(saved));
       setTextEffects(saved.textEffects !== false);
       setCamera(saved.camera !== false);
     } catch {
-      setMotion(!reduced.matches);
+      setMotionMode("system");
     }
     setReady(true);
     return () => {
+      reduced.removeEventListener("change",updateReduced);
       document.body.classList.remove("immersive-reading");
       if (timer.current) clearTimeout(timer.current);
     };
@@ -143,10 +151,10 @@ export function ImmersiveReader(p: Props) {
     try {
       localStorage.setItem(
         "saga-reader-preferences",
-        JSON.stringify({ mode, size, motion, textEffects, camera }),
+        JSON.stringify({ mode, size, motion:motionMode!=="off", motionMode, textEffects, camera }),
       );
     } catch {}
-  }, [mode, size, motion, textEffects, camera, ready]);
+  }, [mode, size, motionMode, textEffects, camera, ready]);
   useEffect(() => {
     if (!p.scene?.id || !p.blocks.length) return;
     setAuto(false);
@@ -396,7 +404,7 @@ export function ImmersiveReader(p: Props) {
   return (
     <div
       ref={root}
-      className={`immersive-reader ir-${mode} ${motion ? "has-motion" : "no-motion"} ${camera ? "has-camera" : "no-camera"} ${idle && !panel ? "is-idle" : ""} ${uiHidden ? "is-focus-reading" : ""}`}
+      className={`immersive-reader ir-${mode} ${motion ? "has-motion" : "no-motion"} ${motionMode==="on"?"motion-override-on":""} ${camera ? "has-camera" : "no-camera"} ${idle && !panel ? "is-idle" : ""} ${uiHidden ? "is-focus-reading" : ""}`}
       style={{ "--ir-font-size": `${size}px`, "--ir-shot-scale": active?.type === "dialogue" ? "1.02" : "1" } as React.CSSProperties}
       onPointerMove={wake}
       onPointerDown={wake}
@@ -712,17 +720,19 @@ export function ImmersiveReader(p: Props) {
                     onChange={(e) => setSize(Number(e.target.value))}
                   />
                 </label>
-                <label className="ir-switch">
-                  <span>
-                    การเคลื่อนไหวภาพและข้อความ
-                    <small>ปิดเพื่ออ่านแบบนิ่งและลดการเคลื่อนไหว</small>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={motion}
-                    onChange={(e) => setMotion(e.target.checked)}
-                  />
+                <label className="ir-motion-setting">
+                  <span>การเคลื่อนไหวภาพและข้อความ</span>
+                  <select aria-label="โหมด motion" value={motionMode} onChange={event=>setMotionMode(event.target.value as ReaderMotionPreference)}>
+                    <option value="system">อัตโนมัติ · ตามการตั้งค่าเครื่อง</option>
+                    <option value="on">เปิด motion ในเว็บนี้</option>
+                    <option value="off">ปิด motion · อ่านแบบนิ่ง</option>
+                  </select>
+                  <small role="status">{motionMode==='on'?'เปิด motion ตามที่คุณเลือก แม้เครื่องจะตั้งให้ลดการเคลื่อนไหว':motionMode==='off'?'คุณปิด motion ไว้บนอุปกรณ์นี้':systemReducedMotion?'เครื่องนี้เปิดการลดการเคลื่อนไหวอยู่ เว็บจึงใช้ภาพและข้อความนิ่ง':'เครื่องนี้อนุญาตการเคลื่อนไหว เว็บเปิด motion ให้อัตโนมัติ'}</small>
                 </label>
+                <div className="ir-motion-preview">
+                  <button type="button" disabled={!motion} onClick={()=>setMotionTest(value=>value+1)}>ทดสอบ motion</button>
+                  {motionTest>0&&<div key={motionTest} className="ir-motion-demo"><p>หยุดเดี๋ยวนี้!!</p><small>{motion?'ตัวอย่างข้อความสั่นสั้น ๆ':'motion ปิดอยู่'}</small></div>}
+                </div>
                 <label className="ir-switch">
                   <span>
                     เอฟเฟกต์ข้อความตามอารมณ์

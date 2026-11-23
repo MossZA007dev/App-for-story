@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {readerMotionPreference,readerMotionEnabled} from '../../src/lib/story/readerMotion';
+assert.equal(readerMotionPreference({}),'system');
+assert.equal(readerMotionPreference({motion:false}),'off');
+assert.equal(readerMotionPreference({motion:true}),'system');
+assert.equal(readerMotionPreference({motion:false,motionMode:'on'}),'on');
+assert.equal(readerMotionPreference({motionMode:'invalid'}),'system');
+assert.equal(readerMotionEnabled('system',true),false);
+assert.equal(readerMotionEnabled('system',false),true);
+assert.equal(readerMotionEnabled('on',true),true);
+assert.equal(readerMotionEnabled('on',false),true);
+assert.equal(readerMotionEnabled('off',true),false);
+assert.equal(readerMotionEnabled('off',false),false);
+assert.equal(readerMotionEnabled(readerMotionPreference(JSON.parse(JSON.stringify({motion:true,motionMode:'system'}))),false),true,'a system-reduced session must not persist a forced OFF for the next session');
+console.log('PASS: system motion preference, explicit on/off overrides, legacy migration and preference round-trip.');

@@ -95,6 +95,7 @@ export function ImmersiveReader(p: Props) {
     [muted, setMuted] = useState(true),
     [musicVolume,setMusicVolume]=useState(.25),
     [musicError,setMusicError]=useState(""),
+    [youtubeExpanded,setYoutubeExpanded]=useState(false),
     [videoManual,setVideoManual]=useState<boolean|null>(null),
     [videoPlaying,setVideoPlaying]=useState(false),
     [videoError,setVideoError]=useState(""),
@@ -794,6 +795,7 @@ export function ImmersiveReader(p: Props) {
                 </label>
                 <VolumeControl label="ความดังเพลงประกอบ" value={musicVolume*100} disabled={!directBgm&&!youtubeId} status={muted?'ปิดเสียง':'เปิดอยู่'} onChange={value=>{setMusicError('');setMusicVolume(value/100);setMuted(value===0);}}/>
                 <p className="ir-mixer-note">ลดเพลงให้อัตโนมัติระหว่างพากย์ โดยคงระดับที่คุณเลือกไว้</p>
+                {youtubeId&&<button type="button" className="ir-show-music-player" onClick={()=>{setYoutubeExpanded(true);setMuted(false);setPanel(null);}}>แสดงเครื่องเล่น YouTube</button>}
                 {musicError&&<p className="ir-music-error" role="alert">{musicError}</p>}
                 </section>
                 <SfxPlaybackPanel controller={sfxPlayback}/>
@@ -822,7 +824,7 @@ export function ImmersiveReader(p: Props) {
           </aside>
         </dialog>
       )}
-      {youtubeId&&<YouTubeBgmPlayer videoId={youtubeId} level={musicLevel} enabled={!muted} onError={setMusicError} onClose={()=>setMuted(true)}/>}
+      {youtubeId&&<YouTubeBgmPlayer videoId={youtubeId} level={musicLevel} enabled={!muted} expanded={youtubeExpanded&&!uiHidden} onError={setMusicError} onHide={()=>setYoutubeExpanded(false)}/>}
       {directBgm && <audio ref={bgm} src={directBgm} loop preload="none" onError={()=>{setMuted(true);setMusicError('โหลดไฟล์เพลงไม่ได้ กรุณาตรวจไฟล์หรือลิงก์เพลง');}}/>}
     </div>
   );

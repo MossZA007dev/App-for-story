@@ -1,3 +1,4 @@
+import {attachSfxAssets} from "@/lib/audio/attachSfxAssets";
 import {resolveStoredSceneMusic} from "@/lib/audio/storyMusic";
 import {getCurrentAuthor} from '@/lib/account/identity';
 import {lockSceneForWrite,SceneWriteError} from '@/lib/story/sceneWriteGuard';
@@ -74,6 +75,7 @@ return withAccount(req, async () => {
         const body = await req.json();
         const validated = UpdateSceneSchema.parse(body);
         const currentScene=await lockSceneForWrite(id,sceneId,validated.expectedVersion,validated.contentMarkdown!==undefined);
+        if(validated.dialogueBindings!==undefined)await attachSfxAssets(id,validated.dialogueBindings);
         const now = new Date().toISOString();
         let newVersion = (currentScene.version||1)+1;
         // If content changes, archive existing version into scene_versions

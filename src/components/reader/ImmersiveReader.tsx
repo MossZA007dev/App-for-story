@@ -1,4 +1,6 @@
 "use client";
+import {SfxPlaybackControls} from "@/components/sfx/SfxPlaybackControls";
+import type {SfxTrack} from "@/lib/audio/sfxCues";
 import {BookmarkButton} from "@/components/account/BookmarkButton";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -59,7 +61,9 @@ type Props = {
     bgmUrl?: string | null;
     bgmTitle?: string | null;
     bgmSource?: string;
+    dialogueBindings?: string | null;
   } | null;
+  tracks?: SfxTrack[];
   entries: Entry[];
   blocks: DialogueBlock[];
   index: number;
@@ -102,6 +106,8 @@ export function ImmersiveReader(p: Props) {
     sceneIndex = p.entries.findIndex((e) => e.scene.id === p.scene?.id),
     entry = p.entries[sceneIndex],
     atEnd = p.index >= p.blocks.length - 1;
+  let sfxBindings:Record<string,string>={};
+  try{const parsed=JSON.parse(p.scene?.dialogueBindings||'{}');if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))sfxBindings=parsed;}catch{}
   const episodes = adjacentEpisode(p.entries, p.scene?.id);
   const title = p.scene?.title || "ยังไม่มีฉาก";
   const atmosphere = useReaderAtmosphere(p.scene?.location || "", title, narrating);
@@ -560,6 +566,7 @@ export function ImmersiveReader(p: Props) {
           <button aria-label="ข้ามไป EP ถัดไป" title="ข้ามไป EP ถัดไป (Shift + →)" disabled={!episodes.next}
             onClick={() => episodes.next && changeScene(episodes.next.scene.id)}><SkipForward size={18}/><span>ข้าม EP</span></button>
         </div>
+        <SfxPlaybackControls sceneId={p.scene?.id||""} index={p.index} bindings={sfxBindings} tracks={p.tracks||[]}/>
         <div className="ir-tools">
           <button ref={hideButton} aria-label="อ่านบนภาพเต็ม ซ่อนแถบควบคุม" title="อ่านบนภาพเต็ม ซ่อนแถบควบคุม (H)" onClick={hideInterface}>
             <EyeOff size={18}/>

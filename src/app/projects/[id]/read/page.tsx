@@ -45,6 +45,7 @@ import { toast } from "sonner";
 import { ambientSound } from "@/lib/audio/ambientSynth";
 import { extractYouTubeVideoId } from "@/lib/audio/audioHelpers";
 import { PartModal } from "@/components/parts/PartModal";
+import {SfxPlaybackControls} from "@/components/sfx/SfxPlaybackControls";
 import { ImmersiveReader } from "@/components/reader/ImmersiveReader";
 import { NarrationPlayer } from "@/components/audio/NarrationPlayer";
 import { SceneAudioModal } from "@/components/audio/SceneAudioModal";
@@ -1570,7 +1571,7 @@ export default function NovelReaderPage({
     );
   }
 
-  if (immersiveExperience) return <ImmersiveReader projectId={projectId} title={project?.title || 'เรื่องราวของคุณ'} universe={project?.universe || ''} scene={activeScene} entries={allScenesList} blocks={parsedBlocks} index={activeDialogueIndex} onIndex={setActiveDialogueIndex} onScene={id => {const found=allScenesList.find(e=>e.scene.id===id);if(found)handleSelectSceneItem(found.scene);}} media={currentFeaturedImage} onDucking={setNarrationDucking}/>;
+  if (immersiveExperience) return <ImmersiveReader projectId={projectId} title={project?.title || 'เรื่องราวของคุณ'} universe={project?.universe || ''} scene={activeScene} entries={allScenesList} blocks={parsedBlocks} index={activeDialogueIndex} onIndex={setActiveDialogueIndex} onScene={id => {const found=allScenesList.find(e=>e.scene.id===id);if(found)handleSelectSceneItem(found.scene);}} media={currentFeaturedImage} tracks={projectSfxList} onDucking={setNarrationDucking}/>;
 
   return (
     <div
@@ -1588,6 +1589,7 @@ export default function NovelReaderPage({
         <button aria-pressed={focusReading} onClick={() => { const next = !focusReading; setFocusReading(next); try {localStorage.setItem("saga-cinematic-focus", String(next));} catch {} }}>{focusReading ? "แสดงภาพประกอบ" : "โฟกัสเนื้อเรื่อง"}</button>
       </div>
       {/* ========================================================================= */}
+      <SfxPlaybackControls sceneId={activeScene?.id||""} index={activeDialogueIndex} bindings={dialogueBindings} tracks={projectSfxList}/>
       <NarrationPlayer projectId={projectId} sceneId={activeScene?.id || ""} key={activeScene?.id || "empty-scene"} blocks={parsedBlocks} activeIndex={activeDialogueIndex} onIndex={setActiveDialogueIndex} onDucking={setNarrationDucking} />
       {/* 1. TOP HEADER (Fullscreen Bar vs Standard Header)                         */}
       {/* ========================================================================= */}

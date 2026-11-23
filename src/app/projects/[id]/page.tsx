@@ -1,4 +1,7 @@
 "use client";
+import {SfxCuePicker} from "@/components/sfx/SfxCuePicker";
+import {SfxPlaybackControls} from "@/components/sfx/SfxPlaybackControls";
+import {remapDialogueBindings} from "@/lib/audio/sfxCues";
 import {SeasonMusicManager} from "@/components/audio/SeasonMusicManager";
 import {musicSourceLabel} from "@/lib/audio/sceneMusic";
 import {PartManagerModal} from "@/components/parts/PartManagerModal";
@@ -169,6 +172,7 @@ export default function StoryWorkspacePage({
   const resolvedParams = use(params);
   const projectId = resolvedParams.id;
 
+  const [auditionOpen,setAuditionOpen]=useState(false);
   const [musicManagerOpen,setMusicManagerOpen]=useState(false);
   const [partManagerOpen,setPartManagerOpen]=useState(false);
   const [sceneConflict,setSceneConflict]=useState(false);
@@ -648,6 +652,13 @@ export default function StoryWorkspacePage({
   useEffect(() => {
     loadProjectData();
   }, [projectId]);
+
+  // Pick up newly uploaded vault sounds when returning from the sound library.
+  useEffect(()=>{
+    const refreshSounds=()=>{if(document.hidden)return;fetch(`/api/projects/${projectId}/sfx`).then(response=>response.ok?response.json():null).then(data=>{if(data?.soundEffects)setProjectSfxList(data.soundEffects);}).catch(()=>{});};
+    window.addEventListener('focus',refreshSounds);document.addEventListener('visibilitychange',refreshSounds);
+    return()=>{window.removeEventListener('focus',refreshSounds);document.removeEventListener('visibilitychange',refreshSounds);};
+  },[projectId]);
 
   // 2. Load Active Scene Details
   const loadSceneDetails = async (
@@ -2440,6 +2451,7 @@ export default function StoryWorkspacePage({
       return next;
     });
 
+    if(insertAtIdx!==undefined&&insertAtIdx>=0)setLocalDialogueBindings(previous=>remapDialogueBindings(previous,old=>old>insertAtIdx?old+1:old));
     setHasUnsavedChanges(true);
     toast.success("เพิ่มประโยคใหม่เรียบร้อย");
   };
@@ -2453,25 +2465,7 @@ export default function StoryWorkspacePage({
       return next;
     });
 
-    // Re-index bindings (handles both image bindings "0", "1" and audio bindings "audio_0", "audio_1")
-    const updatedBindings: Record<string, string> = {};
-    Object.keys(localDialogueBindings).forEach((key) => {
-      if (key.startsWith("audio_")) {
-        const numKey = parseInt(key.replace("audio_", ""), 10);
-        if (numKey < index) {
-          updatedBindings[key] = localDialogueBindings[key];
-        } else if (numKey > index) {
-          updatedBindings[`audio_${numKey - 1}`] = localDialogueBindings[key];
-        }
-      } else {
-        const numKey = parseInt(key, 10);
-        if (numKey < index) {
-          updatedBindings[key] = localDialogueBindings[key];
-        } else if (numKey > index) {
-          updatedBindings[String(numKey - 1)] = localDialogueBindings[key];
-        }
-      }
-    });
+    const updatedBindings = remapDialogueBindings(localDialogueBindings, old => old===index?null:old>index?old-1:old);
     setLocalDialogueBindings(updatedBindings);
     setHasUnsavedChanges(true);
     toast.info("ลบประโยคเรียบร้อย");
@@ -2490,20 +2484,7 @@ export default function StoryWorkspacePage({
     });
 
     // Swap bindings for both image and audio
-    const updatedBindings = { ...localDialogueBindings };
-    const curVal = updatedBindings[String(index)];
-    const targetVal = updatedBindings[String(targetIdx)];
-    if (curVal) updatedBindings[String(targetIdx)] = curVal;
-    else delete updatedBindings[String(targetIdx)];
-    if (targetVal) updatedBindings[String(index)] = targetVal;
-    else delete updatedBindings[String(index)];
-
-    const curAudio = updatedBindings[`audio_${index}`];
-    const targetAudio = updatedBindings[`audio_${targetIdx}`];
-    if (curAudio) updatedBindings[`audio_${targetIdx}`] = curAudio;
-    else delete updatedBindings[`audio_${targetIdx}`];
-    if (targetAudio) updatedBindings[`audio_${index}`] = targetAudio;
-    else delete updatedBindings[`audio_${index}`];
+    const updatedBindings=remapDialogueBindings(localDialogueBindings,old=>old===index?targetIdx:old===targetIdx?index:old);
 
     setLocalDialogueBindings(updatedBindings);
 
@@ -2522,7 +2503,7 @@ export default function StoryWorkspacePage({
     }
 
     const distributed = autoDistributeDialogueImages(dialogueBlocks.length, sceneImages);
-    setLocalDialogueBindings(distributed);
+    setLocalDialogueBindings({...Object.fromEntries(Object.entries(localDialogueBindings).filter(([key])=>!/^\d+$/.test(key))),...distributed});
     setHasUnsavedChanges(true);
     toast.success(`จับคู่อัตโนมัติ ${Object.keys(distributed).length} ภาพ กระจายตามบทพูดเรียบร้อย!`);
   };
@@ -4526,7 +4507,8 @@ export default function StoryWorkspacePage({
 
           {/* Interactive Studio Reader Stepper Bar (Adjusted dimensions & proportions) */}
           {dialogueBlocks.length > 0 && !isRawMarkdownMode && !isStreaming && (
-            <details className="editor-disclosure editor-audition"><summary><Play size={15} /> ทดลองอ่านตามบท <span>{activeBlockIndex + 1} / {dialogueBlocks.length}</span></summary>
+            <details className="editor-disclosure editor-audition" onToggle={event=>setAuditionOpen(event.currentTarget.open)}><summary><Play size={15} /> ทดลองอ่านตามบท <span>{activeBlockIndex + 1} / {dialogueBlocks.length}</span></summary>
+            <SfxPlaybackControls sceneId={activeSceneId} index={activeBlockIndex} bindings={localDialogueBindings} tracks={projectSfxList} active={auditionOpen}/>
             <div className="flex-shrink-0 rounded-xl bg-slate-950/95 border border-slate-700/80 p-2.5 sm:px-3.5 text-xs font-thai shadow-xl mb-2.5 space-y-2">
               {/* Row 1: Status & Active sentence information */}
               <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -4758,6 +4740,7 @@ export default function StoryWorkspacePage({
                         />
 
                         {/* Audio / Mood Select */}
+                        <SfxCuePicker value={localDialogueBindings[`sfx_${idx}`]} tracks={projectSfxList} blockNumber={idx+1} onChange={value=>{setLocalDialogueBindings(previous=>{const next={...previous};if(value)next[`sfx_${idx}`]=value;else delete next[`sfx_${idx}`];return next;});setHasUnsavedChanges(true);}} onOpenVault={()=>window.open(`/projects/${projectId}/sfx`, "_blank", "noopener,noreferrer")}/>
                         <AudioBindingDropdown
                           assignedAudioValue={assignedAudioValue}
                           projectSfxList={projectSfxList}
@@ -4999,6 +4982,7 @@ export default function StoryWorkspacePage({
                         />
 
                         {/* Audio Mood Binding Dropdown */}
+                        <SfxCuePicker value={localDialogueBindings[`sfx_${idx}`]} tracks={projectSfxList} blockNumber={idx+1} onChange={value=>{setLocalDialogueBindings(previous=>{const next={...previous};if(value)next[`sfx_${idx}`]=value;else delete next[`sfx_${idx}`];return next;});setHasUnsavedChanges(true);}} onOpenVault={()=>window.open(`/projects/${projectId}/sfx`, "_blank", "noopener,noreferrer")}/>
                         <AudioBindingDropdown
                           assignedAudioValue={assignedAudioValue}
                           projectSfxList={projectSfxList}

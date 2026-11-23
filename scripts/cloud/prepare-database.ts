@@ -12,6 +12,7 @@ const files=[
  'supabase/migrations/0004_account_features.sql',
  'supabase/migrations/0005_collaboration.sql',
  'supabase/migrations/0006_member_profiles.sql',
+ 'supabase/migrations/0007_season_music.sql',
 ];
 async function main(){
  if(!process.argv.includes('--apply')){

@@ -1,3 +1,4 @@
+import {resolveStoredSceneMusic} from "@/lib/audio/storyMusic";
 import {getCurrentAuthor} from '@/lib/account/identity';
 import {lockSceneForWrite,SceneWriteError} from '@/lib/story/sceneWriteGuard';
 import {withAccount} from "@/lib/auth/account";
@@ -46,7 +47,7 @@ return withAccount(_req, async () => {
             .orderBy(desc(images.createdAt));
         return NextResponse.json({
             scene: {
-                ...scene,
+                ...await resolveStoredSceneMusic(scene),
                 charactersPresentParsed: scene.charactersPresent ? JSON.parse(scene.charactersPresent) : [],
             },
             versions,
@@ -120,7 +121,7 @@ return withAccount(req, async () => {
         const updated = (await db.select().from(scenes).where(eq(scenes.id, sceneId)).limit(1))[0];
         return NextResponse.json({
             success: true,
-            scene: updated,
+            scene: await resolveStoredSceneMusic(updated),
         });
     }
     catch (error: unknown) {

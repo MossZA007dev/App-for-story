@@ -70,6 +70,8 @@ export const parts = pgTable("parts", {
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   number: integer("number").notNull(), // 0 to 9
   title: text("title").notNull(),
+  bgmUrl: text("bgm_url").notNull().default(""),
+  bgmTitle: text("bgm_title").notNull().default(""),
   scope: text("scope").default(""), // e.g. Season 2
   theme: text("theme").default(""),
   peakSummary: text("peak_summary").default(""),
@@ -85,6 +87,9 @@ export const episodes = pgTable("episodes", {
   partId: text("part_id").notNull().references(() => parts.id, { onDelete: "cascade" }),
   number: integer("number").notNull(), // EP 1, EP 2...
   title: text("title").notNull(),
+  bgmMode: text("bgm_mode", {enum: ["inherit", "custom", "silent"]}).notNull().default("inherit"),
+  bgmUrl: text("bgm_url").notNull().default(""),
+  bgmTitle: text("bgm_title").notNull().default(""),
   summary: text("summary").default(""),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),

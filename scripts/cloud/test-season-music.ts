@@ -1,0 +1,54 @@
+import {PGlite} from '@electric-sql/pglite';
+import {drizzle} from 'drizzle-orm/pglite';
+import {readFileSync} from 'node:fs';
+import assert from 'node:assert/strict';
+import * as schema from '../../src/lib/db/schema';
+import {withCloudScope,type CloudScope} from '../../src/lib/cloud/context';
+import {getSeasonMusic,saveSeasonMusic,resolveStoredSceneMusic} from '../../src/lib/audio/storyMusic';
+import {resolveSceneMusic} from '../../src/lib/audio/sceneMusic';
+async function main(){const pg=new PGlite();try{
+ const A='00000000-0000-4000-8000-000000000001',B='00000000-0000-4000-8000-000000000002',R='00000000-0000-4000-8000-000000000003',E='00000000-0000-4000-8000-000000000004';
+ await pg.exec(`CREATE ROLE authenticated NOLOGIN;CREATE ROLE anon NOLOGIN;CREATE SCHEMA auth;CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;GRANT USAGE ON SCHEMA auth,public TO authenticated;GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated;`);
+ await pg.exec(`CREATE TABLE auth.users(id uuid PRIMARY KEY,email text);INSERT INTO auth.users(id) VALUES('${A}'),('${B}'),('${R}'),('${E}');CREATE SCHEMA storage;CREATE TABLE storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);CREATE TABLE storage.objects(id text PRIMARY KEY,bucket_id text,name text);ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;GRANT USAGE ON SCHEMA storage TO authenticated;GRANT SELECT,INSERT,DELETE ON storage.objects TO authenticated;CREATE FUNCTION storage.foldername(text) RETURNS text[] LANGUAGE sql AS $$ SELECT string_to_array($1,'/') $$;`);
+ for(const file of ['generated/0000_safe_secret_warriors.sql','0002_account_security.sql','0003_private_storage.sql','0004_account_features.sql','0005_collaboration.sql','0006_member_profiles.sql','0007_season_music.sql'])await pg.exec(readFileSync('supabase/migrations/'+file,'utf8'));
+ await pg.exec(`INSERT INTO projects(id,owner_id,title,universe,story_rules,created_at,updated_at) VALUES('a','${A}','A','test','','now','now'),('b','${B}','B','test','','now','now');INSERT INTO project_members(id,project_id,user_id,role,created_at) VALUES('reader','a','${R}','reader','now'),('editor','a','${E}','editor','now');INSERT INTO parts(id,project_id,number,title,created_at,updated_at) VALUES('p','a',1,'Season','now','now'),('q','b',1,'Other','now','now');INSERT INTO episodes(id,project_id,part_id,number,title,created_at,updated_at) VALUES('e1','a','p',1,'EP1','now','now'),('e7','a','p',7,'EP7','now','now'),('foreign','b','q',1,'Other EP','now','now');INSERT INTO scenes(id,part_id,episode_id,"order",title,content_markdown,bgm_url,created_at,updated_at) VALUES('s1','p','e1',1,'One','untouched manuscript','','now','now'),('s7','p','e7',2,'Seven','also untouched','','now','now'),('override','p','e7',3,'Own music','keep text','https://example.com/scene.mp3','now','now');`);
+ await pg.exec(`INSERT INTO media_assets(id,owner_id,kind,storage_path,content_type,created_at) VALUES('private.mp3','${A}','audio','${A}/audio/private.mp3','audio/mpeg','now');`);
+ const orm=drizzle(pg,{schema});
+ async function account<T>(id:string,run:()=>Promise<T>){await pg.exec('SET ROLE authenticated');await pg.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[id]);return withCloudScope({db:orm as unknown as CloudScope['db'],user:{id},supabase:{} as CloudScope['supabase'],projectId:'a'},run);}
+ const rawScene=(id:string,ep:string,bgmUrl='')=>({id,partId:'p',episodeId:ep,bgmUrl,contentMarkdown:'untouched'});
+ await account(A,async()=>{
+  let data=await getSeasonMusic('a','p');assert.equal(data.episodes[0].bgmMode,'inherit');assert.equal(data.part.sceneOverrides,1);
+  const season={mode:'custom' as const,url:'https://example.com/main.mp3',title:'Main theme',expectedUpdatedAt:data.part.updatedAt,clearSceneOverrides:false};
+  await saveSeasonMusic('a','p',season);
+  assert.equal((await resolveStoredSceneMusic(rawScene('s1','e1'))).bgmSource,'season');
+  assert.equal((await resolveStoredSceneMusic(rawScene('s7','e7'))).bgmUrl,season.url);
+  data=await getSeasonMusic('a','p');
+  await saveSeasonMusic('a','p',{...season,episodeId:'e7',url:'https://example.com/seven.mp3',title:'EP7 theme',expectedUpdatedAt:data.episodes.find(e=>e.id==='e7')!.updatedAt});
+  assert.equal((await resolveStoredSceneMusic(rawScene('s7','e7'))).bgmSource,'episode');
+  assert.equal((await resolveStoredSceneMusic(rawScene('s1','e1'))).bgmUrl,season.url);
+  assert.equal((await resolveStoredSceneMusic(rawScene('override','e7','https://example.com/scene.mp3'))).bgmSource,'scene');
+  await assert.rejects(()=>saveSeasonMusic('a','p',{...season,expectedUpdatedAt:'stale'}),e=>(e as {status:number}).status===409);
+  await assert.rejects(()=>saveSeasonMusic('a','p',{...season,episodeId:'foreign'}));
+  data=await getSeasonMusic('a','p');
+  await saveSeasonMusic('a','p',{...season,episodeId:'e7',mode:'silent',expectedUpdatedAt:data.episodes.find(e=>e.id==='e7')!.updatedAt,clearSceneOverrides:true});
+  assert.equal((await resolveStoredSceneMusic(rawScene('s7','e7'))).bgmSource,'silent');
+  assert.equal((await pg.query<{bgm_url:string}>("SELECT bgm_url FROM scenes WHERE id='override'")).rows[0].bgm_url,'');
+  assert.equal((await pg.query<{content_markdown:string}>("SELECT content_markdown FROM scenes WHERE id='s1'")).rows[0].content_markdown,'untouched manuscript');
+  data=await getSeasonMusic('a','p');
+  await saveSeasonMusic('a','p',{...season,episodeId:'e7',mode:'inherit',expectedUpdatedAt:data.episodes.find(e=>e.id==='e7')!.updatedAt});
+  assert.equal((await resolveStoredSceneMusic(rawScene('s7','e7'))).bgmUrl,season.url);
+  assert.equal((await pg.query("SELECT id FROM sound_effects WHERE project_id='a'")).rows.length,2);
+  assert.equal((await pg.query<{bgm_url:string}>("SELECT bgm_url FROM scenes WHERE id='s1'")).rows[0].bgm_url,'','inheritance must not copy a theme onto every scene');
+ });
+ await account(R,async()=>{assert.equal((await pg.query("SELECT id FROM media_assets WHERE id='private.mp3'")).rows.length,0);});
+ await account(A,async()=>{const data=await getSeasonMusic('a','p');await saveSeasonMusic('a','p',{mode:'custom',url:'/api/audio/private.mp3',title:'Private upload theme',expectedUpdatedAt:data.part.updatedAt,clearSceneOverrides:false});});
+ await account(R,async()=>{assert.equal((await pg.query("SELECT id FROM media_assets WHERE id='private.mp3'")).rows.length,1,'story reader must be able to play attached private theme');});
+ await account(E,async()=>{const own=await getSeasonMusic('a','p');await assert.rejects(()=>saveSeasonMusic('a','p',{mode:'custom',url:'/api/audio/missing.mp3',title:'Missing',expectedUpdatedAt:own.part.updatedAt,clearSceneOverrides:false}));});
+ await account(R,async()=>{const data=await getSeasonMusic('a','p');await assert.rejects(()=>saveSeasonMusic('a','p',{mode:'inherit',url:'',title:'',expectedUpdatedAt:data.part.updatedAt,clearSceneOverrides:false}));});
+ await account(E,async()=>{const data=await getSeasonMusic('a','p');await saveSeasonMusic('a','p',{mode:'custom',url:'https://example.com/new.mp3',title:'New theme',expectedUpdatedAt:data.part.updatedAt,clearSceneOverrides:false});});
+ await account(B,async()=>{await assert.rejects(()=>getSeasonMusic('a','p'));const own=await getSeasonMusic('b','q');assert.equal(own.part.bgmUrl,'');});
+ assert.equal(resolveSceneMusic({bgmUrl:''},{bgmUrl:'https://example.com/main.mp3'},{bgmMode:'silent'}).bgmUrl,'');
+ assert.equal(resolveSceneMusic({bgmUrl:''},{bgmUrl:'https://example.com/main.mp3'}).bgmSource,'season','legacy scenes without EP inherit SS music');
+ console.log('PASS: SS inheritance, EP7 custom theme, EP mute/reset, scene precedence, explicit scoped clearing, untouched manuscripts, vault registration, stale writes, cross-story isolation and reader/editor permissions. Disposable local PostgreSQL only.');
+ }finally{await pg.close();}}
+main().catch(e=>{console.error(e);process.exitCode=1;});

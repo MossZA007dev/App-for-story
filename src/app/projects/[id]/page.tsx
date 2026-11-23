@@ -1,4 +1,6 @@
 "use client";
+import {SeasonMusicManager} from "@/components/audio/SeasonMusicManager";
+import {musicSourceLabel} from "@/lib/audio/sceneMusic";
 import {PartManagerModal} from "@/components/parts/PartManagerModal";
 import {ProjectAccess} from "@/components/collaboration/ProjectAccess";
 import { parseStoryStructure } from "@/lib/story/structuredImport";
@@ -130,6 +132,7 @@ interface SceneItem {
   images?: SceneImage[];
   bgmUrl?: string | null;
   bgmTitle?: string | null;
+  bgmSource?: string;
   lastEditedBy?: string | null;
   episodeId?: string | null;
 }
@@ -166,6 +169,7 @@ export default function StoryWorkspacePage({
   const resolvedParams = use(params);
   const projectId = resolvedParams.id;
 
+  const [musicManagerOpen,setMusicManagerOpen]=useState(false);
   const [partManagerOpen,setPartManagerOpen]=useState(false);
   const [sceneConflict,setSceneConflict]=useState(false);
   // Project & Parts State
@@ -659,22 +663,6 @@ export default function StoryWorkspacePage({
       const data = await res.json();
 
       let sceneData = data.scene;
-      if (!sceneData?.bgmUrl) {
-        try {
-          const cached = localStorage.getItem(`saga_bgm_${sceneId}`);
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            if (parsed.bgmUrl) {
-              sceneData = { ...sceneData, bgmUrl: parsed.bgmUrl, bgmTitle: parsed.bgmTitle };
-              fetch(`/api/projects/${projectId}/scenes/${sceneId}/audio`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(parsed),
-              }).catch(() => {});
-            }
-          }
-        } catch {}
-      }
 
       setActiveScene(sceneData);
       if (sceneData?.bgmUrl) {
@@ -2778,8 +2766,6 @@ export default function StoryWorkspacePage({
           dialogueBindings: JSON.stringify(localDialogueBindings),
           directorNote: directorsNote,
           lastEditedBy: currentAuthorName || undefined,
-          bgmUrl: activeScene?.bgmUrl || undefined,
-          bgmTitle: activeScene?.bgmTitle || undefined,
         }),
       });
 
@@ -2879,7 +2865,7 @@ export default function StoryWorkspacePage({
           remoteScene.updatedAt !== activeScene.updatedAt
         );
 
-        if (isContentDifferent || isTitleDifferent || isLocationDifferent || isImagesDifferent || isRemoteNewer) {
+        if (isContentDifferent || isTitleDifferent || isLocationDifferent || isImagesDifferent || isRemoteNewer || remoteScene.bgmUrl !== activeScene?.bgmUrl || remoteScene.bgmTitle !== activeScene?.bgmTitle) {
           // Double check local user didn't start typing while fetch was in flight
           if (hasUnsavedChanges || isSavingScene || isStreaming) return;
 
@@ -2957,6 +2943,8 @@ export default function StoryWorkspacePage({
     localDialogueBindings,
     sceneImages.length,
     activeScene?.updatedAt,
+    activeScene?.bgmUrl,
+    activeScene?.bgmTitle,
     currentAuthorName,
     projectId,
     characters,
@@ -3710,6 +3698,10 @@ export default function StoryWorkspacePage({
             </div>
           )}
 
+          <button type="button" className="sm-launch" onClick={()=>{if(hasUnsavedChanges){toast.error("บันทึกบทที่แก้ไขก่อนตั้งค่าเพลงครับ");return;}setMusicManagerOpen(true);}} disabled={!activePartId}>
+            <Music size={16}/><span>เพลงประจำ SS / EP</span>
+          </button>
+
           {/* New Sub-Scene Button */}
           <button
             onClick={() => {
@@ -3740,6 +3732,7 @@ export default function StoryWorkspacePage({
               <Music className="w-4 h-4 text-emerald-400" />
             )}
 
+            <span className="sm-current-source">{musicSourceLabel(activeScene?.bgmSource)}</span>
             {/* Audio Track Dropdown */}
             <select
               value={currentAudioTrack}
@@ -6138,6 +6131,7 @@ export default function StoryWorkspacePage({
       />
 
       {/* Part / Season (SS) Modal */}
+      <SeasonMusicManager isOpen={musicManagerOpen} onClose={()=>setMusicManagerOpen(false)} projectId={projectId} partId={activePartId} activeEpisodeId={activeEpisodeId} onChanged={async()=>{await loadProjectData(activeSceneId||undefined);if(activeSceneId)await loadSceneDetails(activeSceneId,true,true);}}/>
       <PartManagerModal isOpen={partManagerOpen} onClose={()=>setPartManagerOpen(false)} projectId={projectId} activePartId={activePartId} onChanged={async deleted=>{if(deleted?.deletedPartId===activePartId){setActivePartId('');setActiveEpisodeId('');setActiveSceneId('');setActiveScene(null);setHasUnsavedChanges(false);await loadProjectData(deleted.nextSceneId||'');}else await loadProjectData(activeSceneId||undefined);}}/>
       <PartModal
         isOpen={partModalOpen}

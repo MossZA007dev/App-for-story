@@ -1,3 +1,4 @@
+import {resolveSceneMusic} from "@/lib/audio/sceneMusic";
 import {withAccount} from "@/lib/auth/account";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -56,11 +57,12 @@ return withAccount(_req, async () => {
             .where(eq(episodes.projectId, id))
             .orderBy(asc(episodes.number));
         const partsWithScenes = (await Promise.all(projectParts.map(async (part) => {
-            const partScenes = await db
+            const rawPartScenes = await db
                 .select()
                 .from(scenes)
                 .where(eq(scenes.partId, part.id))
                 .orderBy(asc(scenes.order));
+            const partScenes = rawPartScenes.map(scene => resolveSceneMusic(scene,part,projectEpisodes.find(ep=>ep.id===scene.episodeId&&ep.partId===part.id)));
             const partEpisodes = projectEpisodes
                 .filter((ep) => ep.partId === part.id)
                 .map((ep) => ({

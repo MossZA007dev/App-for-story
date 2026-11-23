@@ -535,7 +535,7 @@ export default function NovelReaderPage({
           remoteScene.updatedAt !== activeScene.updatedAt
         );
 
-        if (isContentDifferent || isImagesDifferent || isUpdatedNewer) {
+        if (isContentDifferent || isImagesDifferent || isUpdatedNewer || remoteScene.bgmUrl !== activeScene.bgmUrl || remoteScene.bgmTitle !== activeScene.bgmTitle) {
           setActiveScene((prev) => (prev ? { ...prev, ...remoteScene } : remoteScene));
           setActiveSceneImages(data.images || []);
         }
@@ -545,7 +545,7 @@ export default function NovelReaderPage({
     }, 4000);
 
     return () => clearInterval(pollInterval);
-  }, [activeScene?.id, activeScene?.contentMarkdown, activeScene?.updatedAt, activeSceneImages.length, projectId]);
+  }, [activeScene?.id, activeScene?.contentMarkdown, activeScene?.updatedAt, activeSceneImages.length, activeScene?.bgmUrl, activeScene?.bgmTitle, projectId]);
 
   // Stop sound when leaving page
   useEffect(() => {

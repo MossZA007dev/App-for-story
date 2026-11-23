@@ -26,6 +26,7 @@ import {
   SkipBack,
   SkipForward,
 } from "lucide-react";
+import { musicSourceLabel } from "@/lib/audio/sceneMusic";
 import { adjacentEpisode } from "@/lib/story/readerNavigation";
 import type { DialogueBlock } from "@/lib/story/dialogueParser";
 import { readingEmphasis, readingDelivery } from "@/lib/story/readingEmphasis";
@@ -57,6 +58,7 @@ type Props = {
     location: string;
     bgmUrl?: string | null;
     bgmTitle?: string | null;
+    bgmSource?: string;
   } | null;
   entries: Entry[];
   blocks: DialogueBlock[];
@@ -206,7 +208,6 @@ export function ImmersiveReader(p: Props) {
         const adjacent = adjacentEpisode(props.entries, props.scene?.id);
         const destination = direction > 0 ? adjacent.next : adjacent.previous;
         if (destination) {
-          setMuted(true);
           props.onScene(destination.scene.id);
         }
         return;
@@ -265,7 +266,6 @@ export function ImmersiveReader(p: Props) {
   const changeScene = (id: string) => {
     setAuto(false);
     setPanel(null);
-    setMuted(true);
     p.onScene(id);
   };
   const hideInterface = () => {
@@ -746,7 +746,7 @@ export function ImmersiveReader(p: Props) {
 
                 <label className="ir-switch">
                   <span>
-                    เพลงประจำฉาก
+                    เพลงประกอบ · {musicSourceLabel(p.scene?.bgmSource)}
                     <small>
                       {directBgm || youtubeId
                         ? p.scene?.bgmTitle || "เพลงประกอบที่ผู้เขียนเลือก"

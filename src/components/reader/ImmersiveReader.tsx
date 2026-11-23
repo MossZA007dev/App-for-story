@@ -1,6 +1,8 @@
 "use client";
 import {SfxPlaybackControls} from "@/components/sfx/SfxPlaybackControls";
 import type {SfxTrack} from "@/lib/audio/sfxCues";
+import {YouTubeBgmPlayer} from "./YouTubeBgmPlayer";
+import {musicPlaybackLevel,isReaderVideo,readerVideoRange} from "@/lib/audio/readerPlayback";
 import {BookmarkButton} from "@/components/account/BookmarkButton";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -73,8 +75,7 @@ type Props = {
   media: Media | null;
   onDucking: (v: boolean) => void;
 };
-const isVideo = (m: Media) =>
-  m.provider === "video" || /\.(mp4|webm|mov)(?:\?|$)/i.test(m.filePath);
+const isVideo = isReaderVideo;
 export function ImmersiveReader(p: Props) {
   const [mode, setMode] = useState<"cinema" | "scroll">("cinema"),
     [panel, setPanel] = useState<
@@ -91,12 +92,21 @@ export function ImmersiveReader(p: Props) {
     [size, setSize] = useState(22),
     [idle, setIdle] = useState(false),
     [muted, setMuted] = useState(true),
+    [musicVolume,setMusicVolume]=useState(.25),
+    [musicError,setMusicError]=useState(""),
+    [videoManual,setVideoManual]=useState<boolean|null>(null),
+    [videoPlaying,setVideoPlaying]=useState(false),
+    [videoError,setVideoError]=useState(""),
     [full, setFull] = useState(false),
     [previous, setPrevious] = useState<Media | null>(null),
     [ready, setReady] = useState(false);
   const restoreButton = useRef<HTMLButtonElement>(null);
   const hideButton = useRef<HTMLButtonElement>(null);
   const motion=ready && readerMotionEnabled(motionMode,systemReducedMotion);
+  const videoWanted=ready&&(videoManual??!systemReducedMotion);
+  const musicLevel=musicPlaybackLevel(musicVolume,muted,narrating);
+  const videoRef=useRef<HTMLVideoElement>(null);
+  const videoIntent=useRef(videoWanted);videoIntent.current=videoWanted;
   const panelDialog = useRef<HTMLDialogElement>(null);
   const root = useRef<HTMLDivElement>(null),
     bgm = useRef<HTMLAudioElement>(null),
@@ -136,6 +146,8 @@ export function ImmersiveReader(p: Props) {
       setMotionMode(readerMotionPreference(saved));
       setTextEffects(saved.textEffects !== false);
       setCamera(saved.camera !== false);
+      if(typeof saved.musicVolume==="number"&&Number.isFinite(saved.musicVolume))setMusicVolume(Math.max(0,Math.min(1,saved.musicVolume)));
+      if(typeof saved.videoManual==="boolean")setVideoManual(saved.videoManual);
     } catch {
       setMotionMode("system");
     }
@@ -151,10 +163,10 @@ export function ImmersiveReader(p: Props) {
     try {
       localStorage.setItem(
         "saga-reader-preferences",
-        JSON.stringify({ mode, size, motion:motionMode!=="off", motionMode, textEffects, camera }),
+        JSON.stringify({ mode, size, motion:motionMode!=="off", motionMode, textEffects, camera, musicVolume, videoManual }),
       );
     } catch {}
-  }, [mode, size, motionMode, textEffects, camera, ready]);
+  }, [mode, size, motionMode, textEffects, camera, musicVolume, videoManual, ready]);
   useEffect(() => {
     if (!p.scene?.id || !p.blocks.length) return;
     setAuto(false);
@@ -248,23 +260,24 @@ export function ImmersiveReader(p: Props) {
     document.addEventListener("fullscreenchange", changed);
     return () => document.removeEventListener("fullscreenchange", changed);
   }, []);
-  useEffect(() => {
-    if (bgm.current) {
-      bgm.current.volume = 0.25;
-      if (muted) bgm.current.pause();
-      else bgm.current.play().catch(() => setMuted(true));
-    }
-  }, [muted, directBgm]);
+  useEffect(()=>{setMusicError('');},[directBgm,youtubeId]);
+  useEffect(()=>{if(bgm.current)bgm.current.volume=musicLevel;},[musicLevel,directBgm]);
+  useEffect(()=>{
+    const audio=bgm.current;if(!audio)return;
+    if(muted)audio.pause();else audio.play().catch(()=>{setMuted(true);setMusicError('เบราว์เซอร์รอให้เปิดเสียง กดเปิดเพลงอีกครั้งครับ');});
+  },[muted,directBgm]);
   useEffect(() => {
     if (panel) panelDialog.current?.showModal();
     if (panel !== "audio") setNarrating(false);
   }, [panel]);
-  useEffect(() => {
-    root.current?.querySelectorAll("video").forEach((video) => {
-      if (!motion) video.pause();
-      else video.play().catch(() => {});
-    });
-  }, [motion, p.media?.filePath]);
+  const playVideo=()=>{
+    const video=videoRef.current;if(!video)return;
+    video.muted=true;
+    if(videoIntent.current)video.play().catch(()=>{if(videoRef.current===video&&videoIntent.current){setVideoPlaying(false);setVideoError('วิดีโอยังไม่เริ่มเล่น กดเล่นวิดีโออีกครั้ง');}});
+    else video.pause();
+  };
+  useEffect(()=>{setVideoError('');setVideoPlaying(false);playVideo();},[videoWanted,p.media?.filePath]);
+  useEffect(()=>{const video=videoRef.current;if(!video||video.readyState<1)return;const range=readerVideoRange(p.media?.metadata,video.duration);if(video.currentTime<range.start||(range.end!==null&&video.currentTime>range.end))video.currentTime=range.start;},[p.media?.metadata]);
   const wake = () => {
     setIdle(false);
     if (timer.current) clearTimeout(timer.current);
@@ -299,25 +312,26 @@ export function ImmersiveReader(p: Props) {
     isVideo(m) ? (
       <video
         key={m.filePath}
+        ref={old?undefined:videoRef}
         className={`ir-backdrop ${old ? "ir-old" : ""}`}
         src={m.filePath}
-        autoPlay={motion}
-        loop
+        autoPlay={!old&&videoWanted}
         muted
         playsInline
-        onLoadedMetadata={(e) => {
-          try {
-            const meta = JSON.parse(m.metadata || "{}");
-            if (meta.startTime) e.currentTarget.currentTime = meta.startTime;
-          } catch {}
+        preload="metadata"
+        onPlay={()=>{if(!old){setVideoPlaying(true);setVideoError('');}}}
+        onPause={()=>{if(!old)setVideoPlaying(false);}}
+        onError={()=>{if(!old){setVideoPlaying(false);setVideoError('โหลดวิดีโอไม่ได้ หรือเบราว์เซอร์ไม่รองรับรูปแบบไฟล์นี้');}}}
+        onLoadedMetadata={event=>{
+          const range=readerVideoRange(m.metadata,event.currentTarget.duration);
+          if(range.start>0)event.currentTarget.currentTime=range.start;
+          if(!old)playVideo();
         }}
-        onTimeUpdate={(e) => {
-          try {
-            const meta = JSON.parse(m.metadata || "{}");
-            if (meta.endTime && e.currentTarget.currentTime >= meta.endTime)
-              e.currentTarget.currentTime = meta.startTime || 0;
-          } catch {}
+        onTimeUpdate={event=>{
+          const video=event.currentTarget,range=readerVideoRange(m.metadata,video.duration);
+          if(!old&&range.end!==null&&video.currentTime>=range.end){video.currentTime=range.start;if(videoIntent.current)playVideo();}
         }}
+        onEnded={event=>{if(!old&&videoIntent.current){event.currentTarget.currentTime=readerVideoRange(m.metadata,event.currentTarget.duration).start;playVideo();}}}
       />
     ) : (
       <img
@@ -423,6 +437,10 @@ export function ImmersiveReader(p: Props) {
         <div className="ir-vignette" />
         <div className="ir-grain" />
       </div>
+      {p.media&&isVideo(p.media)&&<div className="ir-video-controls" hidden={uiHidden&&videoPlaying}>
+        <button type="button" aria-label={videoPlaying?'หยุดวิดีโอประกอบ':'เล่นวิดีโอประกอบ'} onClick={()=>{const next=!videoPlaying;setVideoManual(next);videoIntent.current=next;setVideoError('');if(next){if(videoRef.current?.error)videoRef.current.load();playVideo();}else videoRef.current?.pause();}}>{videoPlaying?<Pause size={16}/>:<Play size={16}/>}<span>{videoPlaying?'หยุดวิดีโอ':'เล่นวิดีโอ'}</span></button>
+        {videoError&&<p role="status">{videoError}</p>}
+      </div>}
       <header className="ir-header" hidden={uiHidden}>
         <Link href="/sagas" className="ir-back" aria-label="กลับชั้นหนังสือ">
           <ArrowLeft size={19} />
@@ -773,11 +791,16 @@ export function ImmersiveReader(p: Props) {
                   <button
                     disabled={!directBgm && !youtubeId}
                     aria-label={muted ? "เปิดเพลงฉาก" : "ปิดเพลงฉาก"}
-                    onClick={() => setMuted(!muted)}
+                    onClick={() => {setMusicError('');setMuted(!muted);}}
                   >
                     {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
                   </button>
                 </label>
+                <label className="ir-music-volume">ความดังเพลงประกอบ <output>{Math.round(musicVolume*100)}%{muted?' · ปิดเสียง':''}</output>
+                  <input aria-label="ความดังเพลงประกอบ" type="range" min="0" max="100" value={Math.round(musicVolume*100)} disabled={!directBgm&&!youtubeId} onChange={event=>{const value=Number(event.target.value)/100;setMusicError('');setMusicVolume(value);if(value>0)setMuted(false);else setMuted(true);}}/>
+                  <small>แยกจากเสียงบรรยากาศและ SFX · ลดเพลงให้อัตโนมัติระหว่างพากย์</small>
+                </label>
+                {musicError&&<p className="ir-music-error" role="alert">{musicError}</p>}
                 <NarrationPlayer
                   key={p.scene?.id}
                   projectId={p.projectId}
@@ -789,7 +812,6 @@ export function ImmersiveReader(p: Props) {
                     p.onDucking(v);
                     setNarrating(v);
                     if (v) setAuto(false);
-                    if (bgm.current) bgm.current.volume = v ? 0.06 : 0.25;
                   }}
                 />
               </div>
@@ -797,15 +819,8 @@ export function ImmersiveReader(p: Props) {
           </aside>
         </dialog>
       )}
-      {youtubeId && !muted && (
-        <iframe
-          className="ir-youtube-player"
-          title="เพลงประกอบฉากจาก YouTube"
-          src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&loop=1&playlist=${youtubeId}&controls=0&playsinline=1`}
-          allow="autoplay"
-        />
-      )}
-      {directBgm && <audio ref={bgm} src={directBgm} loop preload="none" />}
+      {youtubeId&&<YouTubeBgmPlayer videoId={youtubeId} level={musicLevel} enabled={!muted} onError={setMusicError} onClose={()=>setMuted(true)}/>}
+      {directBgm && <audio ref={bgm} src={directBgm} loop preload="none" onError={()=>{setMuted(true);setMusicError('โหลดไฟล์เพลงไม่ได้ กรุณาตรวจไฟล์หรือลิงก์เพลง');}}/>}
     </div>
   );
 }

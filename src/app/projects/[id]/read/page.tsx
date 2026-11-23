@@ -46,6 +46,7 @@ import { ambientSound } from "@/lib/audio/ambientSynth";
 import { extractYouTubeVideoId } from "@/lib/audio/audioHelpers";
 import { PartModal } from "@/components/parts/PartModal";
 import {SfxPlaybackControls} from "@/components/sfx/SfxPlaybackControls";
+import {isReaderVideo} from "@/lib/audio/readerPlayback";
 import { ImmersiveReader } from "@/components/reader/ImmersiveReader";
 import { NarrationPlayer } from "@/components/audio/NarrationPlayer";
 import { SceneAudioModal } from "@/components/audio/SceneAudioModal";
@@ -70,19 +71,7 @@ interface SceneImage {
 }
 
 // Helper to check if media is video
-const isVideoMedia = (img?: { filePath?: string; metadata?: string | null; provider?: string } | null) => {
-  if (!img || !img.filePath) return false;
-  const fp = img.filePath.toLowerCase();
-  if (fp.endsWith(".mp4") || fp.endsWith(".webm") || fp.endsWith(".mov") || fp.endsWith(".mkv")) return true;
-  if (img.provider === "video") return true;
-  if (img.metadata) {
-    try {
-      const parsed = typeof img.metadata === "string" ? JSON.parse(img.metadata) : img.metadata;
-      if (parsed.isVideo || parsed.mediaType === "video") return true;
-    } catch {}
-  }
-  return false;
-};
+const isVideoMedia = isReaderVideo;
 
 // Helper to get video trim timings
 const getVideoTiming = (img?: { metadata?: string | null }) => {
